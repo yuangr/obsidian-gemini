@@ -67,7 +67,10 @@ describe('AgentFactory', () => {
 
 			AgentFactory.createAgentModel(plugin, session);
 
-			expect(ModelClientFactory.createChatModel).toHaveBeenCalledWith(plugin, modelConfig);
+			expect(ModelClientFactory.createChatModel).toHaveBeenCalledWith(plugin, {
+				sessionId: session.id,
+				...modelConfig,
+			});
 		});
 
 		it('should pass undefined modelConfig when session has none', () => {
@@ -76,7 +79,9 @@ describe('AgentFactory', () => {
 
 			AgentFactory.createAgentModel(plugin, session);
 
-			expect(ModelClientFactory.createChatModel).toHaveBeenCalledWith(plugin, undefined);
+			expect(ModelClientFactory.createChatModel).toHaveBeenCalledWith(plugin, {
+				sessionId: session.id,
+			});
 		});
 
 		it('should return the ModelApi instance from the factory', () => {
