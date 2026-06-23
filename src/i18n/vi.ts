@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const vi: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} ngày trước',
-	'time.dayAgoSingular': '{count} ngày trước',
-	'time.hoursAgoPlural': '{count} giờ trước',
-	'time.hourAgoSingular': '{count} giờ trước',
-	'time.minutesAgoPlural': '{count} phút trước',
-	'time.minuteAgoSingular': '{count} phút trước',
-	'time.justNow': 'Vừa xong',
 	'agent.empty.title': 'Bắt đầu cuộc trò chuyện',
 	'agent.empty.description': 'Trợ lý AI có thể chủ động làm việc với vault của bạn.',
 	'agent.empty.capabilitiesTitle': 'Agent có thể làm gì?',
@@ -139,6 +133,12 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'CẢNH BÁO: Cho phép các prompt tùy chỉnh thay thế hoàn toàn prompt hệ thống. Điều này có thể làm hỏng chức năng mong đợi.',
 	'settings.agentConfig.apiConfigurationHeading': 'Cấu hình API',
+	'settings.agentConfig.contextCachingName': 'Bật bộ nhớ đệm ngữ cảnh',
+	'settings.agentConfig.contextCachingDesc':
+		'Lưu bộ nhớ đệm tiền tố lịch sử trò chuyện trên các mô hình Gemini. Tiết kiệm chi phí và giảm độ trễ cho các phiên trên 32k token.',
+	'settings.agentConfig.filesApiName': 'Bật Gemini Files API',
+	'settings.agentConfig.filesApiDesc':
+		'Tải các tệp đính kèm nhị phân lớn (hình ảnh, video, âm thanh, PDF) lên dịch vụ lưu trữ tệp an toàn của Gemini thay vì gửi trực tiếp trong mỗi tin nhắn. Giảm kích thước yêu cầu và tăng tốc các lượt tiếp theo.',
 	'settings.agentConfig.logToFileName': 'Ghi nhật ký vào file',
 	'settings.agentConfig.logToFileDesc':
 		'Ghi nhật ký vào một tệp trong thư mục trạng thái plugin. Lỗi và cảnh báo luôn được ghi lại; các mục gỡ lỗi yêu cầu chế độ gỡ lỗi. Các tệp nhật ký được tự động xoay vòng ở kích thước 1 MB.',
@@ -430,6 +430,13 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Đã tắt',
 	'ragStatus.statusRateLimited': 'Bị giới hạn tần suất',
 	'ragStatus.statusUnknown': 'Không xác định',
+	'time.justNow': 'Vừa xong',
+	'time.minuteAgoSingular': '{count} phút trước',
+	'time.minutesAgoPlural': '{count} phút trước',
+	'time.hourAgoSingular': '{count} giờ trước',
+	'time.hoursAgoPlural': '{count} giờ trước',
+	'time.dayAgoSingular': '{count} ngày trước',
+	'time.daysAgoPlural': '{count} ngày trước',
 	'scheduler.presetOnce': 'Một lần',
 	'scheduler.presetDaily': 'Hàng ngày (mỗi 24h)',
 	'scheduler.presetDailyAt': 'Hàng ngày vào lúc',
@@ -691,6 +698,7 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Tệp quá lớn: {name} vượt quá giới hạn đính kèm tích lũy 20MB',
 	'agent.attachments.attached': 'Đã đính kèm {name}',
 	'agent.progress.thinking': 'Đang suy nghĩ...',
+	'agent.progress.thinkingWithBudget': '{thinking} (còn lại {remaining})',
 	'agent.progress.generating': 'Đang tạo phản hồi...',
 	'agent.progress.processing': 'Đang xử lý phản hồi...',
 	'agent.progress.elapsedAria': 'Thời gian đã trôi qua',

@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const es: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': 'Hace {count} días',
-	'time.dayAgoSingular': 'Hace {count} día',
-	'time.hoursAgoPlural': 'Hace {count} horas',
-	'time.hourAgoSingular': 'Hace {count} hora',
-	'time.minutesAgoPlural': 'Hace {count} minutos',
-	'time.minuteAgoSingular': 'Hace {count} minuto',
-	'time.justNow': 'Ahora mismo',
 	'agent.empty.title': 'Comenzar una conversación',
 	'agent.empty.description': 'Tu asistente de IA que puede trabajar activamente con tu bóveda.',
 	'agent.empty.capabilitiesTitle': '¿Qué puede hacer el agente?',
@@ -141,6 +135,12 @@ export const es: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'ADVERTENCIA: Permite que los prompts personalizados reemplacen por completo el prompt del sistema. Esto puede romper el funcionamiento esperado.',
 	'settings.agentConfig.apiConfigurationHeading': 'Configuración de la API',
+	'settings.agentConfig.contextCachingName': 'Habilitar caché de contexto',
+	'settings.agentConfig.contextCachingDesc':
+		'Almacena en caché el prefijo del historial de conversación en los modelos de Gemini. Ahorra costos y reduce la latencia para sesiones de más de 32k tokens.',
+	'settings.agentConfig.filesApiName': 'Habilitar la API de archivos de Gemini',
+	'settings.agentConfig.filesApiDesc':
+		'Sube archivos adjuntos binarios grandes (imágenes, video, audio, PDF) al alojamiento seguro de archivos de Gemini en lugar de enviarlos integrados en cada mensaje. Reduce el tamaño de la solicitud y acelera los turnos posteriores.',
 	'settings.agentConfig.logToFileName': 'Registrar en archivo',
 	'settings.agentConfig.logToFileDesc':
 		'Escribe las entradas de registro en un archivo dentro de la carpeta de estado del plugin. Los errores y advertencias siempre se registran; las entradas de depuración requieren el modo de depuración. Los archivos de registro se rotan automáticamente al alcanzar 1 MB.',
@@ -440,6 +440,13 @@ export const es: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Desactivado',
 	'ragStatus.statusRateLimited': 'Límite de frecuencia alcanzado',
 	'ragStatus.statusUnknown': 'Desconocido',
+	'time.justNow': 'Ahora mismo',
+	'time.minuteAgoSingular': 'Hace {count} minuto',
+	'time.minutesAgoPlural': 'Hace {count} minutos',
+	'time.hourAgoSingular': 'Hace {count} hora',
+	'time.hoursAgoPlural': 'Hace {count} horas',
+	'time.dayAgoSingular': 'Hace {count} día',
+	'time.daysAgoPlural': 'Hace {count} días',
 	'scheduler.presetOnce': 'Una vez',
 	'scheduler.presetDaily': 'Diario (cada 24 h)',
 	'scheduler.presetDailyAt': 'Diario a una hora',
@@ -705,6 +712,7 @@ export const es: Partial<Record<TranslationKey, string>> = {
 		'Archivo demasiado grande: {name} supera el límite acumulado de archivos adjuntos de 20 MB',
 	'agent.attachments.attached': 'Se adjuntó {name}',
 	'agent.progress.thinking': 'Pensando...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining} restante(s))',
 	'agent.progress.generating': 'Generando respuesta...',
 	'agent.progress.processing': 'Procesando respuesta...',
 	'agent.progress.elapsedAria': 'Tiempo transcurrido',

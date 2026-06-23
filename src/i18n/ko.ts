@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const ko: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count}일 전',
-	'time.dayAgoSingular': '{count}일 전',
-	'time.hoursAgoPlural': '{count}시간 전',
-	'time.hourAgoSingular': '{count}시간 전',
-	'time.minutesAgoPlural': '{count}분 전',
-	'time.minuteAgoSingular': '{count}분 전',
-	'time.justNow': '방금 전',
 	'agent.empty.title': '대화 시작하기',
 	'agent.empty.description': '보관소에서 능동적으로 작업할 수 있는 AI 비서입니다.',
 	'agent.empty.capabilitiesTitle': '에이전트가 무엇을 할 수 있나요?',
@@ -133,6 +127,12 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'경고: 사용자 지정 프롬프트가 시스템 프롬프트를 완전히 대체하도록 허용합니다. 이로 인해 예상되는 기능이 작동하지 않을 수 있습니다.',
 	'settings.agentConfig.apiConfigurationHeading': 'API 설정',
+	'settings.agentConfig.contextCachingName': '컨텍스트 캐싱 활성화',
+	'settings.agentConfig.contextCachingDesc':
+		'Gemini 모델에서 대화 기록 접두사를 캐싱합니다. 32k 토큰 이상의 세션에서 비용을 절감하고 지연 시간을 줄여줍니다.',
+	'settings.agentConfig.filesApiName': 'Gemini Files API 활성화',
+	'settings.agentConfig.filesApiDesc':
+		'대용량 바이너리 첨부 파일(이미지, 동영상, 오디오, PDF)을 매 메시지마다 인라인으로 전송하는 대신 Gemini의 안전한 파일 호스팅에 업로드합니다. 요청 크기를 줄이고 후속 턴의 속도를 높입니다.',
 	'settings.agentConfig.logToFileName': '파일에 로그 기록',
 	'settings.agentConfig.logToFileDesc':
 		'로그 항목을 플러그인 상태 폴더의 파일에 기록합니다. 오류 및 경고는 항상 기록되며, 디버그 항목은 디버그 모드가 필요합니다. 로그 파일은 1MB에 도달하면 자동으로 로테이션됩니다.',
@@ -418,6 +418,13 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': '비활성화됨',
 	'ragStatus.statusRateLimited': '요청 제한됨',
 	'ragStatus.statusUnknown': '알 수 없음',
+	'time.justNow': '방금 전',
+	'time.minuteAgoSingular': '{count}분 전',
+	'time.minutesAgoPlural': '{count}분 전',
+	'time.hourAgoSingular': '{count}시간 전',
+	'time.hoursAgoPlural': '{count}시간 전',
+	'time.dayAgoSingular': '{count}일 전',
+	'time.daysAgoPlural': '{count}일 전',
 	'scheduler.presetOnce': '한 번',
 	'scheduler.presetDaily': '매일 (24시간마다)',
 	'scheduler.presetDailyAt': '매일 특정 시간에',
@@ -676,6 +683,7 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': '파일 너무 큼: {name}이(가) 누적 첨부 용량 제한인 20MB를 초과합니다',
 	'agent.attachments.attached': '{name} 첨부됨',
 	'agent.progress.thinking': '생각 중...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining}개 남음)',
 	'agent.progress.generating': '답변 생성 중...',
 	'agent.progress.processing': '응답 처리 중...',
 	'agent.progress.elapsedAria': '경과 시간',

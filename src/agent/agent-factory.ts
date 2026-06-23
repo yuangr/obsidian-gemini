@@ -16,6 +16,6 @@ export class AgentFactory {
 	 * @returns Configured ModelApi instance
 	 */
 	static createAgentModel(plugin: ObsidianGemini, session: ChatSession): ModelApi {
-		return ModelClientFactory.createChatModel(plugin, session.modelConfig);
+		return ModelClientFactory.createChatModel(plugin, { sessionId: session.id, ...session.modelConfig });
 	}
 }

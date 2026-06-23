@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const tr: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} gün önce',
-	'time.dayAgoSingular': '{count} gün önce',
-	'time.hoursAgoPlural': '{count} saat önce',
-	'time.hourAgoSingular': '{count} saat önce',
-	'time.minutesAgoPlural': '{count} dakika önce',
-	'time.minuteAgoSingular': '{count} dakika önce',
-	'time.justNow': 'Az önce',
 	'agent.empty.title': 'Bir sohbet başlatın',
 	'agent.empty.description': 'Kasanızla aktif olarak çalışabilen yapay zeka asistanınız.',
 	'agent.empty.capabilitiesTitle': 'Ajan ne yapabilir?',
@@ -140,6 +134,12 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'UYARI: Özel istemlerin sistem istemini tamamen değiştirmesine izin verir. Bu durum beklenen işlevselliği bozabilir.',
 	'settings.agentConfig.apiConfigurationHeading': 'API yapılandırması',
+	'settings.agentConfig.contextCachingName': 'Bağlam Önbelleğe Almayı Etkinleştir',
+	'settings.agentConfig.contextCachingDesc':
+		'Gemini modellerinde konuşma geçmişi önekini önbelleğe alır. 32k token üzerindeki oturumlar için maliyetleri düşürür ve gecikmeyi azaltır.',
+	'settings.agentConfig.filesApiName': "Gemini Files API'sini Etkinleştir",
+	'settings.agentConfig.filesApiDesc':
+		"Büyük ikili ekleri (görsel, video, ses, PDF) her mesajla birlikte satır içi göndermek yerine Gemini'ın güvenli dosya barındırma hizmetine yükler. İstek boyutunu azaltır ve sonraki turları hızlandırır.",
 	'settings.agentConfig.logToFileName': 'Dosyaya kaydet',
 	'settings.agentConfig.logToFileDesc':
 		'Günlük kayıtlarını eklenti durum klasöründeki bir dosyaya yazın. Hatalar ve uyarılar her zaman günlüğe kaydedilir; hata ayıklama kayıtları hata ayıklama modunu gerektirir. Günlük dosyaları 1 MB boyutunda otomatik olarak döndürülür.',
@@ -437,6 +437,13 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Devre Dışı',
 	'ragStatus.statusRateLimited': 'Hız sınırına ulaşıldı',
 	'ragStatus.statusUnknown': 'Bilinmiyor',
+	'time.justNow': 'Az önce',
+	'time.minuteAgoSingular': '{count} dakika önce',
+	'time.minutesAgoPlural': '{count} dakika önce',
+	'time.hourAgoSingular': '{count} saat önce',
+	'time.hoursAgoPlural': '{count} saat önce',
+	'time.dayAgoSingular': '{count} gün önce',
+	'time.daysAgoPlural': '{count} gün önce',
 	'scheduler.presetOnce': 'Bir kez',
 	'scheduler.presetDaily': 'Günlük (her 24 saatte bir)',
 	'scheduler.presetDailyAt': 'Her gün belirli bir saatte',
@@ -700,6 +707,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Dosya çok büyük: {name} toplam 20 MB ek sınırını aşıyor',
 	'agent.attachments.attached': '{name} eklendi',
 	'agent.progress.thinking': 'Düşünüyor...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining} kaldı)',
 	'agent.progress.generating': 'Yanıt oluşturuluyor...',
 	'agent.progress.processing': 'Yanıt işleniyor...',
 	'agent.progress.elapsedAria': 'Geçen süre',

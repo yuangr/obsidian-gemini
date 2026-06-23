@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const de: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': 'Vor {count} Tagen',
-	'time.dayAgoSingular': 'Vor {count} Tag',
-	'time.hoursAgoPlural': 'Vor {count} Stunden',
-	'time.hourAgoSingular': 'Vor {count} Stunde',
-	'time.minutesAgoPlural': 'Vor {count} Minuten',
-	'time.minuteAgoSingular': 'Vor {count} Minute',
-	'time.justNow': 'Gerade eben',
 	'agent.empty.title': 'Unterhaltung starten',
 	'agent.empty.description': 'Dein KI-Assistent, der aktiv mit deinem Vault arbeiten kann.',
 	'agent.empty.capabilitiesTitle': 'Was kann der Agent tun?',
@@ -141,6 +135,12 @@ export const de: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'WARNUNG: Ermöglicht es benutzerdefinierten Prompts, den System-Prompt vollständig zu ersetzen. Dies kann die erwartete Funktionalität beeinträchtigen.',
 	'settings.agentConfig.apiConfigurationHeading': 'API-Konfiguration',
+	'settings.agentConfig.contextCachingName': 'Kontext-Caching aktivieren',
+	'settings.agentConfig.contextCachingDesc':
+		'Konversationsverlauf-Präfix auf Gemini-Modellen zwischenspeichern. Spart Kosten und verringert die Latenz bei Sitzungen mit mehr als 32k Token.',
+	'settings.agentConfig.filesApiName': 'Gemini Files API aktivieren',
+	'settings.agentConfig.filesApiDesc':
+		'Große binäre Anhänge (Bilder, Videos, Audio, PDFs) in das sichere Datei-Hosting von Gemini hochladen, anstatt sie mit jeder Nachricht inline zu senden. Reduziert die Anfragegröße und beschleunigt nachfolgende Interaktionen.',
 	'settings.agentConfig.logToFileName': 'In Datei protokollieren',
 	'settings.agentConfig.logToFileDesc':
 		'Schreibe Protokolleinträge in eine Datei im Plugin-Statusordner. Fehler und Warnungen werden immer protokolliert; Debug-Einträge erfordern den Debug-Modus. Protokolldateien werden automatisch bei 1 MB rotiert.',
@@ -442,6 +442,13 @@ export const de: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Deaktiviert',
 	'ragStatus.statusRateLimited': 'Rate-Limit erreicht',
 	'ragStatus.statusUnknown': 'Unbekannt',
+	'time.justNow': 'Gerade eben',
+	'time.minuteAgoSingular': 'Vor {count} Minute',
+	'time.minutesAgoPlural': 'Vor {count} Minuten',
+	'time.hourAgoSingular': 'Vor {count} Stunde',
+	'time.hoursAgoPlural': 'Vor {count} Stunden',
+	'time.dayAgoSingular': 'Vor {count} Tag',
+	'time.daysAgoPlural': 'Vor {count} Tagen',
 	'scheduler.presetOnce': 'Einmalig',
 	'scheduler.presetDaily': 'Täglich (alle 24 Std.)',
 	'scheduler.presetDailyAt': 'Täglich um Uhrzeit',
@@ -707,6 +714,7 @@ export const de: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Datei zu groß: {name} überschreitet das Gesamtlimit für Anhänge von 20 MB',
 	'agent.attachments.attached': '{name} angehängt',
 	'agent.progress.thinking': 'Denkt nach...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining} verbleibend)',
 	'agent.progress.generating': 'Antwort wird generiert...',
 	'agent.progress.processing': 'Antwort wird verarbeitet...',
 	'agent.progress.elapsedAria': 'Vergangene Zeit',

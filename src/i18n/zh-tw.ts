@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const zhTW: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} 天前',
-	'time.dayAgoSingular': '{count} 天前',
-	'time.hoursAgoPlural': '{count} 小時前',
-	'time.hourAgoSingular': '{count} 小時前',
-	'time.minutesAgoPlural': '{count} 分鐘前',
-	'time.minuteAgoSingular': '{count} 分鐘前',
-	'time.justNow': '剛剛',
 	'agent.empty.title': '開始對話',
 	'agent.empty.description': '能主動與您的 vault 協作的 AI 助理。',
 	'agent.empty.capabilitiesTitle': 'Agent 可以做什麼？',
@@ -123,6 +117,12 @@ export const zhTW: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideName': '允許覆寫系統提示詞',
 	'settings.agentConfig.systemPromptOverrideDesc': '警告：允許自訂提示詞完全取代系統提示詞。這可能會破壞預期的功能。',
 	'settings.agentConfig.apiConfigurationHeading': 'API 設定',
+	'settings.agentConfig.contextCachingName': '啟用上下文快取',
+	'settings.agentConfig.contextCachingDesc':
+		'在 Gemini 模型上快取對話歷史前綴。針對超過 32k tokens 的工作階段，可節省成本並降低延遲。',
+	'settings.agentConfig.filesApiName': '啟用 Gemini Files API',
+	'settings.agentConfig.filesApiDesc':
+		'將大型二進位附件（圖片、影片、音訊、PDF）上傳至 Gemini 的安全檔案託管服務，而不是在每條訊息中內嵌傳送。這能減少請求大小並加快後續輪次的處理速度。',
 	'settings.agentConfig.logToFileName': '記錄至檔案',
 	'settings.agentConfig.logToFileDesc':
 		'將記錄項目寫入外掛狀態資料夾中的檔案。錯誤和警告一律會記錄；除錯項目需要啟用除錯模式。記錄檔在達到 1 MB 時會自動輪替。',
@@ -397,6 +397,13 @@ export const zhTW: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': '已停用',
 	'ragStatus.statusRateLimited': '已達速率限制',
 	'ragStatus.statusUnknown': '未知',
+	'time.justNow': '剛剛',
+	'time.minuteAgoSingular': '{count} 分鐘前',
+	'time.minutesAgoPlural': '{count} 分鐘前',
+	'time.hourAgoSingular': '{count} 小時前',
+	'time.hoursAgoPlural': '{count} 小時前',
+	'time.dayAgoSingular': '{count} 天前',
+	'time.daysAgoPlural': '{count} 天前',
 	'scheduler.presetOnce': '一次',
 	'scheduler.presetDaily': '每日（每 24 小時）',
 	'scheduler.presetDailyAt': '每日固定時間',
@@ -642,6 +649,7 @@ export const zhTW: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': '檔案過大：{name} 超過 20MB 的累計附件限制',
 	'agent.attachments.attached': '已附加 {name}',
 	'agent.progress.thinking': '思考中...',
+	'agent.progress.thinkingWithBudget': '{thinking} (剩餘 {remaining})',
 	'agent.progress.generating': '正在生成回應...',
 	'agent.progress.processing': '正在處理回應...',
 	'agent.progress.elapsedAria': '已用時間',

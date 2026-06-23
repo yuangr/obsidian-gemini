@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const ru: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} дн. назад',
-	'time.dayAgoSingular': '{count} день назад',
-	'time.hoursAgoPlural': '{count} ч. назад',
-	'time.hourAgoSingular': '{count} час назад',
-	'time.minutesAgoPlural': '{count} мин. назад',
-	'time.minuteAgoSingular': '{count} минуту назад',
-	'time.justNow': 'Только что',
 	'agent.empty.title': 'Начать беседу',
 	'agent.empty.description': 'Ваш ИИ-ассистент, который может активно работать с вашим хранилищем.',
 	'agent.empty.capabilitiesTitle': 'Что умеет агент?',
@@ -139,6 +133,12 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'ВНИМАНИЕ: Позволяет пользовательским промптам полностью заменять системный промпт. Это может нарушить ожидаемую функциональность.',
 	'settings.agentConfig.apiConfigurationHeading': 'Настройка API',
+	'settings.agentConfig.contextCachingName': 'Включить кэширование контекста',
+	'settings.agentConfig.contextCachingDesc':
+		'Кэширование префикса истории разговора в моделях Gemini. Экономит средства и снижает задержку для сессий объемом более 32k токенов.',
+	'settings.agentConfig.filesApiName': 'Включить Gemini Files API',
+	'settings.agentConfig.filesApiDesc':
+		'Загрузка больших бинарных вложений (изображений, видео, аудио, PDF) на безопасный хостинг файлов Gemini вместо их отправки внутри каждого сообщения. Уменьшает размер запроса и ускоряет последующие шаги.',
 	'settings.agentConfig.logToFileName': 'Записывать логи в файл',
 	'settings.agentConfig.logToFileDesc':
 		'Записывать логи в файл в папке состояния плагина. Ошибки и предупреждения записываются всегда; для записей отладки требуется включить режим отладки. Файлы логов автоматически ротируются при достижении 1 МБ.',
@@ -438,6 +438,13 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Отключено',
 	'ragStatus.statusRateLimited': 'Ограничение частоты запросов',
 	'ragStatus.statusUnknown': 'Неизвестно',
+	'time.justNow': 'Только что',
+	'time.minuteAgoSingular': '{count} минуту назад',
+	'time.minutesAgoPlural': '{count} мин. назад',
+	'time.hourAgoSingular': '{count} час назад',
+	'time.hoursAgoPlural': '{count} ч. назад',
+	'time.dayAgoSingular': '{count} день назад',
+	'time.daysAgoPlural': '{count} дн. назад',
 	'scheduler.presetOnce': 'Однократно',
 	'scheduler.presetDaily': 'Ежедневно (каждые 24 ч)',
 	'scheduler.presetDailyAt': 'Ежедневно в указанное время',
@@ -704,6 +711,7 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Файл слишком большой: {name} превышает общий лимит вложений в 20 МБ',
 	'agent.attachments.attached': 'Прикреплен файл {name}',
 	'agent.progress.thinking': 'Думает...',
+	'agent.progress.thinkingWithBudget': '{thinking} (осталось {remaining})',
 	'agent.progress.generating': 'Генерация ответа...',
 	'agent.progress.processing': 'Обработка ответа...',
 	'agent.progress.elapsedAria': 'Прошедшее время',

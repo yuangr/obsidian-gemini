@@ -9,8 +9,10 @@ import { ModelUseCase } from '../../../../src/api/model-use-case';
 // Capture every call to `client.models.generateContent` so tests can assert on
 // the params (system instruction, contents, etc.) the SDK sees. vi.hoisted lets
 // us share the spy with the factory while keeping vitest's mock-hoisting safe.
-const { generateContentMock } = vi.hoisted(() => ({
+const { generateContentMock, cachesCreateMock, filesUploadMock } = vi.hoisted(() => ({
 	generateContentMock: vi.fn(),
+	cachesCreateMock: vi.fn().mockResolvedValue({ name: 'cachedContents/test-cache-id' }),
+	filesUploadMock: vi.fn().mockResolvedValue({ name: 'files/test-file-id', uri: 'https://files.gemini/test-file-id' }),
 }));
 
 vi.mock('@google/genai', () => ({
@@ -20,6 +22,12 @@ vi.mock('@google/genai', () => ({
 			models: {
 				generateContent: generateContentMock,
 				generateContentStream: vi.fn(),
+			},
+			caches: {
+				create: cachesCreateMock,
+			},
+			files: {
+				upload: filesUploadMock,
 			},
 		};
 	}),
@@ -967,6 +975,161 @@ describe('GeminiClient', () => {
 
 			const params = (generateContentMock as Mock).mock.calls[0][0];
 			expect(params.config.maxOutputTokens).toBe(4096);
+		});
+	});
+
+	describe('Advanced AI Optimizations', () => {
+		describe('Context Caching', () => {
+			test('creates and uses context cache when history exceeds threshold', async () => {
+				mockPlugin.settings.contextCachingEnabled = true;
+				client = new GeminiClient(
+					{
+						apiKey: 'test-api-key',
+						model: 'gemini-pro',
+						sessionId: 'test-session-123',
+					},
+					new GeminiPrompts(mockPlugin),
+					mockPlugin
+				);
+
+				// Create history exceeding 32,768 tokens (approx 131,000 chars)
+				const largeHistory = [
+					{
+						role: 'user',
+						parts: [{ text: 'a'.repeat(140000) }],
+					},
+					{
+						role: 'model',
+						parts: [{ text: 'hello' }],
+					},
+				];
+
+				await client.generateModelResponse({
+					kind: 'extended',
+					userMessage: 'new user message',
+					conversationHistory: largeHistory,
+				} as ExtendedModelRequest);
+
+				// Verify caches.create was called
+				expect(cachesCreateMock).toHaveBeenCalled();
+				const cacheParams = cachesCreateMock.mock.calls[0][0];
+				expect(cacheParams.model).toBe('gemini-pro');
+				expect(cacheParams.config.contents).toHaveLength(2); // Cached prefix: everything except the last turn (which was length 2)
+
+				// Verify generateContent was called with cachedContent
+				expect(generateContentMock).toHaveBeenCalled();
+				const genParams = generateContentMock.mock.calls[0][0];
+				expect(genParams.config.cachedContent).toBe('cachedContents/test-cache-id');
+
+				// Verify cached properties (systemInstruction, tools) were deleted from request config to prevent duplicate errors
+				expect(genParams.config.systemInstruction).toBeUndefined();
+				expect(genParams.config.tools).toBeUndefined();
+
+				// Suffix contains the rest: only the new user message
+				expect(genParams.contents).toHaveLength(1);
+			});
+
+			test('skips caching when history is below threshold', async () => {
+				mockPlugin.settings.contextCachingEnabled = true;
+				client = new GeminiClient(
+					{
+						apiKey: 'test-api-key',
+						model: 'gemini-pro',
+						sessionId: 'test-session-123',
+					},
+					new GeminiPrompts(mockPlugin),
+					mockPlugin
+				);
+
+				const smallHistory = [
+					{
+						role: 'user',
+						parts: [{ text: 'short message' }],
+					},
+				];
+
+				await client.generateModelResponse({
+					kind: 'extended',
+					userMessage: 'hello',
+					conversationHistory: smallHistory,
+				} as ExtendedModelRequest);
+
+				expect(cachesCreateMock).not.toHaveBeenCalled();
+				const genParams = generateContentMock.mock.calls[0][0];
+				expect(genParams.config.cachedContent).toBeUndefined();
+			});
+		});
+
+		describe('Files API', () => {
+			test('uploads binary files via Files API when enabled', async () => {
+				mockPlugin.settings.filesApiEnabled = true;
+				client = new GeminiClient(
+					{
+						apiKey: 'test-api-key',
+						model: 'gemini-pro',
+					},
+					new GeminiPrompts(mockPlugin),
+					mockPlugin
+				);
+
+				await client.generateModelResponse({
+					prompt: '',
+					kind: 'extended',
+					userMessage: 'look at this image',
+					conversationHistory: [],
+					inlineAttachments: [{ base64: 'abc', mimeType: 'image/png' }],
+				} as ExtendedModelRequest);
+
+				// Verify files.upload was called
+				expect(filesUploadMock).toHaveBeenCalled();
+
+				// Verify request part uses fileData instead of inlineData
+				const genParams = generateContentMock.mock.calls[0][0];
+				const userParts = genParams.contents[0].parts;
+				expect(userParts).toContainEqual({
+					fileData: {
+						fileUri: 'https://files.gemini/test-file-id',
+						mimeType: 'image/png',
+					},
+				});
+				expect(userParts).not.toContainEqual(
+					expect.objectContaining({
+						inlineData: expect.any(Object),
+					})
+				);
+			});
+
+			test('falls back to inlineData when Files API is disabled', async () => {
+				mockPlugin.settings.filesApiEnabled = false;
+				client = new GeminiClient(
+					{
+						apiKey: 'test-api-key',
+						model: 'gemini-pro',
+					},
+					new GeminiPrompts(mockPlugin),
+					mockPlugin
+				);
+
+				await client.generateModelResponse({
+					prompt: '',
+					kind: 'extended',
+					userMessage: 'look at this image',
+					conversationHistory: [],
+					inlineAttachments: [{ base64: 'abc', mimeType: 'image/png' }],
+				} as ExtendedModelRequest);
+
+				expect(filesUploadMock).not.toHaveBeenCalled();
+
+				// Verify request part uses inlineData
+				const genParams = generateContentMock.mock.calls[0][0];
+				const userParts = genParams.contents[0].parts;
+				expect(userParts).toContainEqual({
+					inlineData: {
+						data: 'abc',
+						mimeType: 'image/png',
+					},
+				});
+			});
 		});
 	});
 });

@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const pt: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': 'Há {count} dias',
-	'time.dayAgoSingular': 'Há {count} dia',
-	'time.hoursAgoPlural': 'Há {count} horas',
-	'time.hourAgoSingular': 'Há {count} hora',
-	'time.minutesAgoPlural': 'Há {count} minutos',
-	'time.minuteAgoSingular': 'Há {count} minuto',
-	'time.justNow': 'Ainda agora',
 	'agent.empty.title': 'Iniciar uma conversa',
 	'agent.empty.description': 'O seu assistente de IA que pode trabalhar ativamente com o seu vault.',
 	'agent.empty.capabilitiesTitle': 'O que pode o agente fazer?',
@@ -139,6 +133,12 @@ export const pt: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'AVISO: Permite que prompts personalizados substituam completamente o prompt do sistema. Isto pode corromper a funcionalidade esperada.',
 	'settings.agentConfig.apiConfigurationHeading': 'Configuração da API',
+	'settings.agentConfig.contextCachingName': 'Ativar cache de contexto',
+	'settings.agentConfig.contextCachingDesc':
+		'Armazenar em cache o prefixo do histórico de conversação nos modelos Gemini. Poupa custos e reduz a latência para sessões acima de 32k tokens.',
+	'settings.agentConfig.filesApiName': 'Ativar API de Ficheiros do Gemini',
+	'settings.agentConfig.filesApiDesc':
+		'Carregar anexos binários grandes (imagens, vídeo, áudio, PDFs) para o alojamento seguro de ficheiros do Gemini em vez de os enviar incorporados em cada mensagem. Reduz o tamanho do pedido e acelera as interações subsequentes.',
 	'settings.agentConfig.logToFileName': 'Registar num ficheiro',
 	'settings.agentConfig.logToFileDesc':
 		'Escreve registos num ficheiro na pasta de estado do plugin. Os erros e avisos são sempre registados; os registos de depuração requerem o modo de depuração. Os ficheiros de registo são rodados automaticamente a 1 MB.',
@@ -438,6 +438,13 @@ export const pt: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Desativado',
 	'ragStatus.statusRateLimited': 'Limite de taxa atingido',
 	'ragStatus.statusUnknown': 'Desconhecido',
+	'time.justNow': 'Ainda agora',
+	'time.minuteAgoSingular': 'Há {count} minuto',
+	'time.minutesAgoPlural': 'Há {count} minutos',
+	'time.hourAgoSingular': 'Há {count} hora',
+	'time.hoursAgoPlural': 'Há {count} horas',
+	'time.dayAgoSingular': 'Há {count} dia',
+	'time.daysAgoPlural': 'Há {count} dias',
 	'scheduler.presetOnce': 'Uma vez',
 	'scheduler.presetDaily': 'Diariamente (a cada 24h)',
 	'scheduler.presetDailyAt': 'Diariamente à hora',
@@ -701,6 +708,7 @@ export const pt: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Ficheiro demasiado grande: {name} excede o limite cumulativo de anexo de 20MB',
 	'agent.attachments.attached': 'Anexado {name}',
 	'agent.progress.thinking': 'A pensar...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining} restantes)',
 	'agent.progress.generating': 'A gerar resposta...',
 	'agent.progress.processing': 'A processar resposta...',
 	'agent.progress.elapsedAria': 'Tempo decorrido',

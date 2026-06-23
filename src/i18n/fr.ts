@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const fr: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': 'Il y a {count} jours',
-	'time.dayAgoSingular': 'Il y a {count} jour',
-	'time.hoursAgoPlural': 'Il y a {count} heures',
-	'time.hourAgoSingular': 'Il y a {count} heure',
-	'time.minutesAgoPlural': 'Il y a {count} minutes',
-	'time.minuteAgoSingular': 'Il y a {count} minute',
-	'time.justNow': "À l'instant",
 	'agent.empty.title': 'Démarrer une conversation',
 	'agent.empty.description': 'Votre assistant IA qui peut travailler activement avec votre coffre.',
 	'agent.empty.capabilitiesTitle': "Que peut faire l'agent ?",
@@ -141,6 +135,12 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		"AVERTISSEMENT : Permet aux invites personnalisées de remplacer complètement l'invite système. Cela peut perturber le fonctionnement attendu.",
 	'settings.agentConfig.apiConfigurationHeading': "Configuration de l'API",
+	'settings.agentConfig.contextCachingName': 'Activer la mise en cache du contexte',
+	'settings.agentConfig.contextCachingDesc':
+		"Met en cache le préfixe de l'historique des conversations sur les modèles Gemini. Réduit les coûts et la latence pour les sessions de plus de 32k jetons.",
+	'settings.agentConfig.filesApiName': "Activer l'API Gemini Files",
+	'settings.agentConfig.filesApiDesc':
+		"Téléversez les pièces jointes volumineuses (images, vidéos, audio, PDF) sur l'hébergement de fichiers sécurisé de Gemini au lieu de les envoyer directement dans chaque message. Réduit la taille des requêtes et accélère les échanges suivants.",
 	'settings.agentConfig.logToFileName': 'Enregistrer dans un fichier',
 	'settings.agentConfig.logToFileDesc':
 		"Écrire les entrées de journal dans un fichier du dossier d'état du plugin. Les erreurs et les avertissements sont toujours enregistrés ; les entrées de débogage nécessitent le mode débogage. Les fichiers de journalisation subissent une rotation automatique à 1 Mo.",
@@ -442,6 +442,13 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Désactivé',
 	'ragStatus.statusRateLimited': 'Limite de débit atteinte',
 	'ragStatus.statusUnknown': 'Inconnu',
+	'time.justNow': "À l'instant",
+	'time.minuteAgoSingular': 'Il y a {count} minute',
+	'time.minutesAgoPlural': 'Il y a {count} minutes',
+	'time.hourAgoSingular': 'Il y a {count} heure',
+	'time.hoursAgoPlural': 'Il y a {count} heures',
+	'time.dayAgoSingular': 'Il y a {count} jour',
+	'time.daysAgoPlural': 'Il y a {count} jours',
 	'scheduler.presetOnce': 'Une fois',
 	'scheduler.presetDaily': 'Quotidien (toutes les 24h)',
 	'scheduler.presetDailyAt': 'Tous les jours à une heure précise',
@@ -709,6 +716,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 		'Fichier trop volumineux : {name} dépasse la limite cumulée de 20 Mo pour les pièces jointes',
 	'agent.attachments.attached': '{name} joint',
 	'agent.progress.thinking': 'Réflexion...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining} restant)',
 	'agent.progress.generating': 'Génération de la réponse...',
 	'agent.progress.processing': 'Traitement de la réponse...',
 	'agent.progress.elapsedAria': 'Temps écoulé',

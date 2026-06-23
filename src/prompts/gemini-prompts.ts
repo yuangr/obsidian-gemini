@@ -140,7 +140,7 @@ export class GeminiPrompts {
 			return customPrompt.content;
 		}
 
-		const ragEnabled = !!(this.plugin?.settings.ragIndexing.enabled && this.plugin?.ragIndexing?.isReady());
+		const ragEnabled = !!(this.plugin?.settings?.ragIndexing?.enabled && this.plugin?.ragIndexing?.isReady());
 
 		// Render agent rules (static behavioral guidance) — only when tools are available
 		let agentRulesSection = '';

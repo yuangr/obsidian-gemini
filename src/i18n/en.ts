@@ -448,6 +448,24 @@ export const en = {
 		message: 'API configuration',
 		context: 'Sub-heading inside Agent Config settings, above API retry/endpoint options.',
 	},
+	'settings.agentConfig.contextCachingName': {
+		message: 'Enable Context Caching',
+		context: 'Settings toggle name for enabling Gemini context caching.',
+	},
+	'settings.agentConfig.contextCachingDesc': {
+		message:
+			'Cache conversation history prefix on Gemini models. Saves costs and reduces latency for sessions above 32k tokens.',
+		context: 'Settings toggle description for Gemini context caching.',
+	},
+	'settings.agentConfig.filesApiName': {
+		message: 'Enable Gemini Files API',
+		context: 'Settings toggle name for enabling the Gemini Files API.',
+	},
+	'settings.agentConfig.filesApiDesc': {
+		message:
+			"Upload large binary attachments (images, video, audio, PDFs) to Gemini's secure file hosting instead of sending them inline with every message. Reduces request size and speeds up subsequent turns.",
+		context: 'Settings toggle description for the Gemini Files API.',
+	},
 	'settings.agentConfig.logToFileName': {
 		message: 'Log to file',
 		context: 'Settings toggle name for writing log entries to a file.',

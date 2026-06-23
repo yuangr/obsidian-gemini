@@ -16,4 +16,5 @@ export interface GeminiClientConfig {
 	topP?: number;
 	maxOutputTokens?: number;
 	streamingEnabled?: boolean;
+	sessionId?: string;
 }

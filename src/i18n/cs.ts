@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const cs: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': 'Před {count} dny',
-	'time.dayAgoSingular': 'Před {count} dnem',
-	'time.hoursAgoPlural': 'Před {count} hodinami',
-	'time.hourAgoSingular': 'Před {count} hodinou',
-	'time.minutesAgoPlural': 'Před {count} minutami',
-	'time.minuteAgoSingular': 'Před {count} minutou',
-	'time.justNow': 'Právě teď',
 	'agent.empty.title': 'Zahájit konverzaci',
 	'agent.empty.description': 'Váš AI asistent, který dokáže aktivně pracovat s vaším vaultem.',
 	'agent.empty.capabilitiesTitle': 'Co agent dokáže?',
@@ -137,6 +131,12 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'VAROVÁNÍ: Umožňuje vlastním promptům zcela nahradit systémový prompt. To může narušit očekávanou funkčnost.',
 	'settings.agentConfig.apiConfigurationHeading': 'Konfigurace API',
+	'settings.agentConfig.contextCachingName': 'Povolit ukládání kontextu do mezipaměti',
+	'settings.agentConfig.contextCachingDesc':
+		'Ukládá prefix historie konverzace do mezipaměti u modelů Gemini. Šetří náklady a snižuje latenci u relací nad 32k tokenů.',
+	'settings.agentConfig.filesApiName': 'Povolit Gemini Files API',
+	'settings.agentConfig.filesApiDesc':
+		'Nahrávejte velké binární přílohy (obrázky, video, audio, PDF) na zabezpečené úložiště souborů Gemini namísto jejich odesílání přímo v každé zprávě. Snižuje velikost požadavků a zrychluje následné kroky.',
 	'settings.agentConfig.logToFileName': 'Zapisovat do souboru protokolu',
 	'settings.agentConfig.logToFileDesc':
 		'Zapisovat záznamy protokolu do souboru ve složce stavu pluginu. Chyby a varování jsou protokolovány vždy; záznamy ladění vyžadují režim ladění. Soubory protokolu jsou automaticky rotovány při velikosti 1 MB.',
@@ -425,6 +425,13 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Zakázáno',
 	'ragStatus.statusRateLimited': 'Omezeno limitem',
 	'ragStatus.statusUnknown': 'Neznámý',
+	'time.justNow': 'Právě teď',
+	'time.minuteAgoSingular': 'Před {count} minutou',
+	'time.minutesAgoPlural': 'Před {count} minutami',
+	'time.hourAgoSingular': 'Před {count} hodinou',
+	'time.hoursAgoPlural': 'Před {count} hodinami',
+	'time.dayAgoSingular': 'Před {count} dnem',
+	'time.daysAgoPlural': 'Před {count} dny',
 	'scheduler.presetOnce': 'Jednou',
 	'scheduler.presetDaily': 'Denně (každých 24 h)',
 	'scheduler.presetDailyAt': 'Denně v určený čas',
@@ -686,6 +693,7 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Soubor je příliš velký: {name} překračuje celkový limit příloh 20 MB',
 	'agent.attachments.attached': 'Připojeno {name}',
 	'agent.progress.thinking': 'Přemýšlím...',
+	'agent.progress.thinkingWithBudget': '{thinking} (zbývá {remaining})',
 	'agent.progress.generating': 'Generování odpovědi...',
 	'agent.progress.processing': 'Zpracování odpovědi...',
 	'agent.progress.elapsedAria': 'Uplynulý čas',

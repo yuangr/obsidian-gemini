@@ -77,6 +77,26 @@ export async function renderAgentConfigSettings(
 	// on Ollama so users don't type a URL that silently does nothing.
 	if (plugin.settings.provider === 'gemini') {
 		new Setting(sectionEl)
+			.setName(t('settings.agentConfig.contextCachingName'))
+			.setDesc(t('settings.agentConfig.contextCachingDesc'))
+			.addToggle((toggle) =>
+				toggle.setValue(plugin.settings.contextCachingEnabled ?? true).onChange(async (value) => {
+					plugin.settings.contextCachingEnabled = value;
+					await plugin.saveSettings();
+				})
+			);
+
+		new Setting(sectionEl)
+			.setName(t('settings.agentConfig.filesApiName'))
+			.setDesc(t('settings.agentConfig.filesApiDesc'))
+			.addToggle((toggle) =>
+				toggle.setValue(plugin.settings.filesApiEnabled ?? true).onChange(async (value) => {
+					plugin.settings.filesApiEnabled = value;
+					await plugin.saveSettings();
+				})
+			);
+
+		new Setting(sectionEl)
 			.setName(t('settings.agentConfig.customEndpointName'))
 			.setDesc(t('settings.agentConfig.customEndpointDesc'))
 			.addText((text) => {

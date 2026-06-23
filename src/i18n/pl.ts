@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const pl: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} dni temu',
-	'time.dayAgoSingular': '{count} dzień temu',
-	'time.hoursAgoPlural': '{count} godz. temu',
-	'time.hourAgoSingular': '{count} godzinę temu',
-	'time.minutesAgoPlural': '{count} min temu',
-	'time.minuteAgoSingular': '{count} minutę temu',
-	'time.justNow': 'Przed chwilą',
 	'agent.empty.title': 'Rozpocznij konwersację',
 	'agent.empty.description': 'Twój asystent AI, który może aktywnie pracować z Twoim skarbcem.',
 	'agent.empty.capabilitiesTitle': 'Co potrafi agent?',
@@ -138,6 +132,12 @@ export const pl: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'OSTRZEŻENIE: Zezwala własnym promptom na całkowite zastąpienie promptu systemowego. Może to zakłócić oczekiwane działanie.',
 	'settings.agentConfig.apiConfigurationHeading': 'Konfiguracja API',
+	'settings.agentConfig.contextCachingName': 'Włącz buforowanie kontekstu',
+	'settings.agentConfig.contextCachingDesc':
+		'Buforuj prefiks historii konwersacji w modelach Gemini. Oszczędza koszty i zmniejsza opóźnienia w sesjach powyżej 32k tokenów.',
+	'settings.agentConfig.filesApiName': 'Włącz Gemini Files API',
+	'settings.agentConfig.filesApiDesc':
+		'Przesyłaj duże załączniki binarne (obrazy, wideo, audio, pliki PDF) do bezpiecznego hostingu plików Gemini zamiast wysyłać je bezpośrednio w każdej wiadomości. Zmniejsza to rozmiar żądania i przyspiesza kolejne tury.',
 	'settings.agentConfig.logToFileName': 'Zapisuj logi do pliku',
 	'settings.agentConfig.logToFileDesc':
 		'Zapisuj wpisy dziennika do pliku w folderze stanu wtyczki. Błędy i ostrzeżenia są zawsze rejestrowane; wpisy debugowania wymagają włączenia trybu debugowania. Pliki dziennika są automatycznie rotowane po osiągnięciu 1 MB.',
@@ -439,6 +439,13 @@ export const pl: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Wyłączone',
 	'ragStatus.statusRateLimited': 'Ograniczenie liczby żądań',
 	'ragStatus.statusUnknown': 'Nieznany',
+	'time.justNow': 'Przed chwilą',
+	'time.minuteAgoSingular': '{count} minutę temu',
+	'time.minutesAgoPlural': '{count} min temu',
+	'time.hourAgoSingular': '{count} godzinę temu',
+	'time.hoursAgoPlural': '{count} godz. temu',
+	'time.dayAgoSingular': '{count} dzień temu',
+	'time.daysAgoPlural': '{count} dni temu',
 	'scheduler.presetOnce': 'Jednorazowo',
 	'scheduler.presetDaily': 'Codziennie (co 24h)',
 	'scheduler.presetDailyAt': 'Codziennie o określonej godzinie',
@@ -700,6 +707,7 @@ export const pl: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Plik jest zbyt duży: {name} przekracza łączny limit załączników 20 MB',
 	'agent.attachments.attached': 'Dołączono {name}',
 	'agent.progress.thinking': 'Myślenie...',
+	'agent.progress.thinkingWithBudget': '{thinking} (pozostało {remaining})',
 	'agent.progress.generating': 'Generowanie odpowiedzi...',
 	'agent.progress.processing': 'Przetwarzanie odpowiedzi...',
 	'agent.progress.elapsedAria': 'Czas, który upłynął',

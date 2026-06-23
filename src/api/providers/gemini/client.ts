@@ -77,6 +77,27 @@ export class GeminiClient implements ModelApi {
 	private prompts: GeminiPrompts;
 	private plugin?: ObsidianGemini;
 
+	private static activeCaches = new Map<
+		string,
+		{
+			cacheName: string;
+			model: string;
+			systemInstruction: string;
+			toolsJson: string;
+			cachedTurnsJson: string;
+			expiresAt: number;
+		}
+	>();
+
+	private static uploadedFiles = new Map<
+		string,
+		{
+			fileUri: string;
+			mimeType: string;
+			expiresAt: number;
+		}
+	>();
+
 	constructor(config: GeminiClientConfig, prompts?: GeminiPrompts, plugin?: ObsidianGemini) {
 		this.config = {
 			temperature: 1.0,
@@ -245,9 +266,6 @@ export class GeminiClient implements ModelApi {
 			systemInstruction = request.prompt || '';
 		}
 
-		// Build conversation contents
-		const contents = this.buildContents(request);
-
 		// Build config
 		const config: any = {
 			temperature: request.temperature ?? this.config.temperature,
@@ -285,6 +303,109 @@ export class GeminiClient implements ModelApi {
 			config.tools.push({ functionDeclarations });
 		}
 
+		// Build conversation contents
+		let contents = await this.buildContents(request);
+
+		let cachedContent: string | undefined;
+
+		// Handle context caching if enabled and session ID is present
+		const sessionId = this.config.sessionId;
+		if (isExtended && sessionId && this.plugin?.settings.contextCachingEnabled) {
+			const estimatedTokens = estimateTokensFromContents(contents);
+			this.plugin.logger.debug(`[GeminiClient] Context Caching check: estimated tokens = ${estimatedTokens}`);
+
+			const now = Date.now();
+			// Clean up expired caches from map
+			for (const [key, cacheInfo] of GeminiClient.activeCaches.entries()) {
+				if (cacheInfo.expiresAt < now) {
+					GeminiClient.activeCaches.delete(key);
+				}
+			}
+
+			// We need at least 32,768 tokens to cache
+			if (estimatedTokens >= 32768) {
+				const toolsJson = JSON.stringify(config.tools || []);
+				const cachedInfo = GeminiClient.activeCaches.get(sessionId);
+
+				if (
+					cachedInfo &&
+					cachedInfo.model === model &&
+					cachedInfo.systemInstruction === (systemInstruction || '') &&
+					cachedInfo.toolsJson === toolsJson
+				) {
+					const cachedTurns = JSON.parse(cachedInfo.cachedTurnsJson) as Content[];
+					if (this.checkHistoryPrefixMatch(contents, cachedTurns)) {
+						this.plugin.logger.log(`[GeminiClient] Context Cache HIT! Reusing cache: ${cachedInfo.cacheName}`);
+						cachedInfo.expiresAt = now + 300000; // Reset TTL (5 mins)
+						cachedContent = cachedInfo.cacheName;
+
+						// Slice off cached turns from the request contents
+						contents = contents.slice(cachedTurns.length);
+					} else {
+						this.plugin.logger.log('[GeminiClient] Context Cache prefix mismatch, invalidating old cache');
+						GeminiClient.activeCaches.delete(sessionId);
+					}
+				}
+
+				// If no active cache matched, create a new one
+				if (!cachedContent && contents.length > 1) {
+					try {
+						// Cache all turns except the very last one to ensure request is never empty and prefix is stable
+						const contentsToCache = contents.slice(0, -1);
+						const cachedTokens = estimateTokensFromContents(contentsToCache);
+
+						if (cachedTokens >= 32768) {
+							this.plugin.logger.log(
+								`[GeminiClient] Context Cache MISS. Creating new context cache for session ${sessionId} (${cachedTokens} tokens)...`
+							);
+							const cache = await this.ai.caches.create({
+								model: model,
+								config: {
+									contents: contentsToCache,
+									systemInstruction: systemInstruction || '',
+									...(config.tools?.length && { tools: config.tools }),
+									ttl: '300s', // 5 minutes
+								},
+							});
+
+							if (cache && cache.name) {
+								this.plugin.logger.log(`[GeminiClient] Created context cache successfully: ${cache.name}`);
+								GeminiClient.activeCaches.set(sessionId, {
+									cacheName: cache.name,
+									model,
+									systemInstruction: systemInstruction || '',
+									toolsJson,
+									cachedTurnsJson: JSON.stringify(contentsToCache),
+									expiresAt: now + 300000,
+								});
+
+								cachedContent = cache.name;
+								// Slice off cached turns from the request contents
+								contents = contents.slice(contentsToCache.length);
+							}
+						}
+					} catch (e) {
+						this.plugin.logger.warn(
+							'[GeminiClient] Failed to create context cache (likely custom endpoint or unsupported model). Falling back to uncached request:',
+							e
+						);
+						GeminiClient.activeCaches.delete(sessionId);
+					}
+				}
+			} else {
+				// History is too small, delete any existing cache
+				GeminiClient.activeCaches.delete(sessionId);
+			}
+		}
+
+		if (cachedContent) {
+			config.cachedContent = cachedContent;
+			// Since systemInstruction and tools are loaded from the cache, we should NOT pass them
+			// again in the config, or the API might reject the request or complain about duplicates.
+			delete config.systemInstruction;
+			delete config.tools;
+		}
+
 		// Build params
 		// If no contents built, use a simple string from the prompt
 		let finalContents: any = contents;
@@ -308,7 +429,7 @@ export class GeminiClient implements ModelApi {
 	/**
 	 * Build Content[] array from request
 	 */
-	private buildContents(request: BaseModelRequest | ExtendedModelRequest): Content[] {
+	private async buildContents(request: BaseModelRequest | ExtendedModelRequest): Promise<Content[]> {
 		if (!isExtendedRequest(request)) {
 			// BaseModelRequest - just send the prompt as user message
 			if (!request.prompt) return [];
@@ -327,8 +448,31 @@ export class GeminiClient implements ModelApi {
 		if (extReq.conversationHistory?.length) {
 			for (const entry of extReq.conversationHistory) {
 				// Support Content format (already has role and parts)
-				if ('role' in entry && 'parts' in entry) {
-					contents.push(entry);
+				if ('role' in entry && entry.parts?.length) {
+					// Map parts to use Files API if enabled
+					const parts = await Promise.all(
+						entry.parts.map(async (part) => {
+							if (part.inlineData && part.inlineData.data && part.inlineData.mimeType) {
+								const uploaded = await this.uploadAttachmentIfEnabled({
+									base64: part.inlineData.data,
+									mimeType: part.inlineData.mimeType,
+								});
+								if (uploaded) {
+									return {
+										fileData: {
+											fileUri: uploaded.fileUri,
+											mimeType: uploaded.mimeType,
+										},
+									};
+								}
+							}
+							return part;
+						})
+					);
+					contents.push({
+						role: entry.role,
+						parts,
+					});
 				}
 				// Support our internal format with role and text
 				else if ('role' in entry && 'text' in entry) {
@@ -365,12 +509,22 @@ export class GeminiClient implements ModelApi {
 		// Add inline data attachments (images, audio, video, PDF)
 		const allAttachments = [...(extReq.inlineAttachments || []), ...(extReq.imageAttachments || [])];
 		for (const attachment of allAttachments) {
-			userParts.push({
-				inlineData: {
-					mimeType: attachment.mimeType,
-					data: attachment.base64,
-				},
-			});
+			const uploaded = await this.uploadAttachmentIfEnabled(attachment);
+			if (uploaded) {
+				userParts.push({
+					fileData: {
+						fileUri: uploaded.fileUri,
+						mimeType: uploaded.mimeType,
+					},
+				});
+			} else {
+				userParts.push({
+					inlineData: {
+						mimeType: attachment.mimeType,
+						data: attachment.base64,
+					},
+				});
+			}
 		}
 
 		// Add current user message with all parts (only if there are parts)
@@ -382,6 +536,81 @@ export class GeminiClient implements ModelApi {
 		}
 
 		return contents;
+	}
+
+	private async uploadAttachmentIfEnabled(attachment: {
+		base64: string;
+		mimeType: string;
+	}): Promise<{ fileUri: string; mimeType: string } | null> {
+		if (this.plugin && !this.plugin.settings.filesApiEnabled) {
+			return null;
+		}
+
+		const key = this.getBase64Key(attachment.base64);
+		const now = Date.now();
+		const cached = GeminiClient.uploadedFiles.get(key);
+		if (cached && cached.expiresAt > now) {
+			return cached;
+		}
+
+		try {
+			this.plugin?.logger.log(
+				`[GeminiClient] Uploading attachment to Files API (${attachment.mimeType}, size=${attachment.base64.length} chars)...`
+			);
+			const blob = this.base64ToBlob(attachment.base64, attachment.mimeType);
+			const file = await this.ai.files.upload({
+				file: blob,
+				config: {
+					mimeType: attachment.mimeType,
+				},
+			});
+
+			if (file && file.uri) {
+				this.plugin?.logger.log(`[GeminiClient] Uploaded attachment successfully. URI: ${file.uri}`);
+				const cachedInfo = {
+					fileUri: file.uri,
+					mimeType: attachment.mimeType,
+					expiresAt: now + 24 * 60 * 60 * 1000, // cache local for 24 hours
+				};
+				GeminiClient.uploadedFiles.set(key, cachedInfo);
+				return cachedInfo;
+			}
+		} catch (e) {
+			this.plugin?.logger.warn('[GeminiClient] Files API upload failed. Falling back to inline base64:', e);
+		}
+
+		return null;
+	}
+
+	private getBase64Key(base64: string): string {
+		if (base64.length <= 200) return base64;
+		return `${base64.length}-${base64.substring(0, 100)}-${base64.substring(base64.length - 100)}`;
+	}
+
+	private base64ToBlob(base64: string, mimeType: string): Blob {
+		let binaryString: string;
+		if (typeof atob === 'function') {
+			binaryString = atob(base64);
+		} else {
+			binaryString = Buffer.from(base64, 'base64').toString('binary');
+		}
+		const byteNumbers = new Array(binaryString.length);
+		for (let i = 0; i < binaryString.length; i++) {
+			byteNumbers[i] = binaryString.charCodeAt(i);
+		}
+		const byteArray = new Uint8Array(byteNumbers);
+		return new Blob([byteArray], { type: mimeType });
+	}
+
+	private checkHistoryPrefixMatch(current: Content[], cached: Content[]): boolean {
+		if (current.length < cached.length) return false;
+		for (let i = 0; i < cached.length; i++) {
+			const curTurn = current[i];
+			const cachedTurn = cached[i];
+			if (curTurn.role !== cachedTurn.role) return false;
+			if (JSON.stringify(curTurn.parts) !== JSON.stringify(cachedTurn.parts)) return false;
+		}
+		return true;
 	}
 
 	/**
@@ -601,4 +830,9 @@ export class GeminiClient implements ModelApi {
 			throw error;
 		}
 	}
+}
+
+function estimateTokensFromContents(contents: Content[]): number {
+	const json = JSON.stringify(contents ?? []);
+	return Math.ceil(json.length / 4);
 }

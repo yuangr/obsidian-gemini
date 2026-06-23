@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const uk: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} дн. тому',
-	'time.dayAgoSingular': '{count} день тому',
-	'time.hoursAgoPlural': '{count} год тому',
-	'time.hourAgoSingular': '{count} годину тому',
-	'time.minutesAgoPlural': '{count} хв тому',
-	'time.minuteAgoSingular': '{count} хвилину тому',
-	'time.justNow': 'Щойно',
 	'agent.empty.title': 'Почати розмову',
 	'agent.empty.description': 'Ваш AI-помічник, який може активно працювати з вашим сховищем.',
 	'agent.empty.capabilitiesTitle': 'Що вміє агент?',
@@ -138,6 +132,12 @@ export const uk: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'УВАГА: Дозволяє власним підказкам повністю замінити системну підказку. Це може порушити очікувану роботу.',
 	'settings.agentConfig.apiConfigurationHeading': 'Конфігурація API',
+	'settings.agentConfig.contextCachingName': 'Увімкнути кешування контексту',
+	'settings.agentConfig.contextCachingDesc':
+		'Кешувати префікс історії розмов на моделях Gemini. Заощаджує кошти та зменшує затримку для сесій обсягом понад 32k токенів.',
+	'settings.agentConfig.filesApiName': 'Увімкнути Gemini Files API',
+	'settings.agentConfig.filesApiDesc':
+		'Завантажувати великі бінарні вкладення (зображення, відео, аудіо, PDF) у безпечний файловий хостинг Gemini замість того, щоб надсилати їх безпосередньо в кожному повідомленні. Зменшує розмір запиту та прискорює наступні кроки.',
 	'settings.agentConfig.logToFileName': 'Записувати лог у файл',
 	'settings.agentConfig.logToFileDesc':
 		'Записувати лог-повідомлення у файл у папці стану плагіну. Помилки та попередження записуються завжди; для запису налагоджувальних повідомлень потрібен режим налагодження. Файли логів автоматично ротуються при досягненні 1 МБ.',
@@ -432,6 +432,13 @@ export const uk: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Вимкнено',
 	'ragStatus.statusRateLimited': 'Обмежено лімітом запитів',
 	'ragStatus.statusUnknown': 'Невідомо',
+	'time.justNow': 'Щойно',
+	'time.minuteAgoSingular': '{count} хвилину тому',
+	'time.minutesAgoPlural': '{count} хв тому',
+	'time.hourAgoSingular': '{count} годину тому',
+	'time.hoursAgoPlural': '{count} год тому',
+	'time.dayAgoSingular': '{count} день тому',
+	'time.daysAgoPlural': '{count} дн. тому',
 	'scheduler.presetOnce': 'Один раз',
 	'scheduler.presetDaily': 'Щодня (кожні 24 год)',
 	'scheduler.presetDailyAt': 'Щодня в заданий час',
@@ -696,6 +703,7 @@ export const uk: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Файл занадто великий: {name} перевищує сукупний ліміт вкладень 20 МБ',
 	'agent.attachments.attached': 'Прикріплено {name}',
 	'agent.progress.thinking': 'Міркування...',
+	'agent.progress.thinkingWithBudget': '{thinking} (залишилося {remaining})',
 	'agent.progress.generating': 'Генерація відповіді...',
 	'agent.progress.processing': 'Обробка відповіді...',
 	'agent.progress.elapsedAria': 'Час, що минув',

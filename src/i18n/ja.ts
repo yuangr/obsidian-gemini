@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const ja: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} 日前',
-	'time.dayAgoSingular': '{count} 日前',
-	'time.hoursAgoPlural': '{count} 時間前',
-	'time.hourAgoSingular': '{count} 時間前',
-	'time.minutesAgoPlural': '{count} 分前',
-	'time.minuteAgoSingular': '{count} 分前',
-	'time.justNow': 'たった今',
 	'agent.empty.title': '会話を開始する',
 	'agent.empty.description': '保管庫と連携して能動的に動作するAIアシスタント。',
 	'agent.empty.capabilitiesTitle': 'エージェントにできること',
@@ -137,6 +131,12 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'警告: カスタムプロンプトがシステムプロンプトを完全に置き換えることを許可します。これにより、期待される機能が動作しなくなる可能性があります。',
 	'settings.agentConfig.apiConfigurationHeading': 'API設定',
+	'settings.agentConfig.contextCachingName': 'コンテキストキャッシュを有効にする',
+	'settings.agentConfig.contextCachingDesc':
+		'Geminiモデルで会話履歴のプレフィックスをキャッシュします。32kトークンを超えるセッションにおいて、コストを削減し、レイテンシを低減します。',
+	'settings.agentConfig.filesApiName': 'Gemini Files APIを有効にする',
+	'settings.agentConfig.filesApiDesc':
+		'大容量のバイナリ添付ファイル（画像、動画、音声、PDF）を、メッセージごとにインラインで送信する代わりに、Geminiの安全なファイルホスティングにアップロードします。リクエストサイズを削減し、その後のターンの処理を高速化します。',
 	'settings.agentConfig.logToFileName': 'ファイルにログを出力',
 	'settings.agentConfig.logToFileDesc':
 		'ログエントリをプラグインのステートフォルダ内のファイルに書き込みます。エラーと警告は常に記録されます。デバッグエントリの記録にはデバッグモードが必要です。ログファイルは1 MBで自動的にローテーションされます。',
@@ -427,6 +427,13 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': '無効',
 	'ragStatus.statusRateLimited': 'レート制限中',
 	'ragStatus.statusUnknown': '不明',
+	'time.justNow': 'たった今',
+	'time.minuteAgoSingular': '{count} 分前',
+	'time.minutesAgoPlural': '{count} 分前',
+	'time.hourAgoSingular': '{count} 時間前',
+	'time.hoursAgoPlural': '{count} 時間前',
+	'time.dayAgoSingular': '{count} 日前',
+	'time.daysAgoPlural': '{count} 日前',
 	'scheduler.presetOnce': '1回のみ',
 	'scheduler.presetDaily': '毎日 (24時間ごと)',
 	'scheduler.presetDailyAt': '毎日指定時刻',
@@ -691,6 +698,7 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'ファイルサイズが大きすぎます: {name} は累計20MBの添付制限を超えています',
 	'agent.attachments.attached': '{name} が添付されました',
 	'agent.progress.thinking': '考え中...',
+	'agent.progress.thinkingWithBudget': '{thinking} (残り {remaining})',
 	'agent.progress.generating': '回答を生成中...',
 	'agent.progress.processing': 'レスポンスを処理中...',
 	'agent.progress.elapsedAria': '経過時間',

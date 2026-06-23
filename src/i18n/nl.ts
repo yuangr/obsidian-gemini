@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const nl: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} dagen geleden',
-	'time.dayAgoSingular': '{count} dag geleden',
-	'time.hoursAgoPlural': '{count} uur geleden',
-	'time.hourAgoSingular': '{count} uur geleden',
-	'time.minutesAgoPlural': '{count} minuten geleden',
-	'time.minuteAgoSingular': '{count} minuut geleden',
-	'time.justNow': 'Zojuist',
 	'agent.empty.title': 'Start een gesprek',
 	'agent.empty.description': 'Je AI-assistent die actief met je vault kan werken.',
 	'agent.empty.capabilitiesTitle': 'Wat kan de agent doen?',
@@ -138,6 +132,12 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'WAARSCHUWING: Hiermee kunnen aangepaste prompts de systeemprompt volledig vervangen. Dit kan de verwachte functionaliteit verstoren.',
 	'settings.agentConfig.apiConfigurationHeading': 'API-configuratie',
+	'settings.agentConfig.contextCachingName': 'Contextcaching inschakelen',
+	'settings.agentConfig.contextCachingDesc':
+		'Sla de prefix van de gespreksgeschiedenis op in de cache op Gemini-modellen. Bespaart kosten en vermindert de latentie voor sessies met meer dan 32k tokens.',
+	'settings.agentConfig.filesApiName': 'Gemini Files API inschakelen',
+	'settings.agentConfig.filesApiDesc':
+		"Upload grote binaire bijlagen (afbeeldingen, video, audio, pdf's) naar de beveiligde bestandshosting van Gemini in plaats van ze inline met elk bericht mee te sturen. Dit verkleint de verzoekgrootte en versnelt volgende beurten.",
 	'settings.agentConfig.logToFileName': 'Loggen naar bestand',
 	'settings.agentConfig.logToFileDesc':
 		'Schrijf logboekvermeldingen naar een bestand in de plugin-statusmap. Fouten en waarschuwingen worden altijd gelogd; debug-vermeldingen vereisen de foutopsporingsmodus. Logbestanden worden automatisch geroteerd bij 1 MB.',
@@ -430,6 +430,13 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Uitgeschakeld',
 	'ragStatus.statusRateLimited': 'Snelheidslimiet bereikt',
 	'ragStatus.statusUnknown': 'Onbekend',
+	'time.justNow': 'Zojuist',
+	'time.minuteAgoSingular': '{count} minuut geleden',
+	'time.minutesAgoPlural': '{count} minuten geleden',
+	'time.hourAgoSingular': '{count} uur geleden',
+	'time.hoursAgoPlural': '{count} uur geleden',
+	'time.dayAgoSingular': '{count} dag geleden',
+	'time.daysAgoPlural': '{count} dagen geleden',
 	'scheduler.presetOnce': 'Eenmalig',
 	'scheduler.presetDaily': 'Dagelijks (elke 24u)',
 	'scheduler.presetDailyAt': 'Dagelijks op tijdstip',
@@ -696,6 +703,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 		'Bestand te groot: {name} overschrijdt de cumulatieve limiet voor bijlagen van 20MB',
 	'agent.attachments.attached': '{name} bijgevoegd',
 	'agent.progress.thinking': 'Nadenken...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining} resterend)',
 	'agent.progress.generating': 'Antwoord genereren...',
 	'agent.progress.processing': 'Antwoord verwerken...',
 	'agent.progress.elapsedAria': 'Verstreken tijd',

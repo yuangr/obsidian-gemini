@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const no: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': 'for {count} dager siden',
-	'time.dayAgoSingular': 'for {count} dag siden',
-	'time.hoursAgoPlural': 'for {count} timer siden',
-	'time.hourAgoSingular': 'for {count} time siden',
-	'time.minutesAgoPlural': 'for {count} minutter siden',
-	'time.minuteAgoSingular': 'for {count} minutt siden',
-	'time.justNow': 'Akkurat nå',
 	'agent.empty.title': 'Start en samtale',
 	'agent.empty.description': 'Din AI-assistent som kan jobbe aktivt med hvelvet ditt.',
 	'agent.empty.capabilitiesTitle': 'Hva kan agenten gjøre?',
@@ -138,6 +132,12 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'ADVARSEL: Tillater at tilpassede ledetekster fullstendig erstatter systemledeteksten. Dette kan ødelegge forventet funksjonalitet.',
 	'settings.agentConfig.apiConfigurationHeading': 'API-konfigurasjon',
+	'settings.agentConfig.contextCachingName': 'Aktiver mellomlagring av kontekst',
+	'settings.agentConfig.contextCachingDesc':
+		'Mellomlagre samtalehistorikk-prefiks på Gemini-modeller. Sparer kostnader og reduserer forsinkelse for økter over 32k tokener.',
+	'settings.agentConfig.filesApiName': 'Aktiver Gemini Files-API',
+	'settings.agentConfig.filesApiDesc':
+		'Last opp store binære vedlegg (bilder, video, lyd, PDF-er) til Geminis sikre filvertstjeneste i stedet for å sende dem innebygd med hver melding. Reduserer forespørselsstørrelsen og øker hastigheten på påfølgende runder.',
 	'settings.agentConfig.logToFileName': 'Logg til fil',
 	'settings.agentConfig.logToFileDesc':
 		'Skriv logginnføringer til en fil i mappen for plugin-status. Feil og advarsler logges alltid; feilsøkingsinnføringer krever feilsøkingsmodus. Loggfiler roteres automatisk ved 1 MB.',
@@ -428,6 +428,13 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Deaktivert',
 	'ragStatus.statusRateLimited': 'Hastighetsbegrenset',
 	'ragStatus.statusUnknown': 'Ukjent',
+	'time.justNow': 'Akkurat nå',
+	'time.minuteAgoSingular': 'for {count} minutt siden',
+	'time.minutesAgoPlural': 'for {count} minutter siden',
+	'time.hourAgoSingular': 'for {count} time siden',
+	'time.hoursAgoPlural': 'for {count} timer siden',
+	'time.dayAgoSingular': 'for {count} dag siden',
+	'time.daysAgoPlural': 'for {count} dager siden',
 	'scheduler.presetOnce': 'Én gang',
 	'scheduler.presetDaily': 'Daglig (hver 24. time)',
 	'scheduler.presetDailyAt': 'Daglig på angitt tidspunkt',
@@ -687,6 +694,7 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Filen er for stor: {name} overskrider den samlede grensen for vedlegg på 20 MB',
 	'agent.attachments.attached': 'Lagt ved {name}',
 	'agent.progress.thinking': 'Tenker...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining} gjenstår)',
 	'agent.progress.generating': 'Genererer svar...',
 	'agent.progress.processing': 'Behandler svar...',
 	'agent.progress.elapsedAria': 'Forløpt tid',

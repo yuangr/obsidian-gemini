@@ -129,7 +129,7 @@ export class ModelClientFactory {
 	 */
 	static createChatModel(
 		plugin: ObsidianGemini,
-		sessionConfig?: { model?: string; temperature?: number; topP?: number }
+		sessionConfig?: { model?: string; temperature?: number; topP?: number; sessionId?: string }
 	): ModelApi {
 		const overrides: Partial<GeminiClientConfig> = {};
 
@@ -140,6 +140,9 @@ export class ModelClientFactory {
 			}
 			if (sessionConfig.topP !== undefined) {
 				overrides.topP = sessionConfig.topP;
+			}
+			if (sessionConfig.sessionId !== undefined) {
+				overrides.sessionId = sessionConfig.sessionId;
 			}
 			// Note: model override is handled at request time via session.modelConfig
 		}

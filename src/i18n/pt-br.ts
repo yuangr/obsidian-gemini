@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const ptBR: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': 'há {count} dias',
-	'time.dayAgoSingular': 'há {count} dia',
-	'time.hoursAgoPlural': 'há {count} horas',
-	'time.hourAgoSingular': 'há {count} hora',
-	'time.minutesAgoPlural': 'há {count} minutos',
-	'time.minuteAgoSingular': 'há {count} minuto',
-	'time.justNow': 'Agora mesmo',
 	'agent.empty.title': 'Iniciar uma conversa',
 	'agent.empty.description': 'Seu assistente de IA que pode trabalhar ativamente com seu vault.',
 	'agent.empty.capabilitiesTitle': 'O que o agente pode fazer?',
@@ -139,6 +133,12 @@ export const ptBR: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'AVISO: Permite que prompts personalizados substituam completamente o prompt do sistema. Isso pode quebrar a funcionalidade esperada.',
 	'settings.agentConfig.apiConfigurationHeading': 'Configuração da API',
+	'settings.agentConfig.contextCachingName': 'Ativar cache de contexto',
+	'settings.agentConfig.contextCachingDesc':
+		'Armazena em cache o prefixo do histórico de conversas em modelos Gemini. Economiza custos e reduz a latência para sessões acima de 32k tokens.',
+	'settings.agentConfig.filesApiName': 'Ativar API de Arquivos do Gemini',
+	'settings.agentConfig.filesApiDesc':
+		'Faz o upload de anexos binários grandes (imagens, vídeos, áudio, PDFs) para a hospedagem segura de arquivos do Gemini em vez de enviá-los inline com cada mensagem. Reduz o tamanho da requisição e acelera os turnos subsequentes.',
 	'settings.agentConfig.logToFileName': 'Registrar em arquivo',
 	'settings.agentConfig.logToFileDesc':
 		'Grava entradas de log em um arquivo na pasta de estado do plugin. Erros e avisos são sempre registrados; entradas de depuração requerem o modo de depuração. Os arquivos de log são rotacionados automaticamente em 1 MB.',
@@ -435,6 +435,13 @@ export const ptBR: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Desativado',
 	'ragStatus.statusRateLimited': 'Limite de taxa atingido',
 	'ragStatus.statusUnknown': 'Desconhecido',
+	'time.justNow': 'Agora mesmo',
+	'time.minuteAgoSingular': 'há {count} minuto',
+	'time.minutesAgoPlural': 'há {count} minutos',
+	'time.hourAgoSingular': 'há {count} hora',
+	'time.hoursAgoPlural': 'há {count} horas',
+	'time.dayAgoSingular': 'há {count} dia',
+	'time.daysAgoPlural': 'há {count} dias',
 	'scheduler.presetOnce': 'Uma vez',
 	'scheduler.presetDaily': 'Diariamente (a cada 24h)',
 	'scheduler.presetDailyAt': 'Diariamente em horário definido',
@@ -695,6 +702,7 @@ export const ptBR: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Arquivo muito grande: {name} excede o limite cumulativo de anexo de 20MB',
 	'agent.attachments.attached': 'Anexado {name}',
 	'agent.progress.thinking': 'Pensando...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining} restante(s))',
 	'agent.progress.generating': 'Gerando resposta...',
 	'agent.progress.processing': 'Processando resposta...',
 	'agent.progress.elapsedAria': 'Tempo decorrido',

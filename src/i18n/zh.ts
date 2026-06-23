@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const zh: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} 天前',
-	'time.dayAgoSingular': '{count} 天前',
-	'time.hoursAgoPlural': '{count} 小时前',
-	'time.hourAgoSingular': '{count} 小时前',
-	'time.minutesAgoPlural': '{count} 分钟前',
-	'time.minuteAgoSingular': '{count} 分钟前',
-	'time.justNow': '刚刚',
 	'agent.empty.title': '开始对话',
 	'agent.empty.description': '可以主动在您的 vault 中工作的 AI 助手。',
 	'agent.empty.capabilitiesTitle': '智能体可以做什么？',
@@ -125,6 +119,12 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideName': '允许覆盖系统提示词',
 	'settings.agentConfig.systemPromptOverrideDesc': '警告：允许自定义提示词完全替换系统提示词。这可能会破坏预期功能。',
 	'settings.agentConfig.apiConfigurationHeading': 'API 配置',
+	'settings.agentConfig.contextCachingName': '启用上下文缓存',
+	'settings.agentConfig.contextCachingDesc':
+		'在 Gemini 模型上缓存对话历史前缀。为超过 32k token 的会话节省成本并降低延迟。',
+	'settings.agentConfig.filesApiName': '启用 Gemini Files API',
+	'settings.agentConfig.filesApiDesc':
+		'将大型二进制附件（图像、视频、音频、PDF）上传到 Gemini 的安全文件托管服务，而不是随每条消息内联发送。这可以减小请求大小并加快后续轮次的响应速度。',
 	'settings.agentConfig.logToFileName': '记录日志到文件',
 	'settings.agentConfig.logToFileDesc':
 		'将日志条目写入插件状态文件夹中的文件。错误和警告始终会被记录；调试条目需要启用调试模式。日志文件在达到 1 MB 时会自动轮转。',
@@ -399,6 +399,13 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': '已禁用',
 	'ragStatus.statusRateLimited': '已达到速率限制',
 	'ragStatus.statusUnknown': '未知',
+	'time.justNow': '刚刚',
+	'time.minuteAgoSingular': '{count} 分钟前',
+	'time.minutesAgoPlural': '{count} 分钟前',
+	'time.hourAgoSingular': '{count} 小时前',
+	'time.hoursAgoPlural': '{count} 小时前',
+	'time.dayAgoSingular': '{count} 天前',
+	'time.daysAgoPlural': '{count} 天前',
 	'scheduler.presetOnce': '仅一次',
 	'scheduler.presetDaily': '每日（每 24 小时）',
 	'scheduler.presetDailyAt': '每日定时',
@@ -644,6 +651,7 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': '文件过大：{name} 超出了 20MB 的累计附件限制',
 	'agent.attachments.attached': '已添加 {name}',
 	'agent.progress.thinking': '思考中...',
+	'agent.progress.thinkingWithBudget': '{thinking} (剩余 {remaining})',
 	'agent.progress.generating': '正在生成回复...',
 	'agent.progress.processing': '正在处理响应...',
 	'agent.progress.elapsedAria': '已用时间',

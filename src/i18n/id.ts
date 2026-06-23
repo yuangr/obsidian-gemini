@@ -2,14 +2,8 @@
 // Hand-refinements are welcome and PRESERVED: a key is only regenerated when its
 // English source string in src/i18n/en.ts changes (tracked in translation-state.json).
 import type { TranslationKey } from './en';
+
 export const id: Partial<Record<TranslationKey, string>> = {
-	'time.daysAgoPlural': '{count} hari yang lalu',
-	'time.dayAgoSingular': '{count} hari yang lalu',
-	'time.hoursAgoPlural': '{count} jam yang lalu',
-	'time.hourAgoSingular': '{count} jam yang lalu',
-	'time.minutesAgoPlural': '{count} menit yang lalu',
-	'time.minuteAgoSingular': '{count} menit yang lalu',
-	'time.justNow': 'Baru saja',
 	'agent.empty.title': 'Mulai percakapan',
 	'agent.empty.description': 'Asisten AI Anda yang dapat bekerja secara aktif dengan vault Anda.',
 	'agent.empty.capabilitiesTitle': 'Apa yang bisa dilakukan agen?',
@@ -137,6 +131,12 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'settings.agentConfig.systemPromptOverrideDesc':
 		'PERINGATAN: Mengizinkan prompt kustom untuk sepenuhnya menggantikan prompt sistem. Ini dapat merusak fungsionalitas yang diharapkan.',
 	'settings.agentConfig.apiConfigurationHeading': 'Konfigurasi API',
+	'settings.agentConfig.contextCachingName': 'Aktifkan Caching Konteks',
+	'settings.agentConfig.contextCachingDesc':
+		'Simpan cache prefiks riwayat percakapan pada model Gemini. Menghemat biaya dan mengurangi latensi untuk sesi di atas 32k token.',
+	'settings.agentConfig.filesApiName': 'Aktifkan Gemini Files API',
+	'settings.agentConfig.filesApiDesc':
+		'Unggah lampiran biner besar (gambar, video, audio, PDF) ke hosting file aman Gemini alih-alih mengirimkannya secara inline di setiap pesan. Mengurangi ukuran permintaan dan mempercepat giliran berikutnya.',
 	'settings.agentConfig.logToFileName': 'Catat ke berkas',
 	'settings.agentConfig.logToFileDesc':
 		'Tulis entri log ke file di folder status plugin. Kesalahan dan peringatan selalu dicatat; entri debug memerlukan mode debug. File log dirotasi secara otomatis pada ukuran 1 MB.',
@@ -430,6 +430,13 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'ragStatus.statusDisabled': 'Dinonaktifkan',
 	'ragStatus.statusRateLimited': 'Dibatasi laju',
 	'ragStatus.statusUnknown': 'Tidak Diketahui',
+	'time.justNow': 'Baru saja',
+	'time.minuteAgoSingular': '{count} menit yang lalu',
+	'time.minutesAgoPlural': '{count} menit yang lalu',
+	'time.hourAgoSingular': '{count} jam yang lalu',
+	'time.hoursAgoPlural': '{count} jam yang lalu',
+	'time.dayAgoSingular': '{count} hari yang lalu',
+	'time.daysAgoPlural': '{count} hari yang lalu',
 	'scheduler.presetOnce': 'Sekali',
 	'scheduler.presetDaily': 'Harian (setiap 24 jam)',
 	'scheduler.presetDailyAt': 'Harian pada waktu tertentu',
@@ -688,6 +695,7 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'agent.attachments.fileTooLarge': 'Berkas terlalu besar: {name} melebihi batas lampiran kumulatif 20MB',
 	'agent.attachments.attached': '{name} dilampirkan',
 	'agent.progress.thinking': 'Berpikir...',
+	'agent.progress.thinkingWithBudget': '{thinking} ({remaining} tersisa)',
 	'agent.progress.generating': 'Menghasilkan respons...',
 	'agent.progress.processing': 'Memproses respons...',
 	'agent.progress.elapsedAria': 'Waktu berlalu',
