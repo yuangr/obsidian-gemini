@@ -30,6 +30,15 @@ import { getDefaultModelForRole } from '../../../models';
 import { decodeHtmlEntities } from '../../../utils/html-entities';
 import type { GeminiClientConfig } from './config';
 import { ModelUseCase } from '../../model-use-case';
+import {
+	buildUserInputStep,
+	contentToSteps,
+	extractModelResponseFromInteraction,
+	toolsToInteractionTools,
+	InteractionStreamAccumulator,
+	type InteractionStep,
+} from './interactions-mapper';
+import { installObsidianFetch } from './obsidian-fetch';
 
 /**
  * Per-use-case reasoning depth for Gemini 3.x `thinkingConfig.thinkingLevel`,
@@ -111,9 +120,22 @@ export class GeminiClient implements ModelApi {
 	}
 
 	/**
+	 * Whether this client routes through the GA Interactions API. Reads the
+	 * per-client config first (set by the factory), falling back to live plugin
+	 * settings for `createCustom` callers that don't thread the flag through.
+	 */
+	private get useInteractions(): boolean {
+		return this.config.useInteractionsApi ?? this.plugin?.settings?.useInteractionsApi ?? false;
+	}
+
+	/**
 	 * Generate a non-streaming response
 	 */
 	async generateModelResponse(request: BaseModelRequest | ExtendedModelRequest): Promise<ModelResponse> {
+		if (this.useInteractions) {
+			return this.generateViaInteractions(request);
+		}
+
 		const params = await this.buildGenerateContentParams(request);
 
 		try {
@@ -126,12 +148,186 @@ export class GeminiClient implements ModelApi {
 	}
 
 	/**
+	 * Route the Interactions (Next-Gen) client through Obsidian's requestUrl so its
+	 * requests bypass renderer CORS — the SDK otherwise uses the global fetch,
+	 * whose preflight to the Interactions endpoint fails in Obsidian (see #1023).
+	 */
+	private ensureInteractionsFetch(): void {
+		if (!installObsidianFetch(this.ai)) {
+			this.plugin?.logger.warn(
+				'[GeminiClient] Could not route Interactions client through Obsidian requestUrl; requests may fail due to CORS.'
+			);
+		}
+	}
+
+	/**
+	 * Non-streaming generation via the Interactions API (stateless transport).
+	 */
+	private async generateViaInteractions(request: BaseModelRequest | ExtendedModelRequest): Promise<ModelResponse> {
+		const params = await this.buildInteractionParams(request);
+		this.ensureInteractionsFetch();
+
+		try {
+			const interaction = await (this.ai as any).interactions.create(params);
+			return extractModelResponseFromInteraction(interaction);
+		} catch (error) {
+			this.plugin?.logger.error('[GeminiClient] Error creating interaction:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Streaming generation via the Interactions API. Consumes the step-based SSE
+	 * stream (`stream: true`) through an InteractionStreamAccumulator, emitting
+	 * text/reasoning chunks as they arrive and returning the assembled response
+	 * (text, thoughts, tool calls, usage) on completion. Cancellation stops
+	 * consuming and returns whatever has accumulated so far.
+	 */
+	private streamViaInteractions(
+		request: BaseModelRequest | ExtendedModelRequest,
+		onChunk: StreamCallback
+	): StreamingModelResponse {
+		let cancelled = false;
+		// The SDK's Stream exposes an AbortController; aborting it actively
+		// interrupts an in-flight SSE read so cancel() doesn't have to wait for the
+		// next frame (or the server) to unblock the `for await`.
+		let activeStream: { controller?: AbortController } | undefined;
+		const accumulator = new InteractionStreamAccumulator();
+
+		const cancel = () => {
+			cancelled = true;
+			try {
+				activeStream?.controller?.abort();
+			} catch {
+				// Best-effort: an SDK stream without a controller still stops via the flag.
+			}
+		};
+
+		const complete = (async (): Promise<ModelResponse> => {
+			const params = await this.buildInteractionParams(request);
+			params.stream = true;
+			this.ensureInteractionsFetch();
+
+			try {
+				const stream = await (this.ai as any).interactions.create(params);
+				activeStream = stream;
+				// Cancelled during request setup, before iteration began.
+				if (cancelled) {
+					cancel();
+					return accumulator.finalize();
+				}
+				for await (const event of stream) {
+					if (cancelled) break;
+					const chunk = accumulator.handleEvent(event);
+					if (chunk && (chunk.text || chunk.thought)) {
+						onChunk(chunk);
+					}
+				}
+				return accumulator.finalize();
+			} catch (error) {
+				if (cancelled) {
+					return accumulator.finalize();
+				}
+				this.plugin?.logger.error('[GeminiClient] Error streaming interaction:', error);
+				throw error;
+			}
+		})();
+
+		return {
+			complete,
+			cancel,
+		};
+	}
+
+	/**
+	 * Build Interactions `create` params from our request format, mirroring
+	 * `buildGenerateContentParams` but emitting the snake_case Interactions
+	 * surface. Stateless: full history is replayed in `input` and `store` is
+	 * false, so no `previous_interaction_id` is used.
+	 */
+	private async buildInteractionParams(
+		request: BaseModelRequest | ExtendedModelRequest
+	): Promise<Record<string, unknown>> {
+		const isExtended = isExtendedRequest(request);
+		const model = request.model || this.config.model || getDefaultModelForRole('chat');
+
+		const generationConfig: Record<string, unknown> = {
+			temperature: request.temperature ?? this.config.temperature,
+			top_p: request.topP ?? this.config.topP,
+			...(this.config.maxOutputTokens && { max_output_tokens: this.config.maxOutputTokens }),
+		};
+		// Interactions uses lowercase thinking levels; reuse the per-use-case map.
+		if (this.supportsThinking(model)) {
+			generationConfig.thinking_level =
+				THINKING_LEVEL_BY_USE_CASE[this.config.useCase ?? ModelUseCase.CHAT].toLowerCase();
+			generationConfig.thinking_summaries = 'auto';
+		}
+
+		const params: Record<string, unknown> = {
+			model,
+			store: false,
+			generation_config: generationConfig,
+		};
+
+		if (!isExtended) {
+			// One-shot request: the prompt is the entire input.
+			params.input = request.prompt || '';
+			return params;
+		}
+
+		const systemInstruction = await this.prompts.buildExtendedSystemInstruction(request);
+		if (systemInstruction) params.system_instruction = systemInstruction;
+
+		if (request.availableTools?.length) {
+			params.tools = toolsToInteractionTools(request.availableTools);
+		}
+
+		const input = this.buildInteractionInput(request);
+		params.input = input.length > 0 ? input : request.userMessage || '';
+		return params;
+	}
+
+	/**
+	 * Build the Interactions `input` step array: replayed history followed by the
+	 * current user turn (message + per-turn context + inline attachments).
+	 */
+	private buildInteractionInput(request: ExtendedModelRequest): InteractionStep[] {
+		const steps: InteractionStep[] = [];
+
+		for (const entry of request.conversationHistory ?? []) {
+			if ('role' in entry && 'parts' in entry) {
+				steps.push(...contentToSteps(entry as Content));
+			} else if ('role' in entry && 'text' in entry) {
+				const legacy = entry as Content & { text: string };
+				steps.push(
+					...contentToSteps({ role: legacy.role === 'user' ? 'user' : 'model', parts: [{ text: legacy.text }] })
+				);
+			} else if ('role' in entry && 'message' in entry) {
+				const legacy = entry as Content & { role: string; message: string };
+				steps.push(
+					...contentToSteps({ role: legacy.role === 'user' ? 'user' : 'model', parts: [{ text: legacy.message }] })
+				);
+			}
+		}
+
+		const attachments = [...(request.inlineAttachments || []), ...(request.imageAttachments || [])];
+		const userStep = buildUserInputStep(request.userMessage, request.perTurnContext, attachments);
+		if (userStep) steps.push(userStep);
+
+		return steps;
+	}
+
+	/**
 	 * Generate a streaming response
 	 */
 	generateStreamingResponse(
 		request: BaseModelRequest | ExtendedModelRequest,
 		onChunk: StreamCallback
 	): StreamingModelResponse {
+		if (this.useInteractions) {
+			return this.streamViaInteractions(request, onChunk);
+		}
+
 		let cancelled = false;
 		let accumulatedText = '';
 		let accumulatedRendered = '';
@@ -790,7 +986,15 @@ export class GeminiClient implements ModelApi {
 	}
 
 	/**
-	 * Generate an image from a text prompt
+	 * Generate an image from a text prompt.
+	 *
+	 * Intentionally stays on `generateContent` even when `useInteractionsApi` is
+	 * on (see #1016): image generation is a distinct one-shot capability on a
+	 * dedicated image model — not the conversational transport the flag governs —
+	 * and the existing path is proven across image-tools and scheduled tasks.
+	 * Migrating it to the Interactions image-output surface is deferred until
+	 * there's a concrete reason to (no user-facing benefit today).
+	 *
 	 * @param prompt - Text description of the image to generate
 	 * @param model - Image generation model (defaults to gemini-2.5-flash-image-preview)
 	 * @returns Base64 encoded image data

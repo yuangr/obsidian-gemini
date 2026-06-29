@@ -75,12 +75,12 @@ describe('sanitizeModelForFilename', () => {
 describe('getBaselinePath', () => {
 	it('joins provider and sanitized model under <evalsDir>/baselines', () => {
 		const path = getBaselinePath('/tmp/evals', 'ollama', 'gemma3:27b');
-		expect(path).toBe('/tmp/evals/baselines/ollama-gemma3-27b.json');
+		expect(path).toBe(join('/tmp/evals', 'baselines', 'ollama-gemma3-27b.json'));
 	});
 
 	it('defaults provider to gemini when missing', () => {
 		const path = getBaselinePath('/tmp/evals', undefined as any, 'gemini-2.5-flash');
-		expect(path).toBe('/tmp/evals/baselines/gemini-gemini-2.5-flash.json');
+		expect(path).toBe(join('/tmp/evals', 'baselines', 'gemini-gemini-2.5-flash.json'));
 	});
 
 	it('sanitizes path-traversal attempts in provider', () => {
@@ -88,11 +88,11 @@ describe('getBaselinePath', () => {
 		// but the function must still neutralize separators so neither segment
 		// can escape evals/baselines or compose unintended paths.
 		const path = getBaselinePath('/tmp/evals', '../foo' as any, 'gemini-2.5');
-		expect(path).toBe('/tmp/evals/baselines/..-foo-gemini-2.5.json');
-		expect(path.startsWith('/tmp/evals/baselines/')).toBe(true);
+		expect(path).toBe(join('/tmp/evals', 'baselines', '..-foo-gemini-2.5.json'));
+		expect(path.startsWith(join('/tmp/evals', 'baselines/'))).toBe(true);
 
 		const slashy = getBaselinePath('/tmp/evals', 'a/b' as any, 'm');
-		expect(slashy).toBe('/tmp/evals/baselines/a-b-m.json');
+		expect(slashy).toBe(join('/tmp/evals', 'baselines', 'a-b-m.json'));
 	});
 });
 

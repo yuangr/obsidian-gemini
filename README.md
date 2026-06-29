@@ -9,17 +9,32 @@ Gemini Scribe is an Obsidian plugin that integrates Google's Gemini AI models, p
 > - **Google Gemini (cloud)** — requires a Gemini API key (free tier available at [Google AI Studio](https://aistudio.google.com/apikey)).
 > - **Ollama (local)** — runs locally with no API key; install [Ollama](https://ollama.com), pull a model, and select it in settings. See [docs/guide/ollama-setup.md](docs/guide/ollama-setup.md) for the feature-parity table.
 
-## What's New in v4.9.2
+## What's New in v4.10.2 (Opt Edition)
 
-**⚡ Performance & Cost Optimizations**
+**🛠️ Gemini Scribe 4.10.2 - Interactions API transport fix, recoverable deletes & AI Optimizations**
 
 - **⚡ Parallel Tool Execution** - Independent, non-modifying read and search tools run concurrently in parallel, reducing latency in agent turns.
 - **💾 Context Caching** - Automatically caches conversation history prefix for sessions exceeding `32,768` tokens, dramatically reducing token costs and response latency for long chats.
 - **📂 Files API Uploads** - Uploads audio, video, PDF, and image attachments to Google's hosted Files API once per session, avoiding repeated base64 payloads across follow-up turns. Fallbacks to base64 if custom endpoints do not support it.
+- **🧪 Interactions API transport fixed** - With **Use Interactions API** enabled, every request failed with a CORS error ("Failed to fetch") after the Gemini SDK update to `@google/genai` 2.10.0, breaking chat and summarization for anyone who had the opt-in transport on. Requests now route through Obsidian's `requestUrl` again, so the Interactions path works. The transport remains off by default.
+- **🗑️ Safer file deletion** - When the agent deletes a file or folder it now follows your Obsidian "Deleted files" setting (system trash or the vault's `.trash` folder) instead of permanently removing it, so deletions are recoverable; includes minor correctness fixes.
 
-## What's New in v4.9.1
+_The full 4.10 feature set is unchanged:_
 
-**🔧 Gemini Scribe 4.9.1 - Vault Context Fix**
+- **🌍 Localized UI in 20 languages** - The entire plugin interface (settings, modals, agent view, commands, notices) is now translated, auto-selected from your Obsidian language with graceful fallback to English.
+- **🧠 Model reasoning display** - The agent shows the model's thinking inline in the tool activity block and persists it in session history, so you can follow how it reached an answer.
+- **🧪 Interactions API transport (experimental, opt-in)** - New **Use Interactions API** setting routes Gemini chat through Google's newer Interactions API, with full streaming of text, reasoning, tool calls, and grounded sources. Off by default and runs statelessly (your conversation history stays on your device); enable it under **Settings → Agent config → API configuration**, or leave it off to keep using the proven `generateContent` path.
+- **🗺️ Google Maps grounding tool** - The agent can ground answers in Google Maps data for place and location questions.
+- **🧠 Per-use-case thinking depth** - Reasoning effort is now tuned per task (completions think the least, agent chat the most) instead of one global setting, balancing latency and quality.
+- **⏳ Soft agent turn budget** - Long agent runs get a gentle reminder as they approach the turn limit, plus a one-shot extension, instead of stopping abruptly.
+- **📋 Copy buttons for tool calls** - Quickly copy tool-call parameters and results from the agent view.
+- **🔄 In-app model-list refresh** - Refresh the available Gemini model list without restarting.
+
+**Previous Updates (v4.10.1):**
+
+- **📝 Notes-only patch** - Completed the 4.10.0 release notes (which omitted several of the features above); no functional changes.
+
+**Previous Updates (v4.9.1):**
 
 - **🗂️ Initialize vault context fix** - Fixed the "Initialize vault context" / "Update vault context" button, which was sending a malformed model request and failing to generate AGENTS.md. The feature now works correctly.
 
@@ -46,10 +61,10 @@ Gemini Scribe is an Obsidian plugin that integrates Google's Gemini AI models, p
 
 ## Features
 
-- **Agent mode with Tool Calling:** An AI agent that can actively work with your vault! It can search for files, read content, create new notes, edit existing ones, move and rename files, create folders, and even conduct deep research with proper citations. Features persistent sessions, granular permission controls, session-specific model configuration, and a diff review view that lets you inspect and edit proposed file changes before they're written.
-- **Parallel Tool Execution [NEW]**: Execute independent read-only or search tools concurrently (e.g., file reads, search queries) in parallel to significantly reduce latency during multi-step agent runs, while state-modifying tools execute sequentially to avoid write race conditions.
-- **Context Caching [NEW]**: Automatically cache conversation history prefix using Google's Context Caching when session size exceeds `32,768` tokens, lowering token usage costs and improving response speed for long chat sessions.
-- **Files API Uploads [NEW]**: Securely upload large binary attachments (images, audio, video, PDFs) to Gemini's hosted Files API once per session, referencing them via lightweight URIs in subsequent turns to prevent repeated base64 payload overhead. Supports graceful fallback to base64 inline mode.
+- **Agent mode with Tool Calling:** An AI agent that can actively work with your vault! It can search for files, read content, create new notes, edit existing ones, move and rename files, create folders, and even conduct deep research with proper citations. Features persistent sessions, granular permission controls, session-specific model configuration, a diff review view that lets you inspect and edit proposed file changes before they're written, and **Plan Mode** — an opt-in UI affordance that generates a step-by-step plan for your approval before the agent acts.
+- **Parallel Tool Execution**: Execute independent read-only or search tools concurrently (e.g., file reads, search queries) in parallel to significantly reduce latency during multi-step agent runs, while state-modifying tools execute sequentially to avoid write race conditions.
+- **Context Caching**: Automatically cache conversation history prefix using Google's Context Caching when session size exceeds `32,768` tokens, lowering token usage costs and improving response speed for long chat sessions.
+- **Files API Uploads**: Securely upload large binary attachments (images, audio, video, PDFs) to Gemini's hosted Files API once per session, referencing them via lightweight URIs in subsequent turns to prevent repeated base64 payload overhead. Supports graceful fallback to base64 inline mode.
 - **Semantic Vault Search:** Search your vault by meaning, not just keywords. Uses Google's File Search API to index your notes in the background. The AI can find relevant content even when you don't remember exact words. Supports PDFs and attachments, with pause/resume controls and detailed status tracking.
 - **Context-Aware Agent:** Add specific notes as persistent context for your agent sessions. The agent can access and reference these context files throughout your conversation, providing highly relevant and personalized responses.
 - **Smart Summarization:** Quickly generate concise, one-sentence summaries of your notes and automatically store them in the document's frontmatter, using a dedicated Gemini model optimized for summarization.
@@ -131,7 +146,7 @@ Gemini Scribe is an Obsidian plugin that integrates Google's Gemini AI models, p
       - **Temperature:** Control AI creativity and randomness (0-2.0, automatically adjusted based on available models).
       - **Top P:** Control response diversity and focus (0-1.0).
       - **Model Discovery:** Gemini models are automatically fetched on startup (cached for 24h); click **Refresh model list** in General settings or run the "Gemini Scribe: Refresh model list" command to fetch a newly-published model immediately. Ollama users can click the same **Refresh model list** button after pulling new models.
-      - **API configuration:** Configure retry behavior and backoff delays.
+      - **API configuration:** Configure retry behavior, backoff delays, and the optional Use Interactions API transport (Gemini provider only).
       - **Tool Execution:** Control whether to stop agent execution on tool errors.
       - **Tool loop detection:** Prevent infinite tool execution loops.
       - **Developer Options:** Debug mode, file logging, and advanced configuration tools.
