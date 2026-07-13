@@ -15,15 +15,11 @@
  * interfaces) on purpose: the SDK marks `interactions` experimental and several
  * step types are not exported, so we avoid hard-coupling to unstable type names.
  */
-import type { Content, Part } from '@google/genai';
+import type { Content } from '@google/genai';
 import type { ModelResponse, ToolCall, ToolDefinition } from '../../interfaces/model-api';
 import { decodeHtmlEntities } from '../../../utils/html-entities';
-
-/** A `Part` that may carry Gemini's thought metadata. */
-interface PartWithThought extends Part {
-	thought?: boolean;
-	thoughtSignature?: string;
-}
+import { asRecord } from '../../../utils/error-utils';
+import { renderGroundingSources } from './grounding-render';
 
 /** A typed step in an Interactions `input` array or response `steps` array. */
 export type InteractionStep = Record<string, unknown>;
@@ -76,27 +72,28 @@ export function contentToSteps(content: Content): InteractionStep[] {
 	const callSteps: InteractionStep[] = [];
 
 	for (const part of content.parts ?? []) {
-		const p = part as PartWithThought;
-		if (p.functionCall) {
+		if (part.functionCall) {
 			const step: InteractionStep = {
 				type: 'function_call',
-				id: p.functionCall.id ?? p.functionCall.name ?? 'call',
-				name: p.functionCall.name,
-				arguments: p.functionCall.args ?? {},
+				id: part.functionCall.id ?? part.functionCall.name ?? 'call',
+				name: part.functionCall.name,
+				arguments: part.functionCall.args ?? {},
 			};
-			if (p.thoughtSignature) step.signature = p.thoughtSignature;
+			if (part.thoughtSignature) step.signature = part.thoughtSignature;
 			callSteps.push(step);
-		} else if (p.functionResponse) {
+		} else if (part.functionResponse) {
 			callSteps.push({
 				type: 'function_result',
-				call_id: p.functionResponse.id ?? p.functionResponse.name ?? 'call',
-				name: p.functionResponse.name,
-				result: functionResponseToResult(p.functionResponse.response),
+				call_id: part.functionResponse.id ?? part.functionResponse.name ?? 'call',
+				name: part.functionResponse.name,
+				result: functionResponseToResult(part.functionResponse.response),
 			});
-		} else if (p.inlineData?.data) {
-			mediaItems.push(inlineDataToContentItem(p.inlineData.mimeType ?? 'application/octet-stream', p.inlineData.data));
-		} else if (typeof p.text === 'string' && p.text.length > 0 && !p.thought) {
-			mediaItems.push({ type: 'text', text: p.text });
+		} else if (part.inlineData?.data) {
+			mediaItems.push(
+				inlineDataToContentItem(part.inlineData.mimeType ?? 'application/octet-stream', part.inlineData.data)
+			);
+		} else if (typeof part.text === 'string' && part.text.length > 0 && !part.thought) {
+			mediaItems.push({ type: 'text', text: part.text });
 		}
 	}
 
@@ -182,49 +179,6 @@ function collectCitationsFromContent(content: unknown, into: Map<string, Groundi
 	}
 }
 
-/** Escape a string for safe interpolation into HTML text/attribute context. */
-function escapeHtml(value: string): string {
-	return value
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
-}
-
-/** Return `value` only if it's an http(s) URL, else '#' — blocks javascript:/data: hrefs. */
-function safeExternalUrl(value: string): string {
-	try {
-		const parsed = new URL(value);
-		// Return the original (not parsed.toString(), which normalizes/adds a
-		// trailing slash) so the link stays faithful to the cited URL.
-		return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? value : '#';
-	} catch {
-		return '#';
-	}
-}
-
-/**
- * Render grounding sources as the same `<div class="search-grounding">` block the
- * generateContent path emits, so the agent view renders Interactions grounding
- * identically. Returns '' when there are no sources.
- *
- * Citation `url`/`title` come from model/provider annotations (untrusted), so the
- * href is restricted to http(s) and both the href and label are HTML-escaped to
- * keep `ModelResponse.rendered` injection-safe. Links get `rel="noopener noreferrer"`.
- */
-function renderGroundingSources(sources: GroundingSource[]): string {
-	if (sources.length === 0) return '';
-	const items = sources
-		.map((s) => {
-			const href = escapeHtml(safeExternalUrl(s.url));
-			const label = escapeHtml(s.title || s.url);
-			return `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a></li>`;
-		})
-		.join('');
-	return `<div class="search-grounding"><h4>Sources:</h4><ul>${items}</ul></div>`;
-}
-
 export function extractModelResponseFromInteraction(interaction: Record<string, unknown>): ModelResponse {
 	const steps = Array.isArray(interaction.steps) ? (interaction.steps as InteractionStep[]) : [];
 
@@ -244,7 +198,7 @@ export function extractModelResponseFromInteraction(interaction: Record<string, 
 			thoughts += textFromContentArray(step.summary);
 		} else if (type === 'function_call') {
 			toolCalls.push({
-				name: String(step.name ?? ''),
+				name: typeof step.name === 'string' ? step.name : '',
 				arguments: (step.arguments as Record<string, unknown>) ?? {},
 				id: typeof step.id === 'string' ? step.id : undefined,
 				thoughtSignature: typeof step.signature === 'string' ? step.signature : undefined,
@@ -329,7 +283,7 @@ export class InteractionStreamAccumulator {
 				const index = event.index as number;
 				this.pending.set(index, {
 					id: typeof step.id === 'string' ? step.id : undefined,
-					name: String(step.name ?? ''),
+					name: typeof step.name === 'string' ? step.name : '',
 					signature: typeof step.signature === 'string' ? step.signature : undefined,
 					argsBuffer: '',
 					seedArgs:
@@ -366,7 +320,7 @@ export class InteractionStreamAccumulator {
 
 		switch (delta.type) {
 			case 'text': {
-				const text = decodeHtmlEntities(String(delta.text ?? ''));
+				const text = decodeHtmlEntities(typeof delta.text === 'string' ? delta.text : '');
 				if (!text) return null;
 				this.text += text;
 				return { text };
@@ -404,7 +358,7 @@ export class InteractionStreamAccumulator {
 		let args: Record<string, unknown> = pending.seedArgs ?? {};
 		if (pending.argsBuffer) {
 			try {
-				args = JSON.parse(pending.argsBuffer);
+				args = asRecord(JSON.parse(pending.argsBuffer));
 			} catch {
 				// Keep the seed args (or empty) if the streamed fragments aren't valid JSON.
 			}

@@ -114,6 +114,8 @@ export class RagProgressModal extends Modal {
 			this.cancelBtn = btn.buttonEl;
 			btn
 				.setButtonText(t('ragProgress.cancelButton'))
+				// setDestructive() (the recommended replacement) requires Obsidian 1.13.0, above the current minAppVersion 1.11.4; keep setWarning until the floor is raised (#1040).
+				// eslint-disable-next-line @typescript-eslint/no-deprecated -- setDestructive() needs Obsidian 1.13.0, above minAppVersion 1.11.4 (#1040)
 				.setWarning()
 				.onClick(() => {
 					this.ragService.cancelIndexing();
@@ -149,9 +151,7 @@ export class RagProgressModal extends Modal {
 		const percentage = Math.round((current / total) * 100);
 
 		// Update progress bar
-		if (this.progressBarFill) {
-			this.progressBarFill.style.width = `${percentage}%`;
-		}
+		this.setProgressBarWidth(percentage);
 		if (this.progressText) {
 			this.progressText.setText(`${percentage}% (${current} / ${total})`);
 		}
@@ -160,12 +160,12 @@ export class RagProgressModal extends Modal {
 		if (this.currentFileEl) {
 			if (progressInfo.currentFile) {
 				this.currentFileEl.setText(progressInfo.currentFile);
-				this.currentFileEl.style.display = '';
+				this.currentFileEl.show();
 			} else if (progressInfo.status === 'indexing') {
 				this.currentFileEl.setText(t('ragProgress.scanning'));
-				this.currentFileEl.style.display = '';
+				this.currentFileEl.show();
 			} else {
-				this.currentFileEl.style.display = 'none';
+				this.currentFileEl.hide();
 			}
 		}
 
@@ -187,6 +187,13 @@ export class RagProgressModal extends Modal {
 
 		// Update time display
 		this.updateTimeDisplay();
+	}
+
+	/** Single (dynamic) write site for the progress-bar fill width. */
+	private setProgressBarWidth(percent: number): void {
+		if (this.progressBarFill) {
+			this.progressBarFill.style.width = `${percent}%`;
+		}
 	}
 
 	private updateTimeDisplay(): void {
@@ -235,9 +242,7 @@ export class RagProgressModal extends Modal {
 		}
 
 		// Update progress bar to 100%
-		if (this.progressBarFill) {
-			this.progressBarFill.style.width = '100%';
-		}
+		this.setProgressBarWidth(100);
 		const total = this.progressInfo.indexedCount + this.progressInfo.skippedCount + this.progressInfo.failedCount;
 		if (this.progressText) {
 			this.progressText.setText(`100% (${total} / ${total})`);
@@ -258,12 +263,12 @@ export class RagProgressModal extends Modal {
 		// Hide current file section
 		const currentFileSection = this.contentEl.querySelector('.rag-progress-section');
 		if (currentFileSection) {
-			(currentFileSection as HTMLElement).style.display = 'none';
+			(currentFileSection as HTMLElement).hide();
 		}
 
 		// Update buttons
 		if (this.cancelBtn) {
-			this.cancelBtn.style.display = 'none';
+			this.cancelBtn.hide();
 		}
 		if (this.backgroundBtn) {
 			this.backgroundBtn.setText(t('ragProgress.closeButton'));

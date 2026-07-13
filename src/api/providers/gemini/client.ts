@@ -9,9 +9,12 @@ import {
 	GoogleGenAI,
 	Content,
 	Part,
+	GenerateContentConfig,
 	GenerateContentParameters,
 	GenerateContentResponse,
 	GenerateContentResponseUsageMetadata,
+	FunctionDeclaration,
+	Schema,
 } from '@google/genai';
 import type { ThinkingLevel } from '@google/genai';
 import {
@@ -25,7 +28,7 @@ import {
 	isExtendedRequest,
 } from '../../interfaces/model-api';
 import { GeminiPrompts } from '../../../prompts';
-import type ObsidianGemini from '../../../main';
+import type { ObsidianGemini } from '../../../types/plugin';
 import { getDefaultModelForRole } from '../../../models';
 import { decodeHtmlEntities } from '../../../utils/html-entities';
 import type { GeminiClientConfig } from './config';
@@ -39,6 +42,7 @@ import {
 	type InteractionStep,
 } from './interactions-mapper';
 import { installObsidianFetch } from './obsidian-fetch';
+import { renderGroundingSources } from './grounding-render';
 
 /**
  * Per-use-case reasoning depth for Gemini 3.x `thinkingConfig.thinkingLevel`,
@@ -66,14 +70,6 @@ const THINKING_LEVEL_BY_USE_CASE: Record<ModelUseCase, ThinkingLevel> = {
 	[ModelUseCase.SEARCH]: 'MEDIUM',
 	[ModelUseCase.CHAT]: 'HIGH',
 } as Record<ModelUseCase, ThinkingLevel>;
-
-/**
- * Extends Part to include the optional thought property
- */
-interface PartWithThought extends Part {
-	thought?: boolean;
-	thoughtSignature?: string;
-}
 
 /**
  * GeminiClient - Simplified API wrapper using js-genai SDK
@@ -161,6 +157,32 @@ export class GeminiClient implements ModelApi {
 	}
 
 	/**
+	 * Typed accessor for the SDK's experimental Interactions surface. `interactions`
+	 * is marked experimental and omitted from `GoogleGenAI`'s public types, so we
+	 * narrow the `create` boundary here in one place instead of scattering `as any`
+	 * (mirrors the structural casts in obsidian-fetch.ts). The return type advertises
+	 * both the non-streaming interaction record and the streaming async-iterable
+	 * shape; which the SDK actually returns depends on `params.stream`.
+	 */
+	private get interactionsClient(): {
+		create(
+			params: Record<string, unknown>
+		): Promise<Record<string, unknown> & AsyncIterable<Record<string, unknown>> & { controller?: AbortController }>;
+	} {
+		return (
+			this.ai as unknown as {
+				interactions: {
+					create(
+						params: Record<string, unknown>
+					): Promise<
+						Record<string, unknown> & AsyncIterable<Record<string, unknown>> & { controller?: AbortController }
+					>;
+				};
+			}
+		).interactions;
+	}
+
+	/**
 	 * Non-streaming generation via the Interactions API (stateless transport).
 	 */
 	private async generateViaInteractions(request: BaseModelRequest | ExtendedModelRequest): Promise<ModelResponse> {
@@ -168,7 +190,7 @@ export class GeminiClient implements ModelApi {
 		this.ensureInteractionsFetch();
 
 		try {
-			const interaction = await (this.ai as any).interactions.create(params);
+			const interaction = await this.interactionsClient.create(params);
 			return extractModelResponseFromInteraction(interaction);
 		} catch (error) {
 			this.plugin?.logger.error('[GeminiClient] Error creating interaction:', error);
@@ -209,7 +231,7 @@ export class GeminiClient implements ModelApi {
 			this.ensureInteractionsFetch();
 
 			try {
-				const stream = await (this.ai as any).interactions.create(params);
+				const stream = await this.interactionsClient.create(params);
 				activeStream = stream;
 				// Cancelled during request setup, before iteration began.
 				if (cancelled) {
@@ -288,6 +310,37 @@ export class GeminiClient implements ModelApi {
 	}
 
 	/**
+	 * Normalize a conversation-history entry to a `Content`, tolerating two legacy
+	 * runtime shapes (`{ role, text }` and `{ role, message }`) alongside the
+	 * canonical `{ role, parts }`. Returns null for unrecognized entries.
+	 */
+	private normalizeHistoryEntry(entry: Content): Content | null {
+		if ('role' in entry && 'parts' in entry) {
+			return entry;
+		}
+		if ('role' in entry && ('text' in entry || 'message' in entry)) {
+			const legacy = entry as Content & { role?: string; text?: string; message?: string };
+			const text = legacy.text ?? legacy.message ?? '';
+			return { role: this.coerceHistoryRole(legacy.role), parts: [{ text }] };
+		}
+		return null;
+	}
+
+	/**
+	 * Map a legacy history role to a Gemini `Content` role. Only `user`/`model`
+	 * are valid Content roles; a `system` (or any other unexpected) role is
+	 * coerced to `model`, deliberately and with a warning rather than silently,
+	 * since replaying it as a model turn is a lossy fallback.
+	 */
+	private coerceHistoryRole(role: string | undefined): 'user' | 'model' {
+		if (role === 'user') return 'user';
+		if (role !== 'model') {
+			this.plugin?.logger.warn(`Unexpected conversation-history role "${role}", coercing to "model"`);
+		}
+		return 'model';
+	}
+
+	/**
 	 * Build the Interactions `input` step array: replayed history followed by the
 	 * current user turn (message + per-turn context + inline attachments).
 	 */
@@ -295,21 +348,14 @@ export class GeminiClient implements ModelApi {
 		const steps: InteractionStep[] = [];
 
 		for (const entry of request.conversationHistory ?? []) {
-			if ('role' in entry && 'parts' in entry) {
-				steps.push(...contentToSteps(entry as Content));
-			} else if ('role' in entry && 'text' in entry) {
-				const legacy = entry as Content & { text: string };
-				steps.push(
-					...contentToSteps({ role: legacy.role === 'user' ? 'user' : 'model', parts: [{ text: legacy.text }] })
-				);
-			} else if ('role' in entry && 'message' in entry) {
-				const legacy = entry as Content & { role: string; message: string };
-				steps.push(
-					...contentToSteps({ role: legacy.role === 'user' ? 'user' : 'model', parts: [{ text: legacy.message }] })
-				);
-			}
+			const content = this.normalizeHistoryEntry(entry);
+			if (content) steps.push(...contentToSteps(content));
 		}
 
+		// `imageAttachments` is the deprecated alias for `inlineAttachments`; still read here so
+		// callers passing the legacy field keep working (backward-compat merge). Remove once no
+		// caller populates it. See ExtendedModelRequest.imageAttachments (#1040).
+		// eslint-disable-next-line @typescript-eslint/no-deprecated -- deprecated imageAttachments alias merged for backward-compat (#1040)
 		const attachments = [...(request.inlineAttachments || []), ...(request.imageAttachments || [])];
 		const userStep = buildUserInputStep(request.userMessage, request.perTurnContext, attachments);
 		if (userStep) steps.push(userStep);
@@ -463,7 +509,7 @@ export class GeminiClient implements ModelApi {
 		}
 
 		// Build config
-		const config: any = {
+		const config: GenerateContentConfig = {
 			temperature: request.temperature ?? this.config.temperature,
 			topP: request.topP ?? this.config.topP,
 			...(this.config.maxOutputTokens && { maxOutputTokens: this.config.maxOutputTokens }),
@@ -485,14 +531,18 @@ export class GeminiClient implements ModelApi {
 		const hasTools = isExtended && request.availableTools?.length;
 		if (hasTools) {
 			const tools = request.availableTools!;
-			const functionDeclarations = tools.map((tool) => ({
+			const functionDeclarations: FunctionDeclaration[] = tools.map((tool) => ({
 				name: tool.name,
 				description: tool.description,
+				// The SDK's `Schema.type` is the upper-case `Type` enum, but the Gemini API
+				// also accepts the lower-case OpenAPI `'object'` this plugin has always sent;
+				// keep that wire value and narrow the hand-built schema (whose `properties`
+				// come from the provider-agnostic `Record<string, unknown>` bag) to `Schema`.
 				parameters: {
-					type: 'object' as const,
+					type: 'object',
 					properties: tool.parameters.properties || {},
 					required: tool.parameters.required || [],
-				},
+				} as unknown as Schema,
 			}));
 
 			config.tools = config.tools || [];
@@ -604,7 +654,7 @@ export class GeminiClient implements ModelApi {
 
 		// Build params
 		// If no contents built, use a simple string from the prompt
-		let finalContents: any = contents;
+		let finalContents: Content[] | string = contents;
 		if (contents.length === 0 && !isExtended) {
 			// For BaseModelRequest with no conversation, just pass the prompt as string
 			finalContents = request.prompt || '';
@@ -643,11 +693,11 @@ export class GeminiClient implements ModelApi {
 		// Add conversation history
 		if (extReq.conversationHistory?.length) {
 			for (const entry of extReq.conversationHistory) {
-				// Support Content format (already has role and parts)
-				if ('role' in entry && entry.parts?.length) {
+				const content = this.normalizeHistoryEntry(entry);
+				if (content) {
 					// Map parts to use Files API if enabled
 					const parts = await Promise.all(
-						entry.parts.map(async (part) => {
+						content.parts.map(async (part) => {
 							if (part.inlineData && part.inlineData.data && part.inlineData.mimeType) {
 								const uploaded = await this.uploadAttachmentIfEnabled({
 									base64: part.inlineData.data,
@@ -666,24 +716,8 @@ export class GeminiClient implements ModelApi {
 						})
 					);
 					contents.push({
-						role: entry.role,
+						role: content.role,
 						parts,
-					});
-				}
-				// Support our internal format with role and text
-				else if ('role' in entry && 'text' in entry) {
-					const legacy = entry as Content & { text: string };
-					contents.push({
-						role: legacy.role === 'user' ? 'user' : 'model',
-						parts: [{ text: legacy.text }],
-					});
-				}
-				// Support our internal format with role and message
-				else if ('role' in entry && 'message' in entry) {
-					const legacy = entry as Content & { role: string; message: string };
-					contents.push({
-						role: legacy.role === 'user' ? 'user' : 'model',
-						parts: [{ text: legacy.message }],
 					});
 				}
 			}
@@ -703,6 +737,9 @@ export class GeminiClient implements ModelApi {
 		}
 
 		// Add inline data attachments (images, audio, video, PDF)
+		// `imageAttachments` is the deprecated alias for `inlineAttachments`; still merged here for
+		// backward-compat with callers passing the legacy field (#1040).
+		// eslint-disable-next-line @typescript-eslint/no-deprecated -- deprecated imageAttachments alias merged for backward-compat (#1040)
 		const allAttachments = [...(extReq.inlineAttachments || []), ...(extReq.imageAttachments || [])];
 		for (const attachment of allAttachments) {
 			const uploaded = await this.uploadAttachmentIfEnabled(attachment);
@@ -823,7 +860,7 @@ export class GeminiClient implements ModelApi {
 			for (const part of response.candidates[0].content.parts) {
 				if ('text' in part && part.text) {
 					// Separate thought content from regular content
-					if ((part as PartWithThought).thought) {
+					if (part.thought) {
 						thoughts += part.text;
 					} else {
 						markdown += part.text;
@@ -863,8 +900,8 @@ export class GeminiClient implements ModelApi {
 	private extractTextFromChunk(chunk: GenerateContentResponse): string {
 		if (chunk.candidates?.[0]?.content?.parts) {
 			const text = chunk.candidates[0].content.parts
-				.filter((part: Part) => 'text' in part && part.text && !(part as PartWithThought).thought)
-				.map((part: Part) => (part as PartWithThought).text)
+				.filter((part: Part) => 'text' in part && part.text && !part.thought)
+				.map((part: Part) => part.text)
 				.join('');
 			return decodeHtmlEntities(text);
 		}
@@ -877,12 +914,10 @@ export class GeminiClient implements ModelApi {
 	private extractThoughtFromChunk(chunk: GenerateContentResponse): string {
 		if (chunk.candidates?.[0]?.content?.parts) {
 			const parts = chunk.candidates[0].content.parts;
-			const thoughtParts = parts.filter(
-				(part: Part) => (part as PartWithThought).thought && (part as PartWithThought).text
-			);
+			const thoughtParts = parts.filter((part: Part) => part.thought && part.text);
 
 			if (thoughtParts.length > 0) {
-				const thoughtText = thoughtParts.map((part: Part) => (part as PartWithThought).text).join('');
+				const thoughtText = thoughtParts.map((part: Part) => part.text).join('');
 				const preview = thoughtText.length > 100 ? thoughtText.substring(0, 100) + '...' : thoughtText;
 				this.plugin?.logger.debug(`[GeminiClient] Extracted thought: ${preview}`);
 				return thoughtText;
@@ -921,7 +956,7 @@ export class GeminiClient implements ModelApi {
 		const toolCalls: ToolCall[] = [];
 		for (const part of parts) {
 			if ('functionCall' in part && part.functionCall && part.functionCall.name) {
-				const signature = (part as PartWithThought).thoughtSignature;
+				const signature = part.thoughtSignature;
 
 				// Debug logging to verify extraction
 				this.plugin?.logger.debug(
@@ -956,26 +991,16 @@ export class GeminiClient implements ModelApi {
 		const metadata = response.candidates?.[0]?.groundingMetadata;
 		if (!metadata) return '';
 
-		// Extract and format grounding sources
+		// Normalize web chunks to the shared renderer's shape. `chunk.web.uri` /
+		// `chunk.web.title` are untrusted grounding metadata, so rendering goes
+		// through the single hardened renderer (escaped + scheme-validated + rel)
+		// rather than raw string concatenation — see grounding-render.ts / #1195.
 		const chunks = metadata.groundingChunks || [];
+		const sources = chunks
+			.filter((chunk) => chunk.web?.uri)
+			.map((chunk) => ({ url: chunk.web!.uri as string, title: chunk.web!.title }));
 
-		if (chunks.length === 0) return '';
-
-		// Build HTML similar to how Gemini API returns it
-		let html = '<div class="search-grounding">';
-		html += '<h4>Sources:</h4>';
-		html += '<ul>';
-
-		for (const chunk of chunks) {
-			if (chunk.web) {
-				html += `<li><a href="${chunk.web.uri}" target="_blank">${chunk.web.title || chunk.web.uri}</a></li>`;
-			}
-		}
-
-		html += '</ul>';
-		html += '</div>';
-
-		return html;
+		return renderGroundingSources(sources);
 	}
 
 	/**

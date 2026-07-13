@@ -1,10 +1,12 @@
 import { Editor, TFile, Notice } from 'obsidian';
-import type ObsidianGemini from '../main';
+import { getActiveChatModel } from '../models';
+import type { ObsidianGemini } from '../types/plugin';
 import { ExplainPromptSelectionModal } from '../ui/explain-prompt-modal';
 import { SelectionResponseModal, AskQuestionModal } from '../ui/selection-response-modal';
 import { CustomPrompt } from '../prompts/types';
 import { ModelClientFactory } from '../api';
 import { t } from '../i18n';
+import { getRawErrorMessageOr } from '../utils/error-utils';
 
 /**
  * Service to coordinate selection-based actions.
@@ -140,7 +142,7 @@ export class SelectionActionService {
 				kind: 'extended',
 				userMessage: userMessage,
 				conversationHistory: [],
-				model: this.plugin.settings.chatModelName,
+				model: getActiveChatModel(this.plugin.settings),
 				prompt: contextInfo,
 				temperature: this.plugin.settings.temperature,
 				topP: this.plugin.settings.topP,
@@ -161,7 +163,7 @@ export class SelectionActionService {
 			}
 		} catch (error) {
 			this.plugin.logger.error('Error generating response:', error);
-			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+			const errorMessage = getRawErrorMessageOr(error, 'Unknown error occurred');
 			responseModal.showError(errorMessage);
 		}
 	}

@@ -72,6 +72,11 @@ export const en = {
 		context:
 			'Button description under "Initialize Vault Context". Phrased as the AI agent asking the user to let it analyze the vault.',
 	},
+	'agent.empty.initContextFailed': {
+		message: 'Failed to initialize vault context',
+		context:
+			'Error notice shown when the "Initialize vault context" empty-state button fails to analyze the vault (e.g. an API error).',
+	},
 	'agent.empty.recentSessions': {
 		message: 'Recent sessions:',
 		context: 'List header above recently used chat sessions. Keep the trailing colon.',
@@ -215,6 +220,15 @@ export const en = {
 	'settings.general.completionModelDesc': {
 		message: 'Model used for IDE-style inline completions as you type in notes.',
 		context: 'Settings field description for the completion model dropdown.',
+	},
+	'settings.general.ollamaModelName': {
+		message: 'Ollama model',
+		context: 'Settings field name for the single model Ollama uses for every use case.',
+	},
+	'settings.general.ollamaModelDesc': {
+		message: 'Model used for all Ollama use cases: chat, summarization, completions, and rewriting.',
+		context:
+			'Settings field description for the single Ollama model dropdown shown when the Ollama provider is selected.',
 	},
 	'settings.general.imageModelName': {
 		message: 'Image model',
@@ -482,7 +496,7 @@ export const en = {
 	},
 	'settings.agentConfig.useInteractionsApiDesc': {
 		message:
-			'Route Gemini requests through Google’s newer Interactions API instead of the legacy generateContent API. Runs statelessly — conversation history is replayed each turn and not persisted on Google’s side between turns. Experimental — leave off if you hit issues.',
+			'Route Gemini requests through Google’s newer Interactions API instead of the legacy generateContent API. This is the default transport. Runs statelessly — conversation history is replayed each turn and not persisted on Google’s side between turns. Turn it off to fall back to generateContent if you hit issues.',
 		context:
 			'Settings toggle description for the Interactions API. "Interactions API" and "generateContent" are Google API names; keep them in English.',
 	},
@@ -1821,7 +1835,7 @@ export const en = {
 	},
 	'hooks.commandIdDesc': {
 		message:
-			'Command palette id to fire. Examples: editor:save-file, gemini-scribe-summarize-active-file. View command IDs via Settings → Hotkeys (open the developer console with Ctrl+Shift+I to inspect ids).',
+			'Command palette id to fire. Examples: editor:save-file, gemini-scribe:summarize-active-file. View command IDs via Settings → Hotkeys (open the developer console with Ctrl+Shift+I to inspect ids).',
 		context: 'Description of the command id field. The example ids and Ctrl+Shift+I are literal; keep them.',
 	},
 	'hooks.focusFileSetting': {
@@ -2864,6 +2878,10 @@ export const en = {
 		context:
 			'Notice when resuming a project session but no agent sessions are linked to that project; {name} is the project name.',
 	},
+	'notice.main.resumeProjectSessionFailed': {
+		message: 'Failed to resume project session',
+		context: 'Error notice shown when resuming the most recent session for a project fails.',
+	},
 	'notice.main.projectRemoved': {
 		message: 'Removed project status from: {name}',
 		context: 'Success notice after removing project status from a note; {name} is the note filename without extension.',
@@ -2912,19 +2930,6 @@ export const en = {
 	'notice.main.ragResumed': {
 		message: 'RAG sync resumed',
 		context: 'Confirmation notice after RAG synchronization was resumed.',
-	},
-	'notice.main.ragIndexComplete': {
-		message: 'Rescan complete: {indexed} re-indexed, {skipped} unchanged',
-		context:
-			'Notice after a vault rescan; {indexed} is the number of files uploaded and {skipped} the number left unchanged because they had not changed.',
-	},
-	'notice.main.ragIndexFailed': {
-		message: 'RAG indexing failed: {error}',
-		context: 'Error notice when a RAG vault indexing run failed; {error} is the underlying error message.',
-	},
-	'notice.main.ragSyncingPending': {
-		message: 'RAG index: Syncing pending changes...',
-		context: 'Notice shown while pending vault changes are being synced into the RAG index.',
 	},
 	'notice.main.readyToUse': {
 		message: 'Gemini Scribe is now ready to use!',

@@ -19,6 +19,7 @@ export const es: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Actualizar mi comprensión de tu bóveda',
 	'agent.empty.initContext': 'Inicializar el contexto del vault',
 	'agent.empty.initContextDesc': 'Ayúdame a comprender la estructura y organización de tu bóveda',
+	'agent.empty.initContextFailed': 'Error al inicializar el contexto del vault',
 	'agent.empty.recentSessions': 'Sesiones recientes:',
 	'agent.empty.examplesHeader': 'Prueba estos ejemplos:',
 	'i18n.aiTranslatedNotice':
@@ -63,6 +64,9 @@ export const es: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Modelo de autocompletado',
 	'settings.general.completionModelDesc':
 		'Modelo utilizado para el autocompletado en línea estilo IDE a medida que escribes en las notas.',
+	'settings.general.ollamaModelName': 'Modelo de Ollama',
+	'settings.general.ollamaModelDesc':
+		'Modelo utilizado para todos los casos de uso de Ollama: chat, resumen, completado y reescritura.',
 	'settings.general.imageModelName': 'Modelo de imagen',
 	'settings.general.imageModelDesc': 'Modelo utilizado para la generación de imágenes.',
 	'settings.general.stateFolderName': 'Carpeta de estado del plugin',
@@ -146,7 +150,7 @@ export const es: Partial<Record<TranslationKey, string>> = {
 		'Escribe las entradas de registro en un archivo dentro de la carpeta de estado del plugin. Los errores y advertencias siempre se registran; las entradas de depuración requieren el modo de depuración. Los archivos de registro se rotan automáticamente al alcanzar 1 MB.',
 	'settings.agentConfig.useInteractionsApiName': 'Usar Interactions API',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'Dirige las solicitudes de Gemini a través de la nueva Interactions API de Google en lugar de la API heredada generateContent. Se ejecuta sin estado: el historial de conversación se reproduce en cada turno y no se conserva en el lado de Google entre turnos. Experimental: déjalo desactivado si tienes problemas.',
+		'Dirige las solicitudes de Gemini a través de la nueva Interactions API de Google en lugar de la API heredada generateContent. Este es el transporte predeterminado. Funciona sin estado: el historial de conversación se vuelve a enviar en cada turno y no se conserva en el lado de Google entre turnos. Desactívalo para volver a usar generateContent si experimentas problemas.',
 	'settings.agentConfig.customEndpointName': 'Endpoint de API personalizado',
 	'settings.agentConfig.customEndpointDesc':
 		'Invalida la URL base predeterminada de la API de Google (por ejemplo, para un proxy corporativo o una pasarela local). Déjalo en blanco para usar el endpoint oficial.',
@@ -568,7 +572,7 @@ export const es: Partial<Record<TranslationKey, string>> = {
 		'Limita las ejecuciones a las rutas que coincidan con este glob. Ejemplos: Daily/**/*.md, Notes/*.md. Déjalo en blanco para cualquier ruta.',
 	'hooks.commandIdSetting': 'ID del comando',
 	'hooks.commandIdDesc':
-		'ID de la paleta de comandos a ejecutar. Ejemplos: editor:save-file, gemini-scribe-summarize-active-file. Consulta los ID de los comandos en Ajustes → Atajos de teclado (abre la consola de desarrollador con Ctrl+Shift+I para inspeccionar los ID).',
+		'ID de la paleta de comandos a ejecutar. Ejemplos: editor:save-file, gemini-scribe:summarize-active-file. Ver los ID de comando a través de Configuración → Atajos de teclado (abre la consola de desarrollador con Ctrl+Shift+I para inspeccionar los ID).',
 	'hooks.focusFileSetting': 'Enfocar el archivo disparador antes de la ejecución',
 	'hooks.focusFileDesc':
 		'Cuando está activado, el archivo que dispara el evento se abre en el espacio de trabajo antes de que se ejecute el comando (útil para comandos del editor). Cuando está desactivado, el comando se ejecuta en el archivo que esté activo en ese momento. Desactivado por defecto.',
@@ -846,6 +850,7 @@ export const es: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Error al convertir la nota en proyecto',
 	'notice.main.noProjectsFound': 'No se encontraron proyectos',
 	'notice.main.noSessionsForProject': 'No se encontraron sesiones para el proyecto: {name}',
+	'notice.main.resumeProjectSessionFailed': 'Error al reanudar la sesión del proyecto',
 	'notice.main.projectRemoved': 'Se ha eliminado el estado de proyecto de: {name}',
 	'notice.main.projectRemoveFailed': 'Error al eliminar el estado de proyecto',
 	'notice.main.selectTextFirst': 'Por favor, selecciona primero un fragmento de texto',
@@ -858,9 +863,6 @@ export const es: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'Sincronización RAG pausada',
 	'notice.main.ragNotPaused': 'La sincronización RAG no está pausada',
 	'notice.main.ragResumed': 'Sincronización RAG reanudada',
-	'notice.main.ragIndexComplete': 'Escaneo completo: {indexed} indexados de nuevo, {skipped} sin cambios',
-	'notice.main.ragIndexFailed': 'Error en la indexación RAG: {error}',
-	'notice.main.ragSyncingPending': 'Índice RAG: Sincronizando cambios pendientes...',
 	'notice.main.readyToUse': '¡Gemini Scribe ya está listo para usar!',
 	'component.managementModalBase.managerUnavailable': 'El gestor de {label} no está disponible.',
 	'component.managementModalBase.deleteConfirm':

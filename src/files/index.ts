@@ -1,4 +1,4 @@
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import { TFile } from 'obsidian';
 import { logDebugInfo } from '../api/utils/debug';
 import { GeminiPrompts } from '../prompts';
@@ -61,7 +61,7 @@ export class ScribeFile {
 		const activeFile = this.getActiveFile();
 		if (activeFile) {
 			// Use processFrontMatter to add or update the summary in the frontmatter
-			this.plugin.app.fileManager.processFrontMatter(activeFile, (frontmatter) => {
+			await this.plugin.app.fileManager.processFrontMatter(activeFile, (frontmatter: Record<string, unknown>) => {
 				frontmatter[key] = value;
 			});
 		}
@@ -72,7 +72,7 @@ export class ScribeFile {
 		const vault = this.plugin.app.vault;
 
 		if (activeFile) {
-			vault.modify(activeFile, newText);
+			await vault.modify(activeFile, newText);
 		}
 	}
 
@@ -171,15 +171,17 @@ export class ScribeFile {
 			if (cache.frontmatter) {
 				if (cache.frontmatter.links) {
 					if (Array.isArray(cache.frontmatter.links)) {
-						cache.frontmatter.links.forEach((link) => {
-							const normalizedPath = this.normalizePath(link, file);
+						cache.frontmatter.links.forEach((link: unknown) => {
+							const normalizedPath = typeof link === 'string' ? this.normalizePath(link, file) : null;
 							if (normalizedPath) {
 								normalizedFrontmatterLinks.push(normalizedPath);
 							} else {
 								logDebugInfo(
 									this.plugin.logger,
 									'Link Normalization Warning',
-									`Frontmatter link "${link}" in file "${file.path}" could not be normalized.`
+									`Frontmatter link "${
+										typeof link === 'string' ? link : JSON.stringify(link)
+									}" in file "${file.path}" could not be normalized.`
 								);
 							}
 						});

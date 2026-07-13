@@ -1,5 +1,5 @@
 import { TFile, Platform, Notice } from 'obsidian';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import { t } from '../i18n';
 import { AgentEventBus } from '../agent/agent-event-bus';
 import { ContextTrackingSubscriber } from '../subscribers/context-tracking-subscriber';
@@ -212,7 +212,13 @@ export class LifecycleService {
 		plugin.scheduledTaskManager = null;
 		plugin.hookManager?.destroy();
 		plugin.hookManager = null;
-		plugin.history?.onUnload();
+		// Protect the awaited unload like the sibling teardown steps below (MCP/RAG):
+		// a throw here must not abort the remaining cleanup.
+		try {
+			await plugin.history?.onUnload();
+		} catch (error) {
+			plugin.logger.error('Error during history unload:', error);
+		}
 		plugin.projectManager?.destroy();
 		plugin.toolExecutionLogger?.destroy();
 		plugin.toolExecutionLogger = null;

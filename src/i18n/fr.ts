@@ -19,6 +19,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Actualiser ma compréhension de votre coffre',
 	'agent.empty.initContext': 'Initialiser le contexte du coffre',
 	'agent.empty.initContextDesc': "M'aider à comprendre la structure et l'organisation de votre coffre",
+	'agent.empty.initContextFailed': "Échec de l'initialisation du contexte du coffre",
 	'agent.empty.recentSessions': 'Sessions récentes :',
 	'agent.empty.examplesHeader': 'Essayez ces exemples :',
 	'i18n.aiTranslatedNotice':
@@ -63,6 +64,9 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Modèle de complétion',
 	'settings.general.completionModelDesc':
 		'Modèle utilisé pour les complétions en ligne de style IDE lors de la saisie dans les notes.',
+	'settings.general.ollamaModelName': 'Modèle Ollama',
+	'settings.general.ollamaModelDesc':
+		"Modèle utilisé pour tous les cas d'utilisation d'Ollama : discussion, résumé, complétion et réécriture.",
 	'settings.general.imageModelName': "Modèle d'image",
 	'settings.general.imageModelDesc': "Modèle utilisé pour la génération d'images.",
 	'settings.general.stateFolderName': "Dossier d'état du plugin",
@@ -146,7 +150,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 		"Écrire les entrées de journal dans un fichier du dossier d'état du plugin. Les erreurs et les avertissements sont toujours enregistrés ; les entrées de débogage nécessitent le mode débogage. Les fichiers de journalisation subissent une rotation automatique à 1 Mo.",
 	'settings.agentConfig.useInteractionsApiName': "Utiliser l'API Interactions",
 	'settings.agentConfig.useInteractionsApiDesc':
-		"Achemine les requêtes Gemini via la nouvelle API Interactions de Google au lieu de l'ancienne API generateContent. Fonctionne sans état — l'historique de la conversation est rejoué à chaque tour et n'est pas conservé du côté de Google entre les tours. Expérimental — laissez désactivé si vous rencontrez des problèmes.",
+		"Achemine les requêtes Gemini via la nouvelle API Interactions de Google plutôt que l'ancienne API generateContent. Il s'agit du transport par défaut. Fonctionne sans état — l'historique de la conversation est rejoué à chaque tour et n'est pas conservé du côté de Google entre les tours. Désactivez cette option pour revenir à generateContent si vous rencontrez des problèmes.",
 	'settings.agentConfig.customEndpointName': "Point de terminaison d'API personnalisé",
 	'settings.agentConfig.customEndpointDesc':
 		"Surcharger l'URL de base par défaut de l'API Google (par ex. pour un proxy d'entreprise ou une passerelle locale). Laisser vide pour utiliser le point de terminaison officiel.",
@@ -570,7 +574,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 		"Limiter les déclenchements aux chemins correspondant à ce glob. Exemples : Daily/**/*.md, Notes/*.md. Laisser vide pour n'importe quel chemin.",
 	'hooks.commandIdSetting': 'ID de commande',
 	'hooks.commandIdDesc':
-		'ID de la palette de commandes à déclencher. Exemples : editor:save-file, gemini-scribe-summarize-active-file. Affichez les ID de commande via Paramètres → Raccourcis clavier (ouvrez la console de développement avec Ctrl+Shift+I pour inspecter les ID).',
+		'ID de la commande de la palette à exécuter. Exemples : editor:save-file, gemini-scribe:summarize-active-file. Affichez les ID des commandes via Paramètres → Raccourcis clavier (ouvrez la console de développement avec Ctrl+Shift+I pour inspecter les ID).',
 	'hooks.focusFileSetting': "Focus sur le fichier déclencheur avant l'envoi",
 	'hooks.focusFileDesc':
 		"Lorsqu'il est activé, le fichier déclencheur est ouvert dans l'espace de travail avant l'exécution de la commande — utile pour les commandes limitées à l'éditeur. Lorsqu'il est désactivé, la commande s'exécute sur le fichier actuellement actif. Désactivé par défaut.",
@@ -851,6 +855,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Échec de la conversion de la note en projet',
 	'notice.main.noProjectsFound': 'Aucun projet trouvé',
 	'notice.main.noSessionsForProject': 'Aucune session trouvée pour le projet : {name}',
+	'notice.main.resumeProjectSessionFailed': 'Échec de la reprise de la session de projet',
 	'notice.main.projectRemoved': 'Statut de projet retiré de : {name}',
 	'notice.main.projectRemoveFailed': 'Échec du retrait du statut de projet',
 	'notice.main.selectTextFirst': "Veuillez d'abord sélectionner du texte",
@@ -864,9 +869,6 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'Synchronisation RAG mise en pause',
 	'notice.main.ragNotPaused': "La synchronisation RAG n'est pas en pause",
 	'notice.main.ragResumed': 'Synchronisation RAG reprise',
-	'notice.main.ragIndexComplete': 'Réanalyse terminée : {indexed} réindexés, {skipped} inchangés',
-	'notice.main.ragIndexFailed': "Échec de l'indexation RAG : {error}",
-	'notice.main.ragSyncingPending': 'Index RAG : Synchronisation des modifications en attente...',
 	'notice.main.readyToUse': "Gemini Scribe est maintenant prêt à l'emploi !",
 	'component.managementModalBase.managerUnavailable': "Le gestionnaire de {label} n'est pas disponible.",
 	'component.managementModalBase.deleteConfirm':

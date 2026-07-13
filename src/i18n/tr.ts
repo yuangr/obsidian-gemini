@@ -18,6 +18,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Kasanız hakkındaki bilgimi yenileyin',
 	'agent.empty.initContext': 'Vault bağlamını başlat',
 	'agent.empty.initContextDesc': 'Kasa yapınızı ve düzeninizi anlamama yardımcı olun',
+	'agent.empty.initContextFailed': 'Vault bağlamı başlatılamadı',
 	'agent.empty.recentSessions': 'Son oturumlar:',
 	'agent.empty.examplesHeader': 'Bu örnekleri deneyin:',
 	'i18n.aiTranslatedNotice':
@@ -61,6 +62,9 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Tamamlama modeli',
 	'settings.general.completionModelDesc':
 		'Siz notlara yazarken IDE tarzı satır içi tamamlamalar için kullanılan model.',
+	'settings.general.ollamaModelName': 'Ollama modeli',
+	'settings.general.ollamaModelDesc':
+		'Tüm Ollama kullanım durumları için kullanılan model: sohbet, özetleme, tamamlama ve yeniden yazma.',
 	'settings.general.imageModelName': 'Görsel modeli',
 	'settings.general.imageModelDesc': 'Görsel oluşturma için kullanılan model.',
 	'settings.general.stateFolderName': 'Eklenti durum klasörü',
@@ -145,7 +149,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 		'Günlük kayıtlarını eklenti durum klasöründeki bir dosyaya yazın. Hatalar ve uyarılar her zaman günlüğe kaydedilir; hata ayıklama kayıtları hata ayıklama modunu gerektirir. Günlük dosyaları 1 MB boyutunda otomatik olarak döndürülür.',
 	'settings.agentConfig.useInteractionsApiName': "Interactions API'yi Kullan",
 	'settings.agentConfig.useInteractionsApiDesc':
-		"Gemini isteklerini eski generateContent API yerine Google'ın daha yeni olan Interactions API'si üzerinden yönlendirin. Durumsuz (stateless) çalışır — konuşma geçmişi her turda yeniden oynatılır ve turlar arasında Google tarafında saklanmaz. Deneyseldir — sorun yaşarsanız kapalı bırakın.",
+		"Gemini isteklerini eski generateContent API yerine Google'ın daha yeni olan Interactions API'si üzerinden yönlendirin. Bu, varsayılan aktarım yöntemidir. Durumsuz olarak çalışır; konuşma geçmişi her turda yeniden oynatılır ve turlar arasında Google tarafında saklanmaz. Sorun yaşarsanız generateContent'e geri dönmek için bunu kapatın.",
 	'settings.agentConfig.customEndpointName': 'Özel API uç noktası',
 	'settings.agentConfig.customEndpointDesc':
 		"Varsayılan Google API temel URL'sini geçersiz kılın (örneğin kurumsal bir proxy veya yerel ağ geçidi için). Resmi uç noktayı kullanmak için boş bırakın.",
@@ -566,7 +570,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 		'Tetiklemeleri bu glob ile eşleşen yollarla sınırlandırın. Örnekler: Daily/**/*.md, Notes/*.md. Tüm yollar için boş bırakın.',
 	'hooks.commandIdSetting': 'Komut kimliği',
 	'hooks.commandIdDesc':
-		'Tetiklenecek komut paleti kimliği. Örnekler: editor:save-file, gemini-scribe-summarize-active-file. Komut kimliklerini Ayarlar → Kısayollar üzerinden görüntüleyin (kimlikleri incelemek için Ctrl+Shift+I ile geliştirici konsolunu açın).',
+		'Tetiklenecek komut paleti kimliği. Örnekler: editor:save-file, gemini-scribe:summarize-active-file. Komut kimliklerini Ayarlar → Kısayollar üzerinden görüntüleyin (kimlikleri incelemek için Ctrl+Shift+I ile geliştirici konsolunu açın).',
 	'hooks.focusFileSetting': 'Göndermeden önce tetikleyici dosyaya odaklan',
 	'hooks.focusFileDesc':
 		'Açık olduğunda, komut çalıştırılmadan önce tetikleyici dosya çalışma alanında açılır — editör kapsamlı komutlar için kullanışlıdır. Kapalı olduğunda, komut o anda aktif olan dosya üzerinde çalışır. Varsayılan olarak kapalıdır.',
@@ -842,6 +846,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Not projeye dönüştürülemedi',
 	'notice.main.noProjectsFound': 'Hiçbir proje bulunamadı',
 	'notice.main.noSessionsForProject': '{name} projesi için oturum bulunamadı',
+	'notice.main.resumeProjectSessionFailed': 'Proje oturumu devam ettirilemedi',
 	'notice.main.projectRemoved': 'Şu ögeden proje durumu kaldırıldı: {name}',
 	'notice.main.projectRemoveFailed': 'Proje durumu kaldırılamadı',
 	'notice.main.selectTextFirst': 'Lütfen önce bir metin seçin',
@@ -854,9 +859,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'RAG senkronizasyonu duraklatıldı',
 	'notice.main.ragNotPaused': 'RAG senkronizasyonu duraklatılmamış',
 	'notice.main.ragResumed': 'RAG senkronizasyonu devam ettirildi',
-	'notice.main.ragIndexComplete': 'Yeniden tarama tamamlandı: {indexed} yeniden dizine eklendi, {skipped} değişmedi',
-	'notice.main.ragIndexFailed': 'RAG dizine ekleme başarısız oldu: {error}',
-	'notice.main.ragSyncingPending': 'RAG dizini: Bekleyen değişiklikler senkronize ediliyor...',
 	'notice.main.readyToUse': 'Gemini Scribe artık kullanıma hazır!',
 	'component.managementModalBase.managerUnavailable': '{label} yöneticisi mevcut değil.',
 	'component.managementModalBase.deleteConfirm':

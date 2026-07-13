@@ -18,6 +18,7 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Oppdater min forståelse av hvelvet ditt',
 	'agent.empty.initContext': 'Initialiser vault-kontekst',
 	'agent.empty.initContextDesc': 'Hjelp meg å forstå hvelvets struktur og organisering',
+	'agent.empty.initContextFailed': 'Kunne ikke initialisere hvelvkontekst',
 	'agent.empty.recentSessions': 'Nylige økter:',
 	'agent.empty.examplesHeader': 'Prøv disse eksemplene:',
 	'i18n.aiTranslatedNotice':
@@ -61,6 +62,9 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Fullføringsmodell',
 	'settings.general.completionModelDesc':
 		'Modell som brukes til innebygde fullføringer i IDE-stil mens du skriver i notater.',
+	'settings.general.ollamaModelName': 'Ollama-modell',
+	'settings.general.ollamaModelDesc':
+		'Modell som brukes til alle Ollama-bruksområder: chat, oppsummering, fullføring og omskriving.',
 	'settings.general.imageModelName': 'Bildemodell',
 	'settings.general.imageModelDesc': 'Modell som brukes til bildegenerering.',
 	'settings.general.stateFolderName': 'Mappe for plugin-status',
@@ -143,7 +147,7 @@ export const no: Partial<Record<TranslationKey, string>> = {
 		'Skriv logginnføringer til en fil i mappen for plugin-status. Feil og advarsler logges alltid; feilsøkingsinnføringer krever feilsøkingsmodus. Loggfiler roteres automatisk ved 1 MB.',
 	'settings.agentConfig.useInteractionsApiName': 'Bruk Interactions API',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'Ruter Gemini-forespørsler gjennom Googles nyere Interactions API i stedet for det foreldede generateContent API-et. Kjører tilstandsløst – samtalehistorikken spilles av på nytt for hver tur og lagres ikke på Googles side mellom turene. Eksperimentelt – la være deaktivert hvis du opplever problemer.',
+		'Route Gemini-forespørsler gjennom Googles nyere Interactions API i stedet for det eldre generateContent-API-et. Dette er standard transportmetode. Kjører tilstandsløst — samtalehistorikken spilles av på nytt for hver runde og lagres ikke på Googles side mellom rundene. Slå det av for å falle tilbake til generateContent hvis du støter på problemer.',
 	'settings.agentConfig.customEndpointName': 'Tilpasset API-endepunkt',
 	'settings.agentConfig.customEndpointDesc':
 		'Overstyr standard Google API-base-URL (f.eks. for en bedriftsproxy eller lokal gateway). La stå tomt for å bruke det offisielle endepunktet.',
@@ -555,7 +559,7 @@ export const no: Partial<Record<TranslationKey, string>> = {
 		'Begrens utløsere til stier som samsvarer med denne globen. Eksempler: Daily/**/*.md, Notes/*.md. La stå tom for alle stier.',
 	'hooks.commandIdSetting': 'Kommando-ID',
 	'hooks.commandIdDesc':
-		'Kommandopalett-ID som skal utløses. Eksempler: editor:save-file, gemini-scribe-summarize-active-file. Vis kommando-ID-er via Innstillinger → Hurtigtaster (åpne utviklerkonsollen med Ctrl+Shift+I for å inspisere ID-er).',
+		'Kommando-ID fra kommandopaletten som skal kjøres. Eksempler: editor:save-file, gemini-scribe:summarize-active-file. Se kommando-ID-er via Innstillinger → Hurtigtaster (åpne utviklerkonsollen med Ctrl+Shift+I for å inspisere ID-er).',
 	'hooks.focusFileSetting': 'Fokuser på utløsende fil før sending',
 	'hooks.focusFileDesc':
 		'Når aktivert, åpnes den utløsende filen i arbeidsområdet før kommandoen kjører — nyttig for kommandoer som er begrenset til teksteditoren. Når deaktivert, kjører kommandoen mot filen som er aktiv for øyeblikket. Standard er av.',
@@ -828,6 +832,7 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Kunne ikke konvertere notat til prosjekt',
 	'notice.main.noProjectsFound': 'Ingen prosjekter funnet',
 	'notice.main.noSessionsForProject': 'Ingen økter funnet for prosjekt: {name}',
+	'notice.main.resumeProjectSessionFailed': 'Kunne ikke gjenoppta prosjektøkt',
 	'notice.main.projectRemoved': 'Fjernet prosjektstatus fra: {name}',
 	'notice.main.projectRemoveFailed': 'Kunne ikke fjerne prosjektstatus',
 	'notice.main.selectTextFirst': 'Vennligst velg litt tekst først',
@@ -840,9 +845,6 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'RAG-synkronisering satt på pause',
 	'notice.main.ragNotPaused': 'RAG-synkronisering er ikke satt på pause',
 	'notice.main.ragResumed': 'RAG-synkronisering gjenopptatt',
-	'notice.main.ragIndexComplete': 'Skanning fullført: {indexed} re-indeksert, {skipped} uendret',
-	'notice.main.ragIndexFailed': 'RAG-indeksering feilet: {error}',
-	'notice.main.ragSyncingPending': 'RAG-indeks: Synkroniserer ventende endringer...',
 	'notice.main.readyToUse': 'Gemini Scribe er nå klar til bruk!',
 	'component.managementModalBase.managerUnavailable': '{label}-behandler er ikke tilgjengelig.',
 	'component.managementModalBase.deleteConfirm':

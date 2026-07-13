@@ -234,11 +234,11 @@ export class AgentViewShelf {
 		this.container.empty();
 
 		if (this.items.length === 0) {
-			this.container.style.display = 'none';
+			this.container.removeClass('gemini-agent-shelf--visible');
 			return;
 		}
 
-		this.container.style.display = 'flex';
+		this.container.addClass('gemini-agent-shelf--visible');
 
 		for (const item of this.items) {
 			const el = this.container.createDiv({ cls: 'gemini-shelf-item' });
@@ -260,10 +260,11 @@ export class AgentViewShelf {
 			// Click to open file in Obsidian (when the item has an openable path)
 			const openPath = item.path || item.attachment?.vaultPath;
 			if (openPath) {
-				el.style.cursor = 'pointer';
+				el.addClass('gemini-shelf-item--clickable');
 				el.addEventListener('click', (e) => {
 					if ((e.target as HTMLElement).closest('.gemini-shelf-remove')) return;
-					this.app.workspace.openLinkText(openPath, '', false);
+					// Fire-and-forget: user-initiated navigation; errors surface via Obsidian.
+					void this.app.workspace.openLinkText(openPath, '', false);
 				});
 			}
 
@@ -273,7 +274,8 @@ export class AgentViewShelf {
 				if ((e.target as HTMLElement).closest('.gemini-shelf-remove')) return;
 				if ((e.key === 'Enter' || e.key === ' ') && openPath) {
 					e.preventDefault();
-					this.app.workspace.openLinkText(openPath, '', false);
+					// Fire-and-forget: user-initiated navigation; errors surface via Obsidian.
+					void this.app.workspace.openLinkText(openPath, '', false);
 				} else if (e.key === 'Delete' || e.key === 'Backspace') {
 					e.preventDefault();
 					const next = el.nextElementSibling as HTMLElement | null;

@@ -1,4 +1,4 @@
-import { Notice, Setting, setIcon } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 import type { ScheduledTask, TaskState, ScheduledTasksState } from '../services/scheduled-task-manager';
 import { DEFAULT_HEADLESS_MAX_ITERATIONS } from '../agent/agent-loop';
 import type { FeatureToolPolicy } from '../types/tool-policy';
@@ -80,19 +80,7 @@ export class SchedulerManagementModal extends ManagementModalBase<ScheduledTask,
 		const isPaused = taskState?.pausedDueToErrors === true;
 		const isDisabled = !task.enabled;
 
-		const li = container.createEl('li', {
-			cls: [
-				'gemini-scheduler-item',
-				isDisabled ? 'gemini-scheduler-item--disabled' : '',
-				isPaused ? 'gemini-scheduler-item--paused' : '',
-			]
-				.filter(Boolean)
-				.join(' '),
-		});
-
-		// Status icon
-		const iconEl = li.createSpan({ cls: 'gemini-scheduler-item-icon' });
-		setIcon(iconEl, isPaused ? 'alert-circle' : isDisabled ? 'pause-circle' : 'clock');
+		const { li } = this.renderEntityRowShell(container, { isPaused, isDisabled, activeIcon: 'clock' });
 
 		// Info block
 		const info = li.createDiv({ cls: 'gemini-scheduler-item-info' });
@@ -122,7 +110,7 @@ export class SchedulerManagementModal extends ManagementModalBase<ScheduledTask,
 				text: this.truncateError(taskState.lastError),
 				cls: 'gemini-scheduler-item-error',
 				title: taskState.lastError,
-			} as any);
+			});
 		}
 
 		// Action buttons
@@ -134,18 +122,20 @@ export class SchedulerManagementModal extends ManagementModalBase<ScheduledTask,
 			cls: 'gemini-scheduler-action',
 			attr: { type: 'button', title: isDisabled ? t('scheduler.enableTooltip') : t('scheduler.disableTooltip') },
 		});
-		toggleBtn.addEventListener('click', async () => {
-			toggleBtn.disabled = true;
-			toggleBtn.setText('…');
-			try {
-				await this.plugin.scheduledTaskManager?.updateTask(task.slug, { enabled: !task.enabled });
-				this.render();
-			} catch (err) {
-				this.plugin.logger.error(`[SchedulerManagementModal] Toggle failed for "${task.slug}":`, err);
-				new Notice(t('scheduler.toggleFailed', { slug: task.slug }));
-				toggleBtn.setText(isDisabled ? t('scheduler.enableButton') : t('scheduler.disableButton'));
-				toggleBtn.disabled = false;
-			}
+		toggleBtn.addEventListener('click', () => {
+			void (async () => {
+				toggleBtn.disabled = true;
+				toggleBtn.setText('…');
+				try {
+					await this.plugin.scheduledTaskManager?.updateTask(task.slug, { enabled: !task.enabled });
+					this.render();
+				} catch (err) {
+					this.plugin.logger.error(`[SchedulerManagementModal] Toggle failed for "${task.slug}":`, err);
+					new Notice(t('scheduler.toggleFailed', { slug: task.slug }));
+					toggleBtn.setText(isDisabled ? t('scheduler.enableButton') : t('scheduler.disableButton'));
+					toggleBtn.disabled = false;
+				}
+			})();
 		});
 
 		if (isPaused) {
@@ -154,10 +144,19 @@ export class SchedulerManagementModal extends ManagementModalBase<ScheduledTask,
 				cls: 'gemini-scheduler-action',
 				attr: { type: 'button', title: t('scheduler.resetTooltip') },
 			});
-			resetBtn.addEventListener('click', async () => {
-				resetBtn.disabled = true;
-				await this.plugin.scheduledTaskManager?.resetTask(task.slug);
-				this.render();
+			resetBtn.addEventListener('click', () => {
+				void (async () => {
+					resetBtn.disabled = true;
+					try {
+						await this.plugin.scheduledTaskManager?.resetTask(task.slug);
+						this.render();
+					} catch (err) {
+						// On success render() rebuilds the row; on failure restore the
+						// button so it can't stay stuck disabled.
+						this.plugin.logger.error(`[SchedulerManagementModal] resetTask failed for "${task.slug}":`, err);
+						resetBtn.disabled = false;
+					}
+				})();
 			});
 		}
 
@@ -168,18 +167,20 @@ export class SchedulerManagementModal extends ManagementModalBase<ScheduledTask,
 			attr: { type: 'button' },
 		});
 		if (isPaused || isDisabled) runBtn.disabled = true;
-		runBtn.addEventListener('click', async () => {
-			runBtn.disabled = true;
-			runBtn.setText(t('scheduler.running'));
-			try {
-				await this.plugin.scheduledTaskManager?.runNow(task.slug);
-				runBtn.setText(t('scheduler.submitted'));
-			} catch (err) {
-				this.plugin.logger.error(`[SchedulerManagementModal] runNow failed for "${task.slug}":`, err);
-				new Notice(t('scheduler.runFailed', { slug: task.slug }));
-				runBtn.disabled = false;
-				runBtn.setText(t('scheduler.runNowButton'));
-			}
+		runBtn.addEventListener('click', () => {
+			void (async () => {
+				runBtn.disabled = true;
+				runBtn.setText(t('scheduler.running'));
+				try {
+					await this.plugin.scheduledTaskManager?.runNow(task.slug);
+					runBtn.setText(t('scheduler.submitted'));
+				} catch (err) {
+					this.plugin.logger.error(`[SchedulerManagementModal] runNow failed for "${task.slug}":`, err);
+					new Notice(t('scheduler.runFailed', { slug: task.slug }));
+					runBtn.disabled = false;
+					runBtn.setText(t('scheduler.runNowButton'));
+				}
+			})();
 		});
 
 		// Edit
@@ -236,7 +237,7 @@ export class SchedulerManagementModal extends ManagementModalBase<ScheduledTask,
 		const dayCheckboxes: HTMLInputElement[] = [];
 		for (const day of WEEKDAY_OPTIONS) {
 			const label = daysRow.createEl('label', { cls: 'gemini-scheduler-day-label' });
-			const cb = label.createEl('input', { attr: { type: 'checkbox' } }) as HTMLInputElement;
+			const cb = label.createEl('input', { attr: { type: 'checkbox' } });
 			cb.checked = this.form.scheduleDays.includes(day.code);
 			cb.addEventListener('change', () => {
 				if (cb.checked) {
@@ -257,7 +258,7 @@ export class SchedulerManagementModal extends ManagementModalBase<ScheduledTask,
 		updateScheduleVisibility(this.form.schedulePreset);
 
 		presetSelect.addEventListener('change', () => {
-			this.form.schedulePreset = presetSelect.value as any;
+			this.form.schedulePreset = presetSelect.value;
 			updateScheduleVisibility(presetSelect.value);
 		});
 		customInput.addEventListener('input', () => {
@@ -302,6 +303,7 @@ export class SchedulerManagementModal extends ManagementModalBase<ScheduledTask,
 			.setDesc(t('scheduler.modelOverrideDesc'))
 			.addText((text) =>
 				text
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- example model id, shown verbatim
 					.setPlaceholder('gemini-2.0-flash')
 					.setValue(this.form.model)
 					.onChange((v) => {

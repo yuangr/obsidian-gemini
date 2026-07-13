@@ -1,5 +1,5 @@
 import { App, Modal, Notice, Setting, setIcon } from 'obsidian';
-import type ObsidianGemini from '../../main';
+import type { ObsidianGemini } from '../../types/plugin';
 import { ToolPolicyEditor } from './tool-policy-editor';
 import { t } from '../../i18n';
 
@@ -171,18 +171,20 @@ export abstract class ManagementModalBase<TEntity, TEntityState> extends Modal {
 			cls: 'gemini-scheduler-confirm-delete',
 			attr: { type: 'button' },
 		});
-		confirmBtn.addEventListener('click', async () => {
-			confirmBtn.disabled = true;
-			confirmBtn.setText(t('component.managementModalBase.deleting'));
-			try {
-				await this.deleteEntity(slug);
-				new Notice(t('component.managementModalBase.deleted', { label: this.capitalizedEntityLabel, slug }));
-				this.render();
-			} catch (err) {
-				this.plugin.logger.error(`[${this.constructor.name}] Delete failed for "${slug}":`, err);
-				new Notice(t('component.managementModalBase.deleteFailed', { slug }));
-				this.render();
-			}
+		confirmBtn.addEventListener('click', () => {
+			void (async () => {
+				confirmBtn.disabled = true;
+				confirmBtn.setText(t('component.managementModalBase.deleting'));
+				try {
+					await this.deleteEntity(slug);
+					new Notice(t('component.managementModalBase.deleted', { label: this.capitalizedEntityLabel, slug }));
+					this.render();
+				} catch (err) {
+					this.plugin.logger.error(`[${this.constructor.name}] Delete failed for "${slug}":`, err);
+					new Notice(t('component.managementModalBase.deleteFailed', { slug }));
+					this.render();
+				}
+			})();
 		});
 	}
 
@@ -250,7 +252,9 @@ export abstract class ManagementModalBase<TEntity, TEntityState> extends Modal {
 			cls: 'mod-cta',
 			attr: { type: 'button' },
 		});
-		saveBtn.addEventListener('click', () => this.handleSave(isEdit));
+		saveBtn.addEventListener('click', () => {
+			void this.handleSave(isEdit);
+		});
 
 		const cancelBtn = footer.createEl('button', {
 			text: t('component.managementModalBase.cancel'),
@@ -275,6 +279,38 @@ export abstract class ManagementModalBase<TEntity, TEntityState> extends Modal {
 
 	protected truncateError(msg: string): string {
 		return msg.length > 80 ? `${msg.slice(0, 77)}…` : msg;
+	}
+
+	/**
+	 * Build the shared entity-row shell used by every management modal: the
+	 * `<li>` carrying the paused/disabled state classes and the leading
+	 * status-icon span. Subclasses call this, then append their entity-specific
+	 * badge/info/action content to the returned `li`. The icon reflects
+	 * paused → disabled → active state; the active-state icon is entity-specific
+	 * (e.g. `'clock'` for tasks, `'webhook'` for hooks) and is supplied by the
+	 * caller, while the paused (`alert-circle`) and disabled (`pause-circle`)
+	 * icons are shared.
+	 */
+	protected renderEntityRowShell(
+		container: HTMLElement,
+		opts: { isPaused: boolean; isDisabled: boolean; activeIcon: string }
+	): { li: HTMLElement; iconEl: HTMLElement } {
+		const { isPaused, isDisabled, activeIcon } = opts;
+
+		const li = container.createEl('li', {
+			cls: [
+				'gemini-scheduler-item',
+				isDisabled ? 'gemini-scheduler-item--disabled' : '',
+				isPaused ? 'gemini-scheduler-item--paused' : '',
+			]
+				.filter(Boolean)
+				.join(' '),
+		});
+
+		const iconEl = li.createSpan({ cls: 'gemini-scheduler-item-icon' });
+		setIcon(iconEl, isPaused ? 'alert-circle' : isDisabled ? 'pause-circle' : activeIcon);
+
+		return { li, iconEl };
 	}
 
 	/** Capitalize the entity label for use in UI strings. */
@@ -312,7 +348,7 @@ export abstract class ManagementModalBase<TEntity, TEntityState> extends Modal {
 	// ── Abstract: data access ────────────────────────────────────────────────
 
 	/** Return the entity manager, or null/undefined if unavailable. */
-	protected abstract getManager(): unknown | null | undefined;
+	protected abstract getManager(): unknown;
 	/** Return all entities for the list view. */
 	protected abstract getEntities(): TEntity[];
 	/** Return the state map keyed by slug. */

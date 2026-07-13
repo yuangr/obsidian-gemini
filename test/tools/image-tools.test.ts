@@ -109,7 +109,7 @@ describe('ImageTools', () => {
 		});
 
 		it('should return error when prompt is not a string', async () => {
-			const result = await tool.execute({ prompt: 123 as any }, mockContext);
+			const result = await tool.execute({ prompt: 123 }, mockContext);
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBe('Prompt is required and must be a non-empty string');
@@ -129,13 +129,13 @@ describe('ImageTools', () => {
 		});
 
 		it('should have confirmation message', () => {
-			const message = tool.confirmationMessage!({ prompt: 'a beautiful sunset' });
+			const message = tool.confirmationMessage({ prompt: 'a beautiful sunset' });
 			expect(message).toContain('Generate an image with prompt');
 			expect(message).toContain('a beautiful sunset');
 		});
 
 		it('should include destination in confirmation message when output_path is provided', () => {
-			const message = tool.confirmationMessage!({
+			const message = tool.confirmationMessage({
 				prompt: 'a mountain',
 				output_path: 'attachments/mountain.png',
 			});

@@ -44,7 +44,7 @@ vi.mock('@google/genai', () => ({
 }));
 
 // Mock FileUploader
-vi.mock('@allenhutchison/gemini-utils', () => ({
+vi.mock('@allenhutchison/gemini-utils/file-search', () => ({
 	FileUploader: vi.fn().mockImplementation(function () {
 		return {
 			uploadWithAdapter: vi.fn().mockResolvedValue(undefined),
@@ -53,6 +53,7 @@ vi.mock('@allenhutchison/gemini-utils', () => ({
 }));
 
 vi.mock('../../src/utils/error-utils', () => ({
+	asRecord: vi.fn((value: unknown) => (value !== null && typeof value === 'object' ? value : {})),
 	getErrorMessage: vi.fn((err: any) => (err instanceof Error ? err.message : String(err))),
 	getRawErrorMessage: vi.fn((err: any) => (err instanceof Error ? err.message : String(err))),
 	isQuotaExhausted: vi.fn().mockReturnValue(false),
@@ -149,7 +150,7 @@ function createMockCallbacks(overrides: Partial<VaultScannerCallbacks> = {}): Va
 		getStatus: vi.fn(() => status) as any,
 		setStatus: vi.fn((s: string) => {
 			status = s;
-		}) as any,
+		}),
 		isReady: vi.fn().mockReturnValue(true),
 		getAi: vi.fn().mockReturnValue({
 			fileSearchStores: {

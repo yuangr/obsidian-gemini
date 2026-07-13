@@ -1,6 +1,7 @@
 import {
 	getErrorMessage,
 	getRawErrorMessage,
+	getRawErrorMessageOr,
 	getShortErrorMessage,
 	isNotFoundError,
 	isQuotaExhausted,
@@ -45,6 +46,48 @@ describe('error-utils', () => {
 		test('does not translate raw messages (unlike getErrorMessage)', () => {
 			// getErrorMessage maps "api key" to friendly guidance; getRawErrorMessage must not.
 			expect(getRawErrorMessage(new Error('Invalid api key supplied'))).toBe('Invalid api key supplied');
+		});
+	});
+
+	describe('getRawErrorMessageOr', () => {
+		test('returns Error.message for Error instances', () => {
+			expect(getRawErrorMessageOr(new Error('boom'), 'Unknown error')).toBe('boom');
+		});
+
+		test('preserves message on Error subclasses', () => {
+			expect(getRawErrorMessageOr(new TypeError('bad type'), 'Unknown error')).toBe('bad type');
+		});
+
+		test('returns the fallback verbatim for string inputs', () => {
+			expect(getRawErrorMessageOr('plain string', 'Unknown error')).toBe('Unknown error');
+		});
+
+		test('returns the fallback for null', () => {
+			expect(getRawErrorMessageOr(null, 'Unknown error')).toBe('Unknown error');
+		});
+
+		test('returns the fallback for undefined', () => {
+			expect(getRawErrorMessageOr(undefined, 'Unknown error')).toBe('Unknown error');
+		});
+
+		test('returns the fallback for objects with a custom toString()', () => {
+			// Unlike getRawErrorMessage (which would call String()), the fallback wins for non-Error values.
+			const obj = {
+				toString() {
+					return 'custom-stringified';
+				},
+			};
+			expect(getRawErrorMessageOr(obj, 'Unknown error')).toBe('Unknown error');
+		});
+
+		test('passes the supplied fallback through unchanged (e.g. a localized string)', () => {
+			expect(getRawErrorMessageOr({}, 'Une erreur inconnue')).toBe('Une erreur inconnue');
+		});
+
+		test('does not translate raw messages (unlike getErrorMessage)', () => {
+			expect(getRawErrorMessageOr(new Error('Invalid api key supplied'), 'Unknown error')).toBe(
+				'Invalid api key supplied'
+			);
 		});
 	});
 
@@ -203,6 +246,25 @@ describe('error-utils', () => {
 			test('Network fetch error', () => {
 				const error = new Error('fetch failed: Connection refused');
 				expect(getErrorMessage(error)).toBe(
+					'Network error: Unable to reach the model API. Please check your connection.'
+				);
+			});
+
+			test('Chromium/Electron "Failed to fetch" is a network error', () => {
+				const error = new Error('Unable to make request: TypeError: Failed to fetch');
+				expect(getErrorMessage(error)).toBe(
+					'Network error: Unable to reach the model API. Please check your connection.'
+				);
+			});
+
+			test('An error that merely mentions "fetch" is not misclassified as a network error', () => {
+				// The bare-"fetch" heuristic used to flag this as a connectivity problem
+				// because "proxyFetch" contains "fetch", sending users to check their
+				// connection instead of the real cause.
+				const error = new Error(
+					'Failed to initialize research client: SDK structure has changed and proxyFetch injection failed.'
+				);
+				expect(getErrorMessage(error)).not.toBe(
 					'Network error: Unable to reach the model API. Please check your connection.'
 				);
 			});

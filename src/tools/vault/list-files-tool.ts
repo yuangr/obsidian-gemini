@@ -1,8 +1,10 @@
 import { Tool, ToolResult, ToolExecutionContext } from '../types';
 import { ToolCategory } from '../../types/agent';
 import { ToolClassification } from '../../types/tool-policy';
-import { TFile, TFolder, normalizePath } from 'obsidian';
+import { TFolder, normalizePath } from 'obsidian';
 import { shouldExcludePathForPlugin as shouldExcludePath } from '../../utils/file-utils';
+import { getRawErrorMessageOr } from '../../utils/error-utils';
+import { toFileEntry } from './utils';
 
 /**
  * List files in a folder
@@ -71,7 +73,9 @@ export class ListFilesTool implements Tool {
 
 			const files = params.recursive
 				? plugin.app.vault.getFiles()
-				: (folder as TFolder)?.children || plugin.app.vault.getRoot().children;
+				: folder instanceof TFolder
+					? folder.children
+					: plugin.app.vault.getRoot().children;
 
 			const fileList = files
 				.filter((f) => {
@@ -82,13 +86,7 @@ export class ListFilesTool implements Tool {
 					// Exclude system folders
 					return !shouldExcludePath(f.path, plugin);
 				})
-				.map((f) => ({
-					name: f.name,
-					path: f.path,
-					type: f instanceof TFile ? 'file' : 'folder',
-					size: f instanceof TFile ? f.stat.size : undefined,
-					modified: f instanceof TFile ? f.stat.mtime : undefined,
-				}));
+				.map(toFileEntry);
 
 			return {
 				success: true,
@@ -101,7 +99,7 @@ export class ListFilesTool implements Tool {
 		} catch (error) {
 			return {
 				success: false,
-				error: `Error listing files: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				error: `Error listing files: ${getRawErrorMessageOr(error, 'Unknown error')}`,
 			};
 		}
 	}

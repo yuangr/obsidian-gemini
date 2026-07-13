@@ -2,7 +2,7 @@ import { DeleteFileTool } from '../../../src/tools/vault';
 import { ToolExecutionContext } from '../../../src/tools/types';
 
 // Mock gemini-utils (needed by file-classification, imported by vault-tools)
-vi.mock('@allenhutchison/gemini-utils', () => ({
+vi.mock('@allenhutchison/gemini-utils/mime', () => ({
 	EXTENSION_TO_MIME: {
 		'.md': 'text/markdown',
 		'.txt': 'text/plain',
@@ -59,6 +59,7 @@ mockFolder.name = 'folder';
 mockFolder.children = [mockFile];
 
 const mockVault = {
+	configDir: '.obsidian',
 	getAbstractFileByPath: vi.fn(),
 	read: vi.fn(),
 	readBinary: vi.fn(),
@@ -172,7 +173,7 @@ describe('DeleteFileTool', () => {
 	});
 
 	it('should have confirmation message', () => {
-		const message = tool.confirmationMessage!({ path: 'test.md' });
+		const message = tool.confirmationMessage({ path: 'test.md' });
 		expect(message).toContain('Delete file or folder: test.md');
 		expect(message).toContain('system trash');
 	});

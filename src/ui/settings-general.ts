@@ -1,10 +1,10 @@
-import type ObsidianGemini from '../main';
-import { App, Notice, Setting, SecretComponent, debounce } from 'obsidian';
-import { createAlwaysOpenSection, selectModelSetting } from './settings-helpers';
+import type { ObsidianGemini } from '../types/plugin';
+import { App, Notice, Setting, SecretComponent } from 'obsidian';
+import { createAlwaysOpenSection, createDebouncedSave, selectModelSetting } from './settings-helpers';
 import { FolderSuggest } from './folder-suggest';
 import { getErrorMessage } from '../utils/error-utils';
 import { t } from '../i18n';
-import type { SettingsSectionContext } from './settings';
+import type { SettingsSectionContext } from './settings-helpers';
 
 export async function renderGeneralSettings(
 	containerEl: HTMLElement,
@@ -12,22 +12,7 @@ export async function renderGeneralSettings(
 	app: App,
 	context: SettingsSectionContext
 ): Promise<void> {
-	// Debounce saveSettings() to avoid re-running the plugin lifecycle on every keystroke
-	// in text inputs. In-memory settings are mutated immediately so the UI stays responsive.
-	// The callback is async + wrapped in try/catch so rejections from saveSettings() don't
-	// become unhandled promise rejections.
-	const debouncedSave = debounce(
-		async () => {
-			try {
-				await plugin.saveSettings();
-			} catch (error) {
-				plugin.logger.error('Failed to save settings:', error);
-				new Notice(t('settings.common.saveFailedNotice', { error: getErrorMessage(error) }));
-			}
-		},
-		300,
-		true
-	);
+	const debouncedSave = createDebouncedSave(plugin);
 
 	const generalEl = createAlwaysOpenSection(
 		containerEl,
@@ -82,6 +67,7 @@ async function renderGeneralSection(
 			.setDesc(t('settings.general.ollamaBaseUrlDesc'))
 			.addText((text) =>
 				text
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- default endpoint URL, shown verbatim
 					.setPlaceholder('http://localhost:11434')
 					.setValue(plugin.settings.ollamaBaseUrl)
 					.onChange((value) => {
@@ -139,28 +125,40 @@ async function renderGeneralSection(
 			);
 	}
 
-	await selectModelSetting(
-		sectionEl,
-		plugin,
-		'chatModelName',
-		t('settings.general.chatModelName'),
-		t('settings.general.chatModelDesc')
-	);
-	await selectModelSetting(
-		sectionEl,
-		plugin,
-		'summaryModelName',
-		t('settings.general.summaryModelName'),
-		t('settings.general.summaryModelDesc')
-	);
-	await selectModelSetting(
-		sectionEl,
-		plugin,
-		'completionsModelName',
-		t('settings.general.completionModelName'),
-		t('settings.general.completionModelDesc')
-	);
-	if (plugin.settings.provider === 'gemini') {
+	if (plugin.settings.provider === 'ollama') {
+		// Ollama keeps a single model resident at a time, so one model applies to
+		// every use case (chat / summary / completions / rewrite). Show just the
+		// one picker, bound to the dedicated `ollamaModelName` field so switching
+		// providers doesn't overwrite the user's Gemini chat model. (#1077)
+		await selectModelSetting(
+			sectionEl,
+			plugin,
+			'ollamaModelName',
+			t('settings.general.ollamaModelName'),
+			t('settings.general.ollamaModelDesc')
+		);
+	} else {
+		await selectModelSetting(
+			sectionEl,
+			plugin,
+			'chatModelName',
+			t('settings.general.chatModelName'),
+			t('settings.general.chatModelDesc')
+		);
+		await selectModelSetting(
+			sectionEl,
+			plugin,
+			'summaryModelName',
+			t('settings.general.summaryModelName'),
+			t('settings.general.summaryModelDesc')
+		);
+		await selectModelSetting(
+			sectionEl,
+			plugin,
+			'completionsModelName',
+			t('settings.general.completionModelName'),
+			t('settings.general.completionModelDesc')
+		);
 		await selectModelSetting(
 			sectionEl,
 			plugin,

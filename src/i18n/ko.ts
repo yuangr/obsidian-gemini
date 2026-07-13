@@ -18,6 +18,7 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': '보관소에 대한 이해 새로고침',
 	'agent.empty.initContext': '보관소 컨텍스트 초기화',
 	'agent.empty.initContextDesc': '보관소 구조와 구성을 이해할 수 있도록 도와주세요',
+	'agent.empty.initContextFailed': '보관소 컨텍스트를 초기화하지 못했습니다',
 	'agent.empty.recentSessions': '최근 세션:',
 	'agent.empty.examplesHeader': '다음 예시를 시도해 보세요:',
 	'i18n.aiTranslatedNotice': '이 인터페이스 번역은 AI에 의해 생성되었습니다. 개선을 위한 PR은 언제나 환영합니다.',
@@ -58,6 +59,8 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': '완성 모델',
 	'settings.general.completionModelDesc':
 		'노트에 입력할 때 IDE 스타일의 인라인 자동 완성을 제공하는 데 사용되는 모델입니다.',
+	'settings.general.ollamaModelName': 'Ollama 모델',
+	'settings.general.ollamaModelDesc': '채팅, 요약, 완성, 재작성 등 모든 Ollama 사용 사례에 사용되는 모델입니다.',
 	'settings.general.imageModelName': '이미지 모델',
 	'settings.general.imageModelDesc': '이미지 생성에 사용되는 모델입니다.',
 	'settings.general.stateFolderName': '플러그인 상태 폴더',
@@ -138,7 +141,7 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 		'로그 항목을 플러그인 상태 폴더의 파일에 기록합니다. 오류 및 경고는 항상 기록되며, 디버그 항목은 디버그 모드가 필요합니다. 로그 파일은 1MB에 도달하면 자동으로 로테이션됩니다.',
 	'settings.agentConfig.useInteractionsApiName': 'Interactions API 사용',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'Gemini 요청을 기존 generateContent API 대신 Google의 새로운 Interactions API를 통해 라우팅합니다. 상태 비저장(stateless) 방식으로 실행되어, 대화 기록이 매 턴마다 다시 재생되며 턴 사이에 Google 측에 저장되지 않습니다. 실험적 기능이므로 문제가 발생하면 비활성화하세요.',
+		'Gemini 요청을 기존 generateContent API 대신 Google의 새로운 Interactions API를 통해 라우팅합니다. 이 방식이 기본 전송 방식입니다. 상태를 저장하지 않는 방식으로 실행되어 대화 기록이 매 턴마다 다시 전송되며, 턴 사이에 Google 측에 저장되지 않습니다. 문제가 발생할 경우 generateContent로 대체하려면 이 옵션을 비활성화하세요.',
 	'settings.agentConfig.customEndpointName': '사용자 지정 API 엔드포인트',
 	'settings.agentConfig.customEndpointDesc':
 		'기본 Google API 기본 URL을 재정의합니다(예: 회사 프록시 또는 로컬 게이트웨이용). 공식 엔드포인트를 사용하려면 비워 두십시오.',
@@ -544,7 +547,7 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 		'이 Glob과 일치하는 경로로 실행을 제한합니다. 예시: Daily/**/*.md, Notes/*.md. 모든 경로에 적용하려면 비워 두세요.',
 	'hooks.commandIdSetting': '명령 ID',
 	'hooks.commandIdDesc':
-		'실행할 명령 팔레트 ID입니다. 예: editor:save-file, gemini-scribe-summarize-active-file. 설정 → 단축키에서 명령 ID를 확인할 수 있습니다 (Ctrl+Shift+I로 개발자 콘솔을 열어 ID 검사 가능).',
+		'실행할 명령어 팔레트 ID입니다. 예: editor:save-file, gemini-scribe:summarize-active-file. 설정 → 단축키에서 명령어 ID를 확인할 수 있습니다 (Ctrl+Shift+I를 눌러 개발자 콘솔을 열고 ID를 확인하세요).',
 	'hooks.focusFileSetting': '실행 전 트리거 파일에 포커스',
 	'hooks.focusFileDesc':
 		'활성화하면 명령이 실행되기 전에 트리거된 파일이 작업 공간에 열립니다. 에디터 범위의 명령에 유용합니다. 비활성화하면 현재 활성화된 파일에 대해 명령이 실행됩니다. 기본값은 비활성입니다.',
@@ -816,6 +819,7 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': '노트를 프로젝트로 변환 실패',
 	'notice.main.noProjectsFound': '프로젝트를 찾을 수 없습니다',
 	'notice.main.noSessionsForProject': '프로젝트에 대한 세션을 찾을 수 없습니다: {name}',
+	'notice.main.resumeProjectSessionFailed': '프로젝트 세션을 재개하지 못했습니다',
 	'notice.main.projectRemoved': '다음에서 프로젝트 상태 제거됨: {name}',
 	'notice.main.projectRemoveFailed': '프로젝트 상태 제거 실패',
 	'notice.main.selectTextFirst': '먼저 텍스트를 선택해 주세요',
@@ -828,9 +832,6 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'RAG 동기화 일시 중지됨',
 	'notice.main.ragNotPaused': 'RAG 동기화가 일시 중지 상태가 아닙니다',
 	'notice.main.ragResumed': 'RAG 동기화 재개됨',
-	'notice.main.ragIndexComplete': '재스캔 완료: {indexed}개 재색인됨, {skipped}개 변경 없음',
-	'notice.main.ragIndexFailed': 'RAG 인덱싱 실패: {error}',
-	'notice.main.ragSyncingPending': 'RAG 인덱스: 대기 중인 변경 사항 동기화 중...',
 	'notice.main.readyToUse': '이제 Gemini Scribe를 사용할 준비가 되었습니다!',
 	'component.managementModalBase.managerUnavailable': '{label} 관리자를 사용할 수 없습니다.',
 	'component.managementModalBase.deleteConfirm':

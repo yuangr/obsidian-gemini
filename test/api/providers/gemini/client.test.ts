@@ -25,7 +25,7 @@ const { generateContentMock, cachesCreateMock, filesUploadMock, interactionsCrea
 			// wraps the getter, not if it mutates a single prebuilt client one time.
 			interactionsService: {
 				create: vi.fn(),
-				getClient: vi.fn(() => ({ _httpClient: { fetcher: 'default-fetcher' as unknown } })),
+				getClient: vi.fn(() => ({ _httpClient: { fetcher: 'default-fetcher' } })),
 			},
 		};
 	});
@@ -268,9 +268,9 @@ describe('GeminiClient', () => {
 			});
 
 			// Stub agentsMemory + skillManager so buildSystemInstruction doesn't NPE.
-			(mockPlugin as any).agentsMemory = { read: vi.fn().mockResolvedValue('') };
-			(mockPlugin as any).skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
-			(mockPlugin as any).settings = { userName: 'Tester', ragIndexing: { enabled: false } };
+			mockPlugin.agentsMemory = { read: vi.fn().mockResolvedValue('') };
+			mockPlugin.skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
+			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false } };
 		});
 
 		test('transmits perTurnContext directly as a user message content part', async () => {
@@ -362,7 +362,7 @@ describe('GeminiClient', () => {
 			[ModelUseCase.SEARCH, 'MEDIUM'],
 			[ModelUseCase.CHAT, 'HIGH'],
 		])('%s maps to thinkingLevel %s', async (useCase, expectedLevel) => {
-			const thinkingConfig = await thinkingConfigFor(useCase as ModelUseCase);
+			const thinkingConfig = await thinkingConfigFor(useCase);
 			expect(thinkingConfig.thinkingLevel).toBe(expectedLevel);
 			expect(thinkingConfig.includeThoughts).toBe(true);
 			// Never send both knobs — thinkingLevel only.
@@ -681,6 +681,88 @@ describe('GeminiClient', () => {
 			});
 			expect(result).toContain('>https://no-title.com</a>');
 		});
+
+		test('links carry rel="noopener noreferrer" via the shared renderer', () => {
+			const result = extract({
+				candidates: [
+					{
+						content: { parts: [{ text: 'ok' }] },
+						groundingMetadata: {
+							groundingChunks: [{ web: { uri: 'https://example.com', title: 'Example' } }],
+						},
+					},
+				],
+			});
+			expect(result).toContain('rel="noopener noreferrer"');
+			expect(result).toContain('target="_blank"');
+		});
+
+		test('chunks without a web object are filtered out', () => {
+			const result = extract({
+				candidates: [
+					{
+						content: { parts: [{ text: 'ok' }] },
+						groundingMetadata: {
+							groundingChunks: [{ retrievedContext: { uri: 'https://not-web.example' } }],
+						},
+					},
+				],
+			});
+			expect(result).toBe('');
+		});
+
+		test('web chunks missing a uri are filtered out while valid siblings still render', () => {
+			const result = extract({
+				candidates: [
+					{
+						content: { parts: [{ text: 'ok' }] },
+						groundingMetadata: {
+							groundingChunks: [
+								{ web: { title: 'No URI here' } },
+								{ web: { uri: 'https://valid.example', title: 'Valid' } },
+							],
+						},
+					},
+				],
+			});
+			expect(result).not.toContain('No URI here');
+			expect(result).toContain('<a href="https://valid.example"');
+			expect(result.match(/<li>/g)).toHaveLength(1);
+		});
+
+		test('sanitizes a malicious url/title through the shared hardened renderer (no HTML injection, no javascript: href)', () => {
+			const result = extract({
+				candidates: [
+					{
+						content: { parts: [{ text: 'ok' }] },
+						groundingMetadata: {
+							groundingChunks: [{ web: { uri: 'javascript:alert(1)', title: '<img src=x onerror=alert(1)>' } }],
+						},
+					},
+				],
+			});
+			// Disallowed scheme is neutralized to '#'.
+			expect(result).toContain('href="#"');
+			expect(result).not.toContain('javascript:');
+			// Title is HTML-escaped, so no raw tag survives.
+			expect(result).not.toContain('<img');
+			expect(result).toContain('&lt;img src=x onerror=alert(1)&gt;');
+		});
+
+		test('only the first candidate is considered for grounding metadata', () => {
+			const result = extract({
+				candidates: [
+					{ content: { parts: [{ text: 'ok' }] }, groundingMetadata: { groundingChunks: [] } },
+					{
+						content: { parts: [{ text: 'other' }] },
+						groundingMetadata: {
+							groundingChunks: [{ web: { uri: 'https://second-candidate.example' } }],
+						},
+					},
+				],
+			});
+			expect(result).toBe('');
+		});
 	});
 
 	// ──────────────────────────────────────────────────────────────────────
@@ -759,9 +841,9 @@ describe('GeminiClient', () => {
 		beforeEach(() => {
 			generateContentMock.mockReset();
 			generateContentMock.mockResolvedValue(validResponse);
-			(mockPlugin as any).agentsMemory = { read: vi.fn().mockResolvedValue('') };
-			(mockPlugin as any).skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
-			(mockPlugin as any).settings = { userName: 'Tester', ragIndexing: { enabled: false } };
+			mockPlugin.agentsMemory = { read: vi.fn().mockResolvedValue('') };
+			mockPlugin.skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
+			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false } };
 		});
 
 		test('Content format history ({role, parts}) passed through', async () => {
@@ -772,7 +854,7 @@ describe('GeminiClient', () => {
 				userMessage: 'follow up',
 				kind: 'extended',
 				conversationHistory: [historyEntry],
-			} as ExtendedModelRequest);
+			});
 
 			const params = (generateContentMock as Mock).mock.calls[0][0];
 			// The history entry should appear in contents
@@ -830,7 +912,7 @@ describe('GeminiClient', () => {
 				kind: 'extended',
 				conversationHistory: [],
 				inlineAttachments: [{ base64: 'abc123', mimeType: 'image/png' }],
-			} as ExtendedModelRequest);
+			});
 
 			const params = (generateContentMock as Mock).mock.calls[0][0];
 			const lastContent = params.contents[params.contents.length - 1];
@@ -848,7 +930,7 @@ describe('GeminiClient', () => {
 				conversationHistory: [],
 				inlineAttachments: [{ base64: 'inline1', mimeType: 'image/jpeg' }],
 				imageAttachments: [{ base64: 'img1', mimeType: 'image/gif' }],
-			} as ExtendedModelRequest);
+			});
 
 			const params = (generateContentMock as Mock).mock.calls[0][0];
 			const lastContent = params.contents[params.contents.length - 1];
@@ -863,7 +945,7 @@ describe('GeminiClient', () => {
 				userMessage: '',
 				kind: 'extended',
 				conversationHistory: [],
-			} as ExtendedModelRequest);
+			});
 
 			const params = (generateContentMock as Mock).mock.calls[0][0];
 			expect(params.contents).toBe('');
@@ -931,9 +1013,9 @@ describe('GeminiClient', () => {
 				candidates: [{ content: { parts: [{ text: 'ok' }] } }],
 				usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
 			});
-			(mockPlugin as any).agentsMemory = { read: vi.fn().mockResolvedValue('') };
-			(mockPlugin as any).skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
-			(mockPlugin as any).settings = { userName: 'Tester', ragIndexing: { enabled: false } };
+			mockPlugin.agentsMemory = { read: vi.fn().mockResolvedValue('') };
+			mockPlugin.skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
+			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false } };
 		});
 
 		test('availableTools converted to functionDeclarations in config.tools', async () => {
@@ -955,7 +1037,7 @@ describe('GeminiClient', () => {
 				kind: 'extended',
 				conversationHistory: [],
 				availableTools: tools,
-			} as ExtendedModelRequest);
+			});
 
 			const params = (generateContentMock as Mock).mock.calls[0][0];
 			expect(params.config.tools).toBeDefined();
@@ -974,7 +1056,7 @@ describe('GeminiClient', () => {
 
 		test('maxOutputTokens included when set', async () => {
 			// Ensure mockPlugin has customBaseUrl for constructor
-			(mockPlugin as any).settings.customBaseUrl = '';
+			mockPlugin.settings.customBaseUrl = '';
 
 			// Create a client with maxOutputTokens configured
 			const configWithMaxTokens: GeminiClientConfig = {
@@ -989,7 +1071,7 @@ describe('GeminiClient', () => {
 				userMessage: 'hello',
 				kind: 'extended',
 				conversationHistory: [],
-			} as ExtendedModelRequest);
+			});
 
 			const params = (generateContentMock as Mock).mock.calls[0][0];
 			expect(params.config.maxOutputTokens).toBe(4096);
@@ -1096,7 +1178,7 @@ describe('GeminiClient', () => {
 					userMessage: 'look at this image',
 					conversationHistory: [],
 					inlineAttachments: [{ base64: 'abc', mimeType: 'image/png' }],
-				} as ExtendedModelRequest);
+				});
 
 				// Verify files.upload was called
 				expect(filesUploadMock).toHaveBeenCalled();
@@ -1134,7 +1216,7 @@ describe('GeminiClient', () => {
 					userMessage: 'look at this image',
 					conversationHistory: [],
 					inlineAttachments: [{ base64: 'abc', mimeType: 'image/png' }],
-				} as ExtendedModelRequest);
+				});
 
 				expect(filesUploadMock).not.toHaveBeenCalled();
 
@@ -1170,9 +1252,9 @@ describe('GeminiClient', () => {
 			});
 
 			// Stub the plugin surface buildExtendedSystemInstruction depends on.
-			(mockPlugin as any).agentsMemory = { read: vi.fn().mockResolvedValue('') };
-			(mockPlugin as any).skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
-			(mockPlugin as any).settings = { userName: 'Tester', ragIndexing: { enabled: false } };
+			mockPlugin.agentsMemory = { read: vi.fn().mockResolvedValue('') };
+			mockPlugin.skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
+			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false } };
 		});
 
 		test('routes generateModelResponse to interactions.create, not generateContent', async () => {
@@ -1182,7 +1264,7 @@ describe('GeminiClient', () => {
 				userMessage: 'hi',
 				kind: 'extended',
 				conversationHistory: [],
-			} as ExtendedModelRequest);
+			});
 
 			expect(interactionsCreateMock).toHaveBeenCalledTimes(1);
 			expect(generateContentMock).not.toHaveBeenCalled();
@@ -1190,7 +1272,7 @@ describe('GeminiClient', () => {
 			// Next-Gen requests routed through Obsidian's requestUrl (CORS bypass):
 			// installObsidianFetch wrapped interactions.getClient, so the sub-client
 			// it builds carries the requestUrl-backed fetcher.
-			const subClient = interactionsService.getClient() as { _httpClient: { fetcher: unknown } };
+			const subClient = interactionsService.getClient();
 			expect(subClient._httpClient.fetcher).toBe(obsidianFetcher);
 		});
 
@@ -1203,7 +1285,7 @@ describe('GeminiClient', () => {
 				conversationHistory: [],
 				temperature: 0.4,
 				topP: 0.8,
-			} as ExtendedModelRequest);
+			});
 
 			const params = interactionsCreateMock.mock.calls[0][0];
 			expect(params.store).toBe(false);
@@ -1228,7 +1310,7 @@ describe('GeminiClient', () => {
 						parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
 					},
 				],
-			} as ExtendedModelRequest);
+			});
 
 			const params = interactionsCreateMock.mock.calls[0][0];
 			expect(params.tools).toEqual([
@@ -1252,8 +1334,8 @@ describe('GeminiClient', () => {
 					{ role: 'model', parts: [{ functionCall: { id: 'c1', name: 'read_file', args: { path: 'foo.md' } } }] },
 					{ role: 'user', parts: [{ functionResponse: { id: 'c1', name: 'read_file', response: { content: 'hi' } } }] },
 					{ role: 'model', parts: [{ text: 'foo.md says hi' }] },
-				] as any,
-			} as ExtendedModelRequest);
+				],
+			});
 
 			const params = interactionsCreateMock.mock.calls[0][0];
 			expect(params.input).toEqual([
@@ -1278,7 +1360,7 @@ describe('GeminiClient', () => {
 				kind: 'extended',
 				conversationHistory: [],
 				inlineAttachments: [{ base64: 'AAAA', mimeType: 'image/png' }],
-			} as ExtendedModelRequest);
+			});
 
 			const params = interactionsCreateMock.mock.calls[0][0];
 			const lastStep = params.input[params.input.length - 1];
@@ -1305,7 +1387,7 @@ describe('GeminiClient', () => {
 				userMessage: 'list files',
 				kind: 'extended',
 				conversationHistory: [],
-			} as ExtendedModelRequest);
+			});
 
 			expect(response.thoughts).toBe('thinking...');
 			expect(response.toolCalls).toEqual([
@@ -1342,8 +1424,8 @@ describe('GeminiClient', () => {
 
 			const client = makeInteractionsClient();
 			const chunks: Array<{ text: string; thought?: string }> = [];
-			const stream = client.generateStreamingResponse!(
-				{ prompt: '', userMessage: 'read a.md', kind: 'extended', conversationHistory: [] } as ExtendedModelRequest,
+			const stream = client.generateStreamingResponse(
+				{ prompt: '', userMessage: 'read a.md', kind: 'extended', conversationHistory: [] },
 				(chunk) => chunks.push(chunk)
 			);
 			const result = await stream.complete;
@@ -1371,10 +1453,10 @@ describe('GeminiClient', () => {
 
 			const client = makeInteractionsClient();
 			const chunks: Array<{ text: string }> = [];
-			const stream = client.generateStreamingResponse!(
-				{ prompt: '', userMessage: 'hi', kind: 'extended', conversationHistory: [] } as ExtendedModelRequest,
+			const stream = client.generateStreamingResponse(
+				{ prompt: '', userMessage: 'hi', kind: 'extended', conversationHistory: [] },
 				(chunk) => {
-					chunks.push(chunk as { text: string });
+					chunks.push(chunk);
 					stream.cancel(); // cancel after the first emitted chunk
 				}
 			);
@@ -1406,8 +1488,8 @@ describe('GeminiClient', () => {
 			});
 
 			const client = makeInteractionsClient();
-			const stream = client.generateStreamingResponse!(
-				{ prompt: '', userMessage: 'hi', kind: 'extended', conversationHistory: [] } as ExtendedModelRequest,
+			const stream = client.generateStreamingResponse(
+				{ prompt: '', userMessage: 'hi', kind: 'extended', conversationHistory: [] },
 				() => stream.cancel() // cancel mid-read, while the second read is blocked
 			);
 			const result = await stream.complete; // resolves only because cancel() aborts the read
@@ -1423,6 +1505,67 @@ describe('GeminiClient', () => {
 			const params = interactionsCreateMock.mock.calls[0][0];
 			expect(params.input).toBe('just answer');
 			expect(params.system_instruction).toBeUndefined();
+		});
+
+		describe('error handling', () => {
+			test('generateModelResponse logs and rethrows when interactions.create rejects', async () => {
+				const apiError = new Error('interactions boom');
+				interactionsCreateMock.mockReset();
+				interactionsCreateMock.mockRejectedValue(apiError);
+
+				const client = makeInteractionsClient();
+				await expect(
+					client.generateModelResponse({
+						prompt: '',
+						userMessage: 'hi',
+						kind: 'extended',
+						conversationHistory: [],
+					})
+				).rejects.toBe(apiError);
+
+				expect(mockLogger.error).toHaveBeenCalledWith('[GeminiClient] Error creating interaction:', apiError);
+			});
+
+			test('streaming logs and rethrows when interactions.create rejects', async () => {
+				const apiError = new Error('interactions stream boom');
+				interactionsCreateMock.mockReset();
+				interactionsCreateMock.mockRejectedValue(apiError);
+
+				const client = makeInteractionsClient();
+				const chunks: Array<{ text: string }> = [];
+				const stream = client.generateStreamingResponse(
+					{ prompt: '', userMessage: 'hi', kind: 'extended', conversationHistory: [] },
+					(chunk) => chunks.push(chunk)
+				);
+
+				await expect(stream.complete).rejects.toBe(apiError);
+				expect(chunks).toEqual([]);
+				expect(mockLogger.error).toHaveBeenCalledWith('[GeminiClient] Error streaming interaction:', apiError);
+			});
+
+			test('streaming logs and rethrows when the stream throws mid-iteration', async () => {
+				const apiError = new Error('mid-stream boom');
+				interactionsCreateMock.mockReset();
+				interactionsCreateMock.mockImplementation(async () => {
+					return (async function* () {
+						yield { event_type: 'step.start', index: 0, step: { type: 'model_output' } };
+						yield { event_type: 'step.delta', index: 0, delta: { type: 'text', text: 'partial' } };
+						throw apiError;
+					})();
+				});
+
+				const client = makeInteractionsClient();
+				const chunks: Array<{ text: string }> = [];
+				const stream = client.generateStreamingResponse(
+					{ prompt: '', userMessage: 'hi', kind: 'extended', conversationHistory: [] },
+					(chunk) => chunks.push(chunk)
+				);
+
+				await expect(stream.complete).rejects.toBe(apiError);
+				// The pre-error chunk was still emitted before the stream faulted.
+				expect(chunks).toEqual([{ text: 'partial' }]);
+				expect(mockLogger.error).toHaveBeenCalledWith('[GeminiClient] Error streaming interaction:', apiError);
+			});
 		});
 	});
 });

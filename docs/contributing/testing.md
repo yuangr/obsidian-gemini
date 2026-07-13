@@ -104,6 +104,21 @@ this.app.emulateMobile(!this.app.isMobile);
 
 This is the fastest way to catch mobile-specific issues without deploying to a device.
 
+### Verifying No Node Built-ins Load at Startup
+
+Because the plugin declares mobile support (`isDesktopOnly: false`), Obsidian raises an "attempted to load NodeJS package" warning (as a Notice toast and a `console.error`) whenever a `require('fs'|'path'|'crypto'|'url'|…)` runs at plugin load. After any change that touches imports of `@allenhutchison/gemini-utils` or other Node-dependent packages, confirm the load path stays clean using the Obsidian CLI:
+
+```bash
+npm run build && npm run install:test-vault
+obsidian dev:debug on            # REQUIRED — dev:console captures nothing until the debugger is attached
+obsidian dev:console clear
+obsidian plugin:reload id=gemini-scribe
+sleep 3
+obsidian dev:console limit=300 | grep -iE "nodejs|attempt.*load"   # expect NO output
+```
+
+An empty grep means no built-ins evaluated at load. (Common footgun: forgetting `dev:debug on` makes every check falsely pass — `dev:console` returns "Debugger not attached".) Repeat with `obsidian dev:mobile on` (then `off`) to confirm under mobile emulation. See the **obsidian-cli** skill for the full recipe.
+
 ### Getting Builds onto a Device
 
 There is no way to run `npm run dev` directly on mobile. Instead, build on desktop and sync the output files to your mobile device.
@@ -234,15 +249,15 @@ Use the appropriate checklist based on what your change affects. All changes sho
 
 The project enforces quality gates through git hooks and CI:
 
-| Check          | Command                  | When it runs    |
-| -------------- | ------------------------ | --------------- |
-| Formatting     | `npm run format-check`   | Pre-commit hook |
-| Build          | `npm run build`          | Pre-push hook   |
-| Tests          | `npm test`               | Pre-push hook   |
-| Lint           | `npm run lint`           | CI only         |
-| Test typecheck | `npm run typecheck:test` | CI only         |
+| Check          | Command                  | When it runs                                          |
+| -------------- | ------------------------ | ----------------------------------------------------- |
+| Formatting     | `npm run format-check`   | CI only (pre-commit auto-fixes staged files instead)  |
+| Build          | `npm run build`          | Pre-push hook                                         |
+| Tests          | `npm test`               | Pre-push hook                                         |
+| Lint           | `npm run lint`           | CI only (pre-commit auto-fixes staged `*.ts` instead) |
+| Test typecheck | `npm run typecheck:test` | CI only                                               |
 
-The last two run only in CI — no local hook covers them. Run all five locally before pushing to avoid a CI-only failure:
+The pre-commit hook runs `lint-staged`, which auto-fixes formatting (`prettier --write`) and lint issues (`eslint --fix`) on staged files only — a different (and narrower) check than the full-repo, fix-nothing commands CI runs. Run all five full-repo commands locally before pushing to avoid a CI-only failure:
 
 ```bash
 npm run format-check && npm run build && npm test && npm run lint && npm run typecheck:test

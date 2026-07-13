@@ -3,6 +3,7 @@ import { ToolCategory } from '../types/agent';
 import { ToolClassification } from '../types/tool-policy';
 import { resolvePathToFile } from './vault/utils';
 import { t } from '../i18n';
+import { getRawErrorMessageOr } from '../utils/error-utils';
 
 /**
  * Tool to safely update YAML frontmatter without touching content
@@ -50,7 +51,7 @@ class UpdateFrontmatterTool implements Tool {
 		required: ['path', 'key', 'value'],
 	};
 
-	confirmationMessage = (params: { path: string; key: string; value: any }) => {
+	confirmationMessage = (params: { path: string; key: string; value: unknown }) => {
 		return t('tool.confirm.updateFrontmatter', { path: params.path, key: params.key, value: String(params.value) });
 	};
 
@@ -61,7 +62,10 @@ class UpdateFrontmatterTool implements Tool {
 		return 'Updating frontmatter';
 	}
 
-	async execute(params: { path: string; key: string; value: any }, context: ToolExecutionContext): Promise<ToolResult> {
+	async execute(
+		params: { path: string; key: string; value: unknown },
+		context: ToolExecutionContext
+	): Promise<ToolResult> {
 		const plugin = context.plugin;
 		const { path, key, value } = params;
 
@@ -86,7 +90,7 @@ class UpdateFrontmatterTool implements Tool {
 			}
 
 			// Use Obsidian's native API for safe frontmatter updates
-			await plugin.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			await plugin.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 				frontmatter[key] = parsedValue;
 			});
 
@@ -102,7 +106,7 @@ class UpdateFrontmatterTool implements Tool {
 				},
 			};
 		} catch (error) {
-			const msg = error instanceof Error ? error.message : 'Unknown error';
+			const msg = getRawErrorMessageOr(error, 'Unknown error');
 			plugin.logger.error(`Failed to update frontmatter for ${path}: ${msg}`);
 			return {
 				success: false,
@@ -209,7 +213,7 @@ class AppendContentTool implements Tool {
 				},
 			};
 		} catch (error) {
-			const msg = error instanceof Error ? error.message : 'Unknown error';
+			const msg = getRawErrorMessageOr(error, 'Unknown error');
 			plugin.logger.error(`Failed to append content to ${path}: ${msg}`);
 			return {
 				success: false,

@@ -96,18 +96,7 @@ export class HookManagementModal extends ManagementModalBase<Hook, HookState> {
 		const isPaused = hookState?.pausedDueToErrors === true;
 		const isDisabled = !hook.enabled;
 
-		const li = container.createEl('li', {
-			cls: [
-				'gemini-scheduler-item',
-				isDisabled ? 'gemini-scheduler-item--disabled' : '',
-				isPaused ? 'gemini-scheduler-item--paused' : '',
-			]
-				.filter(Boolean)
-				.join(' '),
-		});
-
-		const iconEl = li.createSpan({ cls: 'gemini-scheduler-item-icon' });
-		setIcon(iconEl, isPaused ? 'alert-circle' : isDisabled ? 'pause-circle' : 'webhook');
+		const { li } = this.renderEntityRowShell(container, { isPaused, isDisabled, activeIcon: 'webhook' });
 
 		const info = li.createDiv({ cls: 'gemini-scheduler-item-info' });
 		info.createDiv({ text: hook.slug, cls: 'gemini-scheduler-item-slug' });
@@ -153,18 +142,20 @@ export class HookManagementModal extends ManagementModalBase<Hook, HookState> {
 			cls: 'gemini-scheduler-action',
 			attr: { type: 'button' },
 		});
-		toggleBtn.addEventListener('click', async () => {
-			toggleBtn.disabled = true;
-			toggleBtn.setText('…');
-			try {
-				await this.plugin.hookManager?.toggleHook(hook.slug, !hook.enabled);
-				this.render();
-			} catch (err) {
-				this.plugin.logger.error(`[HookManagementModal] Toggle failed for "${hook.slug}":`, err);
-				new Notice(t('hooks.toggleFailed', { slug: hook.slug }));
-				toggleBtn.setText(isDisabled ? t('hooks.enableButton') : t('hooks.disableButton'));
-				toggleBtn.disabled = false;
-			}
+		toggleBtn.addEventListener('click', () => {
+			void (async () => {
+				toggleBtn.disabled = true;
+				toggleBtn.setText('…');
+				try {
+					await this.plugin.hookManager?.toggleHook(hook.slug, !hook.enabled);
+					this.render();
+				} catch (err) {
+					this.plugin.logger.error(`[HookManagementModal] Toggle failed for "${hook.slug}":`, err);
+					new Notice(t('hooks.toggleFailed', { slug: hook.slug }));
+					toggleBtn.setText(isDisabled ? t('hooks.enableButton') : t('hooks.disableButton'));
+					toggleBtn.disabled = false;
+				}
+			})();
 		});
 
 		if (isPaused) {
@@ -173,10 +164,19 @@ export class HookManagementModal extends ManagementModalBase<Hook, HookState> {
 				cls: 'gemini-scheduler-action',
 				attr: { type: 'button', title: t('hooks.resetTooltip') },
 			});
-			resetBtn.addEventListener('click', async () => {
-				resetBtn.disabled = true;
-				await this.plugin.hookManager?.resetHook(hook.slug);
-				this.render();
+			resetBtn.addEventListener('click', () => {
+				void (async () => {
+					resetBtn.disabled = true;
+					try {
+						await this.plugin.hookManager?.resetHook(hook.slug);
+						this.render();
+					} catch (err) {
+						// On success render() rebuilds the row; on failure restore the
+						// button so it can't stay stuck disabled (mirrors the toggle handler above).
+						this.plugin.logger.error(`[HookManagementModal] resetHook failed for "${hook.slug}":`, err);
+						resetBtn.disabled = false;
+					}
+				})();
 			});
 		}
 
@@ -242,6 +242,7 @@ export class HookManagementModal extends ManagementModalBase<Hook, HookState> {
 			.setDesc(t('hooks.commandIdDesc'))
 			.addText((text) =>
 				text
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- literal command-id format hint, shown verbatim
 					.setPlaceholder('plugin-id:command-name')
 					.setValue(this.form.commandId)
 					.onChange((v) => {
@@ -354,6 +355,7 @@ export class HookManagementModal extends ManagementModalBase<Hook, HookState> {
 			.setDesc(t('hooks.skillsDesc'))
 			.addText((text) =>
 				text
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- example skill names (lowercase), shown verbatim
 					.setPlaceholder('summarize, index-files')
 					.setValue(this.form.enabledSkills.join(', '))
 					.onChange((v) => {
@@ -369,6 +371,7 @@ export class HookManagementModal extends ManagementModalBase<Hook, HookState> {
 			.setDesc(t('hooks.modelOverrideDesc'))
 			.addText((text) =>
 				text
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- example model id, shown verbatim
 					.setPlaceholder('gemini-2.5-flash-lite')
 					.setValue(this.form.model)
 					.onChange((v) => {

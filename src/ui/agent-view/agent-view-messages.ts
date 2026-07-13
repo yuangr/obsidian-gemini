@@ -1,11 +1,13 @@
-import { App, MarkdownRenderer, Notice, setIcon } from 'obsidian';
+import { App, Component, MarkdownRenderer, Notice, setIcon } from 'obsidian';
 import { ChatSession } from '../../types/agent';
+import { isSameSession } from './session-identity';
 import { GeminiConversationEntry } from '../../types/conversation';
-import type ObsidianGemini from '../../main';
+import type { ObsidianGemini } from '../../types/plugin';
 import { formatModelMessage } from '../../utils/markdown-formatting';
 import { stripTurnPreamble } from '../../utils/turn-preamble';
 import { Tool, DiffContext, ConfirmationResult } from '../../tools/types';
 import { t, getResolvedLocale } from '../../i18n';
+import { isToolExecutionMessage, parseToolSections } from './tool-section-parser';
 
 // Documentation and help content
 const DOCS_BASE_URL = 'https://allenhutchison.github.io/obsidian-gemini';
@@ -42,14 +44,14 @@ export class AgentViewMessages {
 	private autoOpenDiffTimeout: number | null = null;
 	private pendingConfirmations = new Set<(result: ConfirmationResult) => void>();
 	private pendingPlanApproval: ((approved: boolean) => void) | null = null;
-	private viewContext: any; // For MarkdownRenderer context
+	private viewContext: Component; // For MarkdownRenderer context
 
 	constructor(
 		app: App,
 		chatContainer: HTMLElement,
 		plugin: ObsidianGemini,
 		userInput: HTMLDivElement,
-		viewContext: any
+		viewContext: Component
 	) {
 		this.app = app;
 		this.chatContainer = chatContainer;
@@ -109,20 +111,7 @@ export class AgentViewMessages {
 			cls: `gemini-agent-message gemini-agent-message-${entry.role}`,
 		});
 
-		const header = messageDiv.createDiv({ cls: 'gemini-agent-message-header' });
-		header.createEl('span', {
-			text:
-				entry.role === 'user'
-					? t('agent.message.roleUser')
-					: entry.role === 'system'
-						? t('agent.message.roleSystem')
-						: t('agent.message.roleAgent'),
-			cls: 'gemini-agent-message-role',
-		});
-		header.createEl('span', {
-			text: entry.created_at.toLocaleTimeString(),
-			cls: 'gemini-agent-message-time',
-		});
+		this.createMessageHeader(messageDiv, this.roleLabel(entry.role), entry.created_at.toLocaleTimeString());
 
 		const content = messageDiv.createDiv({ cls: 'gemini-agent-message-content' });
 
@@ -130,7 +119,7 @@ export class AgentViewMessages {
 		const renderMessage = entry.role === 'user' ? stripTurnPreamble(entry.message) : entry.message;
 
 		// Check if this is a tool execution message from history
-		const isToolExecution = entry.metadata?.toolName || renderMessage.includes('Tool Execution Results:');
+		const isToolExecution = isToolExecutionMessage(renderMessage, Boolean(entry.metadata?.toolName));
 
 		// Convert single newlines to double newlines for proper markdown rendering
 		// while preserving table formatting
@@ -152,69 +141,63 @@ export class AgentViewMessages {
 		// Special handling for tool execution messages
 		if (isToolExecution && renderMessage.includes('Tool Execution Results:')) {
 			// Extract tool execution sections and make them collapsible
-			const toolSections = formattedMessage.split(/### ([^\n]+)/);
+			const { hasSections, intro, sections } = parseToolSections(formattedMessage);
 
-			if (toolSections.length > 1) {
+			if (hasSections) {
 				// First part before any tool sections
-				const intro = toolSections[0].trim();
 				if (intro) {
 					const introDiv = content.createDiv();
 					await MarkdownRenderer.render(this.app, intro, introDiv, sourcePath, this.viewContext);
 				}
 
 				// Process each tool section
-				for (let i = 1; i < toolSections.length; i += 2) {
-					const toolName = toolSections[i];
-					const toolContent = toolSections[i + 1]?.trim() || '';
+				for (const { toolName, content: toolContent } of sections) {
+					// Create collapsible tool execution block
+					const toolDiv = content.createDiv({ cls: 'gemini-agent-tool-execution' });
+					const toolHeader = toolDiv.createDiv({ cls: 'gemini-agent-tool-header' });
 
-					if (toolName && toolContent) {
-						// Create collapsible tool execution block
-						const toolDiv = content.createDiv({ cls: 'gemini-agent-tool-execution' });
-						const toolHeader = toolDiv.createDiv({ cls: 'gemini-agent-tool-header' });
+					// Add expand/collapse icon
+					const icon = toolHeader.createSpan({ cls: 'gemini-agent-tool-icon' });
+					setIcon(icon, 'chevron-right');
 
-						// Add expand/collapse icon
-						const icon = toolHeader.createEl('span', { cls: 'gemini-agent-tool-icon' });
-						setIcon(icon, 'chevron-right');
+					// Tool name
+					toolHeader.createSpan({
+						text: t('agent.message.toolPrefix', { name: toolName }),
+						cls: 'gemini-agent-tool-name',
+					});
 
-						// Tool name
-						toolHeader.createEl('span', {
-							text: t('agent.message.toolPrefix', { name: toolName }),
-							cls: 'gemini-agent-tool-name',
+					// Tool status (if available)
+					if (toolContent.includes('✅')) {
+						toolHeader.createSpan({
+							text: t('agent.message.toolSuccess'),
+							cls: 'gemini-agent-tool-status gemini-agent-tool-status-success',
 						});
-
-						// Tool status (if available)
-						if (toolContent.includes('✅')) {
-							toolHeader.createEl('span', {
-								text: t('agent.message.toolSuccess'),
-								cls: 'gemini-agent-tool-status gemini-agent-tool-status-success',
-							});
-						} else if (toolContent.includes('❌')) {
-							toolHeader.createEl('span', {
-								text: t('agent.message.toolFailed'),
-								cls: 'gemini-agent-tool-status gemini-agent-tool-status-error',
-							});
-						}
-
-						// Tool content (initially hidden)
-						const toolContentDiv = toolDiv.createDiv({
-							cls: 'gemini-agent-tool-content gemini-agent-tool-content-collapsed',
-						});
-
-						// Render the tool content
-						await MarkdownRenderer.render(this.app, toolContent, toolContentDiv, sourcePath, this.viewContext);
-
-						// Toggle handler
-						toolHeader.addEventListener('click', () => {
-							const isCollapsed = toolContentDiv.hasClass('gemini-agent-tool-content-collapsed');
-							if (isCollapsed) {
-								toolContentDiv.removeClass('gemini-agent-tool-content-collapsed');
-								setIcon(icon, 'chevron-down');
-							} else {
-								toolContentDiv.addClass('gemini-agent-tool-content-collapsed');
-								setIcon(icon, 'chevron-right');
-							}
+					} else if (toolContent.includes('❌')) {
+						toolHeader.createSpan({
+							text: t('agent.message.toolFailed'),
+							cls: 'gemini-agent-tool-status gemini-agent-tool-status-error',
 						});
 					}
+
+					// Tool content (initially hidden)
+					const toolContentDiv = toolDiv.createDiv({
+						cls: 'gemini-agent-tool-content gemini-agent-tool-content-collapsed',
+					});
+
+					// Render the tool content
+					await MarkdownRenderer.render(this.app, toolContent, toolContentDiv, sourcePath, this.viewContext);
+
+					// Toggle handler
+					toolHeader.addEventListener('click', () => {
+						const isCollapsed = toolContentDiv.hasClass('gemini-agent-tool-content-collapsed');
+						if (isCollapsed) {
+							toolContentDiv.removeClass('gemini-agent-tool-content-collapsed');
+							setIcon(icon, 'chevron-down');
+						} else {
+							toolContentDiv.addClass('gemini-agent-tool-content-collapsed');
+							setIcon(icon, 'chevron-right');
+						}
+					});
 				}
 			} else {
 				// No tool sections found, render normally
@@ -237,24 +220,9 @@ export class AgentViewMessages {
 		this.setupImageClickHandlers(content, sourcePath);
 
 		// Add a copy button for messages with visible text (skip reasoning-only turns).
+		// Copy the user-visible text (preamble stripped for user turns).
 		if ((entry.role === 'model' || entry.role === 'user') && renderMessage.trim()) {
-			const copyButton = content.createEl('button', {
-				cls: 'gemini-agent-copy-button',
-			});
-			setIcon(copyButton, 'copy');
-
-			copyButton.addEventListener('click', () => {
-				// Copy the user-visible text (preamble stripped for user turns)
-				navigator.clipboard
-					.writeText(renderMessage)
-					.then(() => {
-						new Notice(t('agent.message.copied'));
-					})
-					.catch((err) => {
-						new Notice(t('agent.message.copyFailed'));
-						this.plugin.logger.error(err);
-					});
-			});
+			this.addCopyButton(content, renderMessage);
 		}
 
 		// Auto-scroll to bottom
@@ -277,15 +245,12 @@ export class AgentViewMessages {
 			cls: 'gemini-agent-message gemini-agent-message-model gemini-agent-plan-message',
 		});
 
-		const header = messageDiv.createDiv({ cls: 'gemini-agent-message-header' });
-		header.createEl('span', {
-			text: t('agent.planMode.headerLabel'),
-			cls: 'gemini-agent-message-role gemini-agent-plan-role',
-		});
-		header.createEl('span', {
-			text: entry.created_at.toLocaleTimeString(),
-			cls: 'gemini-agent-message-time',
-		});
+		this.createMessageHeader(
+			messageDiv,
+			t('agent.planMode.headerLabel'),
+			entry.created_at.toLocaleTimeString(),
+			'gemini-agent-plan-role'
+		);
 
 		const content = messageDiv.createDiv({ cls: 'gemini-agent-message-content' });
 		const sourcePath = currentSession?.historyPath || '';
@@ -296,7 +261,7 @@ export class AgentViewMessages {
 		this.setupImageClickHandlers(content, sourcePath);
 
 		const actionsDiv = messageDiv.createDiv({ cls: 'gemini-agent-plan-actions' });
-		actionsDiv.createEl('span', {
+		actionsDiv.createSpan({
 			text: t('agent.planMode.approved'),
 			cls: 'gemini-agent-plan-decision gemini-agent-plan-decision-approve',
 		});
@@ -339,7 +304,7 @@ export class AgentViewMessages {
 		setIcon(chevron, 'chevron-right');
 
 		const details = row.createDiv({ cls: 'gemini-tool-row-details gemini-reasoning-row-details' });
-		details.style.display = 'none';
+		details.hide();
 		await MarkdownRenderer.render(this.app, formatModelMessage(thoughts), details, sourcePath, this.viewContext);
 
 		const toggle = () => {
@@ -359,6 +324,57 @@ export class AgentViewMessages {
 	}
 
 	/**
+	 * Resolve the localized role label for a message header.
+	 */
+	private roleLabel(role: 'user' | 'model' | 'system'): string {
+		return role === 'user'
+			? t('agent.message.roleUser')
+			: role === 'system'
+				? t('agent.message.roleSystem')
+				: t('agent.message.roleAgent');
+	}
+
+	/**
+	 * Build the standard message header (role label + timestamp) shared by every
+	 * message renderer. `roleCls` adds an accent class (e.g. plan headers) to the
+	 * role span.
+	 */
+	private createMessageHeader(parent: HTMLElement, roleText: string, timestamp: string, roleCls?: string): HTMLElement {
+		const header = parent.createDiv({ cls: 'gemini-agent-message-header' });
+		header.createSpan({
+			text: roleText,
+			cls: roleCls ? `gemini-agent-message-role ${roleCls}` : 'gemini-agent-message-role',
+		});
+		header.createSpan({
+			text: timestamp,
+			cls: 'gemini-agent-message-time',
+		});
+		return header;
+	}
+
+	/**
+	 * Add the standard copy-to-clipboard button to a rendered message.
+	 */
+	private addCopyButton(container: HTMLElement, textToCopy: string): void {
+		const copyButton = container.createEl('button', {
+			cls: 'gemini-agent-copy-button',
+		});
+		setIcon(copyButton, 'copy');
+
+		copyButton.addEventListener('click', () => {
+			navigator.clipboard
+				.writeText(textToCopy)
+				.then(() => {
+					new Notice(t('agent.message.copied'));
+				})
+				.catch((err) => {
+					new Notice(t('agent.message.copyFailed'));
+					this.plugin.logger.error('Failed to copy to clipboard', err);
+				});
+		});
+	}
+
+	/**
 	 * Create empty message container for streaming
 	 */
 	createStreamingMessageContainer(role: 'user' | 'model' | 'system' = 'model'): HTMLElement {
@@ -372,20 +388,7 @@ export class AgentViewMessages {
 			cls: `gemini-agent-message gemini-agent-message-${role}`,
 		});
 
-		const header = messageDiv.createDiv({ cls: 'gemini-agent-message-header' });
-		header.createEl('span', {
-			text:
-				role === 'user'
-					? t('agent.message.roleUser')
-					: role === 'system'
-						? t('agent.message.roleSystem')
-						: t('agent.message.roleAgent'),
-			cls: 'gemini-agent-message-role',
-		});
-		header.createEl('span', {
-			text: new Date().toLocaleTimeString(),
-			cls: 'gemini-agent-message-time',
-		});
+		this.createMessageHeader(messageDiv, this.roleLabel(role), new Date().toLocaleTimeString());
 
 		messageDiv.createDiv({ cls: 'gemini-agent-message-content' });
 
@@ -400,7 +403,7 @@ export class AgentViewMessages {
 		if (messageDiv) {
 			// For streaming, append the new chunk as plain text to avoid re-rendering
 			// We'll do a final markdown render when streaming completes
-			const textNode = document.createTextNode(newChunk);
+			const textNode = messageDiv.ownerDocument.createTextNode(newChunk);
 			messageDiv.appendChild(textNode);
 		}
 	}
@@ -434,25 +437,10 @@ export class AgentViewMessages {
 			}
 
 			// Add a copy button only when there's visible message text — mirrors the
-			// reasoning-only suppression in displayMessage.
+			// reasoning-only suppression in displayMessage. Use the original message
+			// text to preserve formatting.
 			if (entry.role === 'model' && fullMarkdown.trim()) {
-				const copyButton = messageDiv.createEl('button', {
-					cls: 'gemini-agent-copy-button',
-				});
-				setIcon(copyButton, 'copy');
-
-				copyButton.addEventListener('click', () => {
-					// Use the original message text to preserve formatting
-					navigator.clipboard
-						.writeText(entry.message)
-						.then(() => {
-							new Notice(t('agent.message.copied'));
-						})
-						.catch((err) => {
-							new Notice(t('agent.message.copyFailed'));
-							this.plugin.logger.error('Failed to copy to clipboard', err);
-						});
-				});
+				this.addCopyButton(messageDiv, entry.message);
 			}
 
 			// Setup image click handlers
@@ -467,7 +455,7 @@ export class AgentViewMessages {
 		const images = container.findAll('img');
 		for (const img of images) {
 			img.addClass('gemini-agent-clickable-image');
-			img.addEventListener('click', async (e) => {
+			img.addEventListener('click', (e) => {
 				e.stopPropagation();
 
 				// Try to get file path from alt text (standard Obsidian behavior)
@@ -476,7 +464,7 @@ export class AgentViewMessages {
 					const file = this.app.metadataCache.getFirstLinkpathDest(altText, sourcePath);
 					if (file) {
 						const leaf = this.app.workspace.getLeaf('tab');
-						await leaf.openFile(file);
+						void leaf.openFile(file);
 					}
 				}
 			});
@@ -592,33 +580,47 @@ export class AgentViewMessages {
 
 			if (agentsMemoryExists) {
 				buttonText.createEl('strong', { text: t('agent.empty.updateContext') });
-				buttonText.createEl('span', {
+				buttonText.createSpan({
 					text: t('agent.empty.updateContextDesc'),
 					cls: 'gemini-agent-init-desc',
 				});
 			} else {
 				buttonText.createEl('strong', { text: t('agent.empty.initContext') });
-				buttonText.createEl('span', {
+				buttonText.createSpan({
 					text: t('agent.empty.initContextDesc'),
 					cls: 'gemini-agent-init-desc',
 				});
 			}
 
-			initButton.addEventListener('click', async () => {
-				// Run the vault analyzer
-				if (this.plugin.vaultAnalyzer) {
-					await this.plugin.vaultAnalyzer.initializeAgentsMemory();
-					// Refresh the empty state to update the button
-					await this.showEmptyState(currentSession, onLoadSession, onSendMessage);
-				}
+			initButton.addEventListener('click', () => {
+				void (async () => {
+					// Run the vault analyzer
+					if (this.plugin.vaultAnalyzer) {
+						try {
+							await this.plugin.vaultAnalyzer.initializeAgentsMemory();
+						} catch (error) {
+							// Without this, a failing analyzer run is an unhandled rejection
+							// with no feedback to the user.
+							this.plugin.logger.error('Failed to initialize vault context (AGENTS.md):', error);
+							new Notice(t('agent.empty.initContextFailed'));
+							return;
+						}
+						try {
+							// Refresh the empty state to update the button
+							await this.showEmptyState(currentSession, onLoadSession, onSendMessage);
+						} catch (error) {
+							// Init already succeeded; only the UI refresh failed, so don't mislabel it
+							// as an init failure — log it without alarming the user.
+							this.plugin.logger.error('Vault context initialized, but failed to refresh empty state:', error);
+						}
+					}
+				})();
 			});
 
 			// Try to get recent sessions (excluding the current session)
 			// Fetch 6 sessions since we might filter out the current one
 			const allRecentSessions = await this.plugin.sessionManager.getRecentAgentSessions(6);
-			const recentSessions = allRecentSessions
-				.filter((session) => !this.isCurrentSession(session, currentSession))
-				.slice(0, 5); // Limit to 5 after filtering
+			const recentSessions = allRecentSessions.filter((session) => !isSameSession(session, currentSession)).slice(0, 5); // Limit to 5 after filtering
 
 			if (recentSessions.length > 0) {
 				// Show recent sessions
@@ -634,18 +636,18 @@ export class AgentViewMessages {
 						cls: 'gemini-agent-suggestion gemini-agent-suggestion-session',
 					});
 
-					suggestion.createEl('span', {
+					suggestion.createSpan({
 						text: session.title,
 						cls: 'gemini-agent-suggestion-title',
 					});
 
-					suggestion.createEl('span', {
+					suggestion.createSpan({
 						text: new Date(session.lastActive).toLocaleDateString(),
 						cls: 'gemini-agent-suggestion-date',
 					});
 
-					suggestion.addEventListener('click', async () => {
-						await onLoadSession(session);
+					suggestion.addEventListener('click', () => {
+						void onLoadSession(session);
 					});
 				});
 			}
@@ -673,9 +675,9 @@ export class AgentViewMessages {
 					cls: 'gemini-agent-example-text',
 				});
 
-				suggestion.addEventListener('click', async () => {
+				suggestion.addEventListener('click', () => {
 					this.userInput.textContent = example.text;
-					await onSendMessage();
+					void onSendMessage();
 				});
 			});
 
@@ -689,15 +691,6 @@ export class AgentViewMessages {
 	}
 
 	/**
-	 * Check if a session is the current session
-	 * Compares both session ID and history path for robustness
-	 */
-	private isCurrentSession(session: ChatSession, currentSession: ChatSession | null): boolean {
-		if (!currentSession) return false;
-		return session.id === currentSession.id || session.historyPath === currentSession.historyPath;
-	}
-
-	/**
 	 * Display a plan from the model with Approve / Reject buttons.
 	 * Resolves true when the user approves, false when they reject.
 	 */
@@ -706,15 +699,12 @@ export class AgentViewMessages {
 			cls: 'gemini-agent-message gemini-agent-message-model gemini-agent-plan-message',
 		});
 
-		const header = messageDiv.createDiv({ cls: 'gemini-agent-message-header' });
-		header.createEl('span', {
-			text: t('agent.planMode.headerLabel'),
-			cls: 'gemini-agent-message-role gemini-agent-plan-role',
-		});
-		header.createEl('span', {
-			text: new Date().toLocaleTimeString(),
-			cls: 'gemini-agent-message-time',
-		});
+		this.createMessageHeader(
+			messageDiv,
+			t('agent.planMode.headerLabel'),
+			new Date().toLocaleTimeString(),
+			'gemini-agent-plan-role'
+		);
 
 		const content = messageDiv.createDiv({ cls: 'gemini-agent-message-content' });
 		await MarkdownRenderer.render(this.app, formatModelMessage(planText), content, '', this.viewContext);
@@ -760,7 +750,7 @@ export class AgentViewMessages {
 	 */
 	public async displayConfirmationRequest(
 		tool: Tool,
-		parameters: any,
+		parameters: Record<string, unknown>,
 		executionId: string,
 		diffContext?: DiffContext
 	): Promise<ConfirmationResult> {
@@ -776,12 +766,7 @@ export class AgentViewMessages {
 			});
 
 			// Add header
-			const header = messageDiv.createDiv({ cls: 'gemini-agent-message-header' });
-			header.createEl('span', { text: t('agent.confirm.title'), cls: 'gemini-agent-message-role' });
-			header.createEl('span', {
-				text: new Date().toLocaleTimeString(),
-				cls: 'gemini-agent-message-time',
-			});
+			this.createMessageHeader(messageDiv, t('agent.confirm.title'), new Date().toLocaleTimeString());
 
 			// Create confirmation card
 			const card = messageDiv.createDiv({ cls: 'gemini-agent-confirmation-card' });
@@ -793,12 +778,12 @@ export class AgentViewMessages {
 			const iconContainer = toolHeader.createDiv({ cls: 'gemini-agent-confirmation-tool-icon' });
 			this.setToolIcon(iconContainer, tool.name);
 
-			toolHeader.createEl('span', {
+			toolHeader.createSpan({
 				text: tool.displayName || tool.name,
 				cls: 'gemini-agent-tool-name',
 			});
 
-			toolHeader.createEl('span', {
+			toolHeader.createSpan({
 				text: this.getCategoryLabel(tool.category),
 				cls: 'gemini-agent-tool-category',
 			});
@@ -812,7 +797,7 @@ export class AgentViewMessages {
 			// Parameters section
 			if (parameters && Object.keys(parameters).length > 0) {
 				const paramsSection = card.createDiv({ cls: 'gemini-agent-params-section' });
-				paramsSection.createEl('div', { text: t('agent.confirm.parameters'), cls: 'gemini-agent-params-header' });
+				paramsSection.createDiv({ text: t('agent.confirm.parameters'), cls: 'gemini-agent-params-header' });
 
 				const paramsList = paramsSection.createDiv({ cls: 'gemini-agent-params-list' });
 				for (const [key, value] of Object.entries(parameters)) {
@@ -881,8 +866,8 @@ export class AgentViewMessages {
 					text: diffContext.isNewFile ? t('agent.confirm.previewFile') : t('agent.confirm.viewChanges'),
 				});
 
-				viewChangesBtn.addEventListener('click', async () => {
-					await this.openDiffView(
+				viewChangesBtn.addEventListener('click', () => {
+					void this.openDiffView(
 						diffContext,
 						handleResponse,
 						(view) => {
@@ -966,7 +951,8 @@ export class AgentViewMessages {
 				}
 				this.autoOpenDiffTimeout = window.setTimeout(() => {
 					this.autoOpenDiffTimeout = null;
-					this.openDiffView(
+					// Fire-and-forget: auto-opening the diff view is a UI side effect.
+					void this.openDiffView(
 						diffContext,
 						handleResponse,
 						(view) => {
@@ -1065,7 +1051,7 @@ export class AgentViewMessages {
 	/**
 	 * Format parameter value for display with proper error handling
 	 */
-	private formatParameterValue(value: any): string {
+	private formatParameterValue(value: unknown): string {
 		const MAX_LENGTH = 100;
 
 		try {

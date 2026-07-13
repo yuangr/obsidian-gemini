@@ -1,5 +1,5 @@
 import { requestUrl } from 'obsidian';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import { GeminiModel } from '../models';
 
 import bundledModelData from '../data/models.json';
@@ -40,7 +40,7 @@ export class ModelListProvider {
 		if (cache?.models && cache?.timestamp) {
 			this.remoteModels = cache.models;
 			this.cacheTimestamp = cache.timestamp;
-			this.plugin.logger.debug(`[ModelListProvider] Loaded cached remote models: ${this.remoteModels!.length} models`);
+			this.plugin.logger.debug(`[ModelListProvider] Loaded cached remote models: ${this.remoteModels.length} models`);
 		}
 	}
 
@@ -146,7 +146,8 @@ export class ModelListProvider {
 			throw new Error(`HTTP ${response.status}`);
 		}
 
-		const data: ModelListJson = response.json;
+		// requestUrl's `.json` is typed `any`; assert the schema here, then validate below.
+		const data = response.json as ModelListJson;
 
 		// Validate schema
 		if (typeof data.version !== 'number' || !Array.isArray(data.models) || data.models.length === 0) {

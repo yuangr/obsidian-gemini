@@ -1,8 +1,9 @@
 import { Tool, ToolResult, ToolExecutionContext } from '../types';
 import { ToolCategory } from '../../types/agent';
 import { ToolClassification } from '../../types/tool-policy';
-import { TFile, TFolder, normalizePath } from 'obsidian';
-import { shouldExcludePathForPlugin as shouldExcludePath } from '../../utils/file-utils';
+import { TFolder, normalizePath } from 'obsidian';
+import { shouldExcludePathForPlugin as shouldExcludePath, isPathInFolder } from '../../utils/file-utils';
+import { getRawErrorMessageOr } from '../../utils/error-utils';
 import {
 	classifyFile,
 	FileCategory,
@@ -10,7 +11,8 @@ import {
 	arrayBufferToBase64,
 	detectWebmMimeType,
 } from '../../utils/file-classification';
-import { resolvePathToFileOrFolder } from './utils';
+import { rasterizeSvg } from '../../utils/svg-rasterizer';
+import { resolvePathToFileOrFolder, toFileEntry } from './utils';
 
 /**
  * Read file content or list folder contents
@@ -52,9 +54,9 @@ export class ReadFileTool implements Tool {
 			const agentSessionsFolder = normalizePath(`${plugin.settings.historyFolder}/Agent-Sessions`);
 			const isAgentSessionPath =
 				normalizedPath === agentSessionsFolder || normalizedPath.startsWith(agentSessionsFolder + '/');
-			const isObsidianPath = normalizedPath === '.obsidian' || normalizedPath.startsWith('.obsidian/');
+			const isObsidianPath = isPathInFolder(normalizedPath, plugin.app.vault.configDir);
 
-			// Check if path is excluded (allow agent session files, but never .obsidian)
+			// Check if path is excluded (allow agent session files, but never the Obsidian config dir)
 			if ((isObsidianPath || !isAgentSessionPath) && shouldExcludePath(normalizedPath, plugin)) {
 				return {
 					success: false,
@@ -63,7 +65,7 @@ export class ReadFileTool implements Tool {
 			}
 
 			// Try to resolve as either file or folder (with suggestions for errors)
-			const { item, type: _type, suggestions } = resolvePathToFileOrFolder(params.path, plugin, true);
+			const { item, suggestions } = resolvePathToFileOrFolder(params.path, plugin, true);
 
 			if (!item) {
 				// File not existing is information, not an error — the agent asked
@@ -83,15 +85,7 @@ export class ReadFileTool implements Tool {
 
 			// Handle folder - list its contents
 			if (item instanceof TFolder) {
-				const files = item.children
-					.filter((f) => !shouldExcludePath(f.path, plugin))
-					.map((f) => ({
-						name: f.name,
-						path: f.path,
-						type: f instanceof TFile ? 'file' : 'folder',
-						size: f instanceof TFile ? f.stat.size : undefined,
-						modified: f instanceof TFile ? f.stat.mtime : undefined,
-					}));
+				const files = item.children.filter((f) => !shouldExcludePath(f.path, plugin)).map(toFileEntry);
 
 				return {
 					success: true,
@@ -106,7 +100,7 @@ export class ReadFileTool implements Tool {
 			}
 
 			// Handle file - read its contents
-			const file = item as TFile;
+			const file = item;
 
 			// Classify the file to determine how to read it
 			const classification = classifyFile(file.extension);
@@ -126,6 +120,29 @@ export class ReadFileTool implements Tool {
 					data: { path: file.path, type: 'binary_file', mimeType, size: buffer.byteLength },
 					inlineData: [{ base64, mimeType }],
 				};
+			}
+
+			if (classification.category === FileCategory.SVG) {
+				// SVG can't be inlined directly (Gemini rejects image/svg+xml). Rasterize
+				// to PNG so the agent can actually view/OCR it. On failure, return an error
+				// string rather than sending anything unusable to the API.
+				const buffer = await plugin.app.vault.readBinary(file);
+				if (buffer.byteLength > GEMINI_INLINE_DATA_LIMIT) {
+					return { success: false, error: `File too large for inline processing (max 20 MB): ${file.name}` };
+				}
+				try {
+					const base64 = await rasterizeSvg(buffer, file.extension.toLowerCase() === 'svgz');
+					return {
+						success: true,
+						data: { path: file.path, type: 'binary_file', mimeType: 'image/png', size: buffer.byteLength },
+						inlineData: [{ base64, mimeType: 'image/png' }],
+					};
+				} catch (rasterErr) {
+					return {
+						success: false,
+						error: `Failed to rasterize SVG for viewing: ${file.name} (${getRawErrorMessageOr(rasterErr, 'Unknown error')})`,
+					};
+				}
 			}
 
 			if (classification.category === FileCategory.UNSUPPORTED) {
@@ -172,7 +189,7 @@ export class ReadFileTool implements Tool {
 		} catch (error) {
 			return {
 				success: false,
-				error: `Error reading file or folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				error: `Error reading file or folder: ${getRawErrorMessageOr(error, 'Unknown error')}`,
 			};
 		}
 	}

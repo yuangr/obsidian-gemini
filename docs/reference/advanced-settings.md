@@ -55,13 +55,13 @@ Gemini Scribe automatically discovers the parameter limits for your available mo
 
 ### Use Interactions API
 
-Route Gemini requests through Google's newer [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) (`interactions.create`) instead of the legacy `generateContent` API. Google has made the Interactions API generally available and is steering new development toward it.
+Route Gemini requests through Google's newer [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) (`interactions.create`) instead of the legacy `generateContent` API. Google has made the Interactions API generally available and is steering new development toward it, so it is now the plugin's default transport.
 
 - **Setting name**: Use Interactions API
-- **Default**: off (uses `generateContent`)
+- **Default**: on. Existing installs are migrated to the Interactions API automatically on upgrade — a one-time flip you can reverse by turning the toggle off, which is then respected on future launches.
 - **Scope**: Gemini provider only — the toggle is hidden when the provider is Ollama.
 - **Privacy**: The plugin runs the Interactions API **statelessly** (`store: false`). Conversation history is replayed with each request, and the plugin does not persist Interactions state on Google's side between turns. (Requests are still sent to Google to generate each response, subject to Google's standard API data-handling terms.)
-- **Status**: Experimental while the SDK surface settles. If you hit problems, turn it off to fall back to the proven `generateContent` path. Responses stream incrementally, including reasoning and tool calls.
+- **Status**: Default transport. If you hit problems, turn it off to fall back to the proven `generateContent` path. Responses stream incrementally, including reasoning and tool calls.
 
 ### Custom API Endpoint
 
@@ -73,7 +73,7 @@ Route all Google API requests through a proxy or gateway instead of hitting the 
   - Corporate networks that block `generativelanguage.googleapis.com` or `aiplatform.googleapis.com`
   - Local reverse proxies for API key management or cost tracking
   - Regional mirrors for latency or compliance requirements
-- **Scope**: All seven Google GenAI SDK call sites are covered — chat, streaming, web fetch, Google Search grounding, RAG embedding, deep research, and token counting. Leaving one path unproxied while routing others is not possible with this setting.
+- **Scope**: Every Google GenAI SDK call site is covered — chat, streaming, image generation, web fetch, Google Search/Maps grounding, RAG indexing, deep research, and context management (token counting). Leaving one path unproxied while routing others is not possible with this setting.
 - **Validation**: The value is validated on blur; invalid URLs will show a warning notice and be cleared automatically.
 
 ### Retry Settings
@@ -83,13 +83,13 @@ Configure how the plugin handles API failures:
 **Maximum retries**
 
 - **Default**: 3 attempts
-- **Range**: 0-10 retries
+- **Range**: any integer ≥ 0 (no upper bound is enforced)
 - **Purpose**: Handles temporary network issues or API rate limits
 
 **Initial Backoff Delay**
 
 - **Default**: 1000ms (1 second)
-- **Range**: 100-10000ms
+- **Range**: any integer ≥ 0 (no upper bound is enforced)
 - **Purpose**: Time to wait before first retry (uses exponential backoff)
 
 **How retry works:**
@@ -108,7 +108,7 @@ Model discovery is automatic — no configuration is required. On startup, the p
 
 Both providers expose a **Refresh model list** button in Settings → General:
 
-- **Gemini** — bypasses the 24-hour cache and re-fetches the remote model list immediately. You can also trigger this from the command palette with **Gemini Scribe: Refresh model list** (`gemini-scribe-refresh-model-list`). Useful when a newly-published model doesn't appear yet.
+- **Gemini** — bypasses the 24-hour cache and re-fetches the remote model list immediately. You can also trigger this from the command palette with **Gemini Scribe: Refresh model list** (`gemini-scribe:refresh-model-list`). Useful when a newly-published model doesn't appear yet.
 - **Ollama** — re-queries the Ollama daemon for any models you've pulled since the plugin loaded (`ollama pull <name>`). Use this instead of restarting Obsidian.
 
 ## Performance Optimization

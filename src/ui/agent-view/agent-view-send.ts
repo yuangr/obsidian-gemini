@@ -1,9 +1,10 @@
 import { Notice, setIcon, App } from 'obsidian';
+import { getActiveChatModel } from '../../models';
 import type { Content } from '@google/genai';
 import { ChatSession } from '../../types/agent';
 import { GeminiConversationEntry } from '../../types/conversation';
 import { ToolExecutionContext } from '../../tools/types';
-import { ExtendedModelRequest, ModelApi, StreamChunk } from '../../api/interfaces/model-api';
+import { ExtendedModelRequest, ModelApi, ModelResponse, StreamChunk } from '../../api/interfaces/model-api';
 import { CustomPrompt } from '../../prompts/types';
 import { AgentFactory } from '../../agent/agent-factory';
 import { getErrorMessage } from '../../utils/error-utils';
@@ -16,7 +17,7 @@ import { AgentViewMessages } from './agent-view-messages';
 import { AgentViewTools } from './agent-view-tools';
 import { AgentViewSession } from './agent-view-session';
 import { AgentViewShelf } from './agent-view-shelf';
-import type ObsidianGemini from '../../main';
+import type { ObsidianGemini } from '../../types/plugin';
 import type { ConfirmationResult, DiffContext, Tool } from '../../tools/types';
 import { t } from '../../i18n';
 
@@ -43,7 +44,7 @@ export interface SendContext {
 	allowToolWithoutConfirmation: (toolName: string) => void;
 	showConfirmationInChat: (
 		tool: Tool,
-		parameters: any,
+		parameters: Record<string, unknown>,
 		executionId: string,
 		diffContext?: DiffContext
 	) => Promise<ConfirmationResult>;
@@ -62,6 +63,16 @@ export class AgentViewSend {
 	private isPlanModeActive = false;
 
 	constructor(private ctx: SendContext) {}
+
+	/**
+	 * Register the in-flight follow-up stream (created inside AgentLoop) so the
+	 * Stop button can cancel it mid-stream, mirroring how the initial request
+	 * wires its own stream into `currentStreamingResponse`. Called with the stream
+	 * when a streaming follow-up starts and with `null` once it settles.
+	 */
+	public setActiveStreamingResponse(stream: { cancel: () => void } | null): void {
+		this.currentStreamingResponse = stream;
+	}
 
 	/**
 	 * Toggle plan mode on/off. When active, the next send will ask the model to
@@ -108,7 +119,7 @@ export class AgentViewSend {
 		// renders the final text with proper formatting and approval buttons.
 		if (modelApi.generateStreamingResponse && this.ctx.plugin.settings.streamingEnabled !== false) {
 			let accumulated = '';
-			const stream = modelApi.generateStreamingResponse!(planRequest, (chunk: StreamChunk) => {
+			const stream = modelApi.generateStreamingResponse(planRequest, (chunk: StreamChunk) => {
 				if (chunk.text) {
 					accumulated += chunk.text;
 				}
@@ -175,6 +186,56 @@ export class AgentViewSend {
 	}
 
 	/**
+	 * Persist dropped/pasted attachments to the vault, skipping any already saved
+	 * (e.g. from drag-drop, which carry a `vaultPath`). Notifies the user of any
+	 * save failures; failed attachments are omitted from the returned list but are
+	 * still sent to the model as inline data by the caller.
+	 *
+	 * Extracted from `sendMessage` as the self-contained attachment-persistence
+	 * phase (#1196) — a clear input → side-effect → returns-paths boundary. Pure
+	 * code motion; call order relative to the surrounding send steps is unchanged.
+	 *
+	 * @param attachments The pending attachments to persist.
+	 * @returns The successfully saved attachments paired with their vault paths.
+	 */
+	private async persistAttachments(
+		attachments: InlineAttachment[]
+	): Promise<Array<{ attachment: InlineAttachment; path: string }>> {
+		const savedAttachments: Array<{ attachment: InlineAttachment; path: string }> = [];
+		const failedSaves: number[] = [];
+		for (let i = 0; i < attachments.length; i++) {
+			const attachment = attachments[i];
+			if (attachment.vaultPath) {
+				// Already in vault (from drag-drop), skip saving
+				savedAttachments.push({ attachment, path: attachment.vaultPath });
+				continue;
+			}
+			try {
+				const { saveAttachmentToVault } = await import('./inline-attachment');
+				const path = await saveAttachmentToVault(this.ctx.app, attachment);
+				attachment.vaultPath = path;
+				savedAttachments.push({ attachment, path });
+			} catch (err) {
+				this.ctx.plugin.logger.error('Failed to save attachment to vault:', err);
+				failedSaves.push(i + 1);
+			}
+		}
+
+		// Notify user of any save failures (attachments will still be sent to AI)
+		if (failedSaves.length > 0) {
+			const failedList = failedSaves.join(', ');
+			new Notice(
+				failedSaves.length === 1
+					? t('agent.attachments.saveFailedOne', { nums: failedList })
+					: t('agent.attachments.saveFailed', { nums: failedList }),
+				5000
+			);
+		}
+
+		return savedAttachments;
+	}
+
+	/**
 	 * Main orchestration method for sending messages and handling tool calls
 	 */
 	async sendMessage(): Promise<void> {
@@ -213,36 +274,7 @@ export class AgentViewSend {
 		shelf.markBinarySent();
 
 		// Save attachments to vault (skip those already saved, e.g. from drag-drop)
-		const savedAttachments: Array<{ attachment: InlineAttachment; path: string }> = [];
-		const failedSaves: number[] = [];
-		for (let i = 0; i < attachments.length; i++) {
-			const attachment = attachments[i];
-			if (attachment.vaultPath) {
-				// Already in vault (from drag-drop), skip saving
-				savedAttachments.push({ attachment, path: attachment.vaultPath });
-				continue;
-			}
-			try {
-				const { saveAttachmentToVault } = await import('./inline-attachment');
-				const path = await saveAttachmentToVault(this.ctx.app, attachment);
-				attachment.vaultPath = path;
-				savedAttachments.push({ attachment, path });
-			} catch (err) {
-				this.ctx.plugin.logger.error('Failed to save attachment to vault:', err);
-				failedSaves.push(i + 1);
-			}
-		}
-
-		// Notify user of any save failures (attachments will still be sent to AI)
-		if (failedSaves.length > 0) {
-			const failedList = failedSaves.join(', ');
-			new Notice(
-				failedSaves.length === 1
-					? t('agent.attachments.saveFailedOne', { nums: failedList })
-					: t('agent.attachments.saveFailed', { nums: failedList }),
-				5000
-			);
-		}
+		const savedAttachments = await this.persistAttachments(attachments);
 
 		// Clear input
 		userInput.innerHTML = '';
@@ -415,7 +447,7 @@ To reference an attachment in your response, use the path shown above.`;
 			try {
 				// Get model config from session or use defaults
 				const modelConfig = currentSession?.modelConfig || {};
-				const modelName = modelConfig.model || this.ctx.plugin.settings.chatModelName;
+				const modelName = modelConfig.model || getActiveChatModel(this.ctx.plugin.settings);
 
 				// beginTurn() is now handled by the turnStart event bus subscriber
 
@@ -476,7 +508,7 @@ To reference an attachment in your response, use the path shown above.`;
 				};
 
 				// Create model API for this session
-				const modelApi = AgentFactory.createAgentModel(this.ctx.plugin, currentSession!);
+				const modelApi = AgentFactory.createAgentModel(this.ctx.plugin, currentSession);
 
 				// Plan mode: ask for a plan first, await user approval, then execute with tools
 				let messageToSend = message;
@@ -536,10 +568,12 @@ To reference an attachment in your response, use the path shown above.`;
 							if (!modelMessageContainer) {
 								// First chunk - create the container
 								modelMessageContainer = this.ctx.messages.createStreamingMessageContainer('model');
-								this.ctx.messages.updateStreamingMessage(modelMessageContainer, chunk.text);
+								// Fire-and-forget: async markdown render of the streamed chunk (unchanged behavior).
+								void this.ctx.messages.updateStreamingMessage(modelMessageContainer, chunk.text);
 							} else {
 								// Update existing container with new chunk
-								this.ctx.messages.updateStreamingMessage(modelMessageContainer, chunk.text);
+								// Fire-and-forget: async markdown render of the streamed chunk (unchanged behavior).
+								void this.ctx.messages.updateStreamingMessage(modelMessageContainer, chunk.text);
 								// Use debounced scroll to avoid stuttering
 								this.ctx.messages.debouncedScrollToBottom();
 							}
@@ -557,6 +591,7 @@ To reference an attachment in your response, use the path shown above.`;
 						if (response.usageMetadata) {
 							await this.ctx.plugin.agentEventBus?.emit('apiResponseReceived', {
 								usageMetadata: response.usageMetadata,
+								modelName,
 							});
 						} else {
 							this.ctx.plugin.logger.debug('[AgentView] Streaming response had no usageMetadata');
@@ -607,61 +642,31 @@ To reference an attachment in your response, use the path shown above.`;
 								hadPartialText ? undefined : turnThoughts
 							);
 						} else {
-							// Normal response without tool calls
-							// Only finalize and save if response has content
-							if (response.markdown && response.markdown.trim()) {
-								const aiEntry: GeminiConversationEntry = {
-									role: 'model',
-									message: response.markdown,
-									notePath: '',
-									created_at: new Date(),
-									model: modelName,
-									...(turnThoughts ? { thoughts: turnThoughts } : {}),
-								};
-
-								// Finalize the streaming message with proper rendering
-								if (modelMessageContainer) {
-									await this.ctx.messages.finalizeStreamingMessage(
-										modelMessageContainer,
-										response.markdown,
-										aiEntry,
-										currentSession
-									);
+							// Normal response without tool calls — shared three-way finalize
+							// with a streaming-specific render step: finalize the live
+							// container for answer text (display the reasoning entry when
+							// there's no answer), then scroll to the bottom.
+							await this.finalizeNoToolCallResponse(
+								response,
+								turnThoughts,
+								modelName,
+								currentSession,
+								async (entry, reasoningOnly) => {
+									if (reasoningOnly) {
+										await this.ctx.messages.displayMessage(entry, currentSession);
+									} else if (modelMessageContainer) {
+										// Finalize the streaming message with proper rendering
+										await this.ctx.messages.finalizeStreamingMessage(
+											modelMessageContainer,
+											entry.message,
+											entry,
+											currentSession
+										);
+									}
+									// Ensure we're scrolled to bottom after streaming completes
+									this.ctx.messages.scrollToBottom();
 								}
-
-								// Save AI response to history (user message already saved early)
-								await this.ctx.plugin.sessionHistory.addEntryToSession(currentSession, aiEntry);
-
-								// Ensure we're scrolled to bottom after streaming completes
-								this.ctx.messages.scrollToBottom();
-
-								// Hide progress bar after successful response
-								this.ctx.progress.hide();
-							} else if (turnThoughts) {
-								// No answer text, but the model did reason — show and persist
-								// the reasoning instead of a bare "empty response" notice.
-								const reasoningEntry: GeminiConversationEntry = {
-									role: 'model',
-									message: '',
-									notePath: '',
-									created_at: new Date(),
-									model: modelName,
-									thoughts: turnThoughts,
-								};
-								await this.ctx.messages.displayMessage(reasoningEntry, currentSession);
-								await this.ctx.plugin.sessionHistory.addEntryToSession(currentSession, reasoningEntry);
-								this.ctx.messages.scrollToBottom();
-								this.ctx.progress.hide();
-							} else {
-								// Empty response - might be thinking tokens
-								this.ctx.plugin.logger.warn('Model returned empty response');
-								new Notice(t('agent.send.emptyResponse'));
-
-								// Hide progress bar
-								this.ctx.progress.hide();
-
-								// User message already saved early in sendMessage()
-							}
+							);
 						}
 					} catch (error) {
 						this.currentStreamingResponse = null;
@@ -678,6 +683,7 @@ To reference an attachment in your response, use the path shown above.`;
 					if (response.usageMetadata) {
 						await this.ctx.plugin.agentEventBus?.emit('apiResponseReceived', {
 							usageMetadata: response.usageMetadata,
+							modelName,
 						});
 					} else {
 						this.ctx.plugin.logger.debug('[AgentView] Non-streaming response had no usageMetadata');
@@ -703,50 +709,12 @@ To reference an attachment in your response, use the path shown above.`;
 							turnThoughts
 						);
 					} else {
-						// Normal response without tool calls
-						// Only display if response has content
-						if (response.markdown && response.markdown.trim()) {
-							// Display AI response
-							const aiEntry: GeminiConversationEntry = {
-								role: 'model',
-								message: response.markdown,
-								notePath: '',
-								created_at: new Date(),
-								model: modelName,
-								...(turnThoughts ? { thoughts: turnThoughts } : {}),
-							};
-							await this.ctx.displayMessage(aiEntry);
-
-							// Save AI response to history (user message already saved early)
-							await this.ctx.plugin.sessionHistory.addEntryToSession(currentSession, aiEntry);
-
-							// Hide progress bar after successful response
-							this.ctx.progress.hide();
-						} else if (turnThoughts) {
-							// No answer text, but the model reasoned — show and persist it.
-							const reasoningEntry: GeminiConversationEntry = {
-								role: 'model',
-								message: '',
-								notePath: '',
-								created_at: new Date(),
-								model: modelName,
-								thoughts: turnThoughts,
-							};
-							await this.ctx.displayMessage(reasoningEntry);
-							await this.ctx.plugin.sessionHistory.addEntryToSession(currentSession, reasoningEntry);
-							this.ctx.progress.hide();
-						} else {
-							// Empty response - might be thinking tokens
-							this.ctx.plugin.logger.warn('Model returned empty response');
-							new Notice(
-								'Model returned an empty response. This might happen with thinking models. Try rephrasing your question.'
-							);
-
-							// User message already saved early in sendMessage()
-
-							// Hide progress bar
-							this.ctx.progress.hide();
-						}
+						// Normal response without tool calls — shared three-way finalize
+						// with the non-streaming render step (plain displayMessage, no
+						// scroll) for both the answer and reasoning-only cases.
+						await this.finalizeNoToolCallResponse(response, turnThoughts, modelName, currentSession, async (entry) => {
+							await this.ctx.displayMessage(entry);
+						});
 					}
 				}
 			} catch (error) {
@@ -779,6 +747,63 @@ To reference an attachment in your response, use the path shown above.`;
 
 			// Always update token usage display after any message completion
 			await this.ctx.updateTokenUsage();
+		}
+	}
+
+	/**
+	 * Finalize a normal (no-tool-call) model response. Shared by the streaming
+	 * and non-streaming send paths, which previously duplicated this three-way
+	 * branch. Owns the shared work — building the model entry, persisting it to
+	 * session history, and hiding the progress bar — while the caller-supplied
+	 * `renderEntry` step handles the one part that genuinely differs between the
+	 * two paths: how the entry is rendered (and, for streaming, the extra scroll).
+	 *
+	 * `renderEntry` is invoked with `reasoningOnly = false` for an answer entry
+	 * and `reasoningOnly = true` for a reasoning-only entry (no answer text).
+	 */
+	private async finalizeNoToolCallResponse(
+		response: Pick<ModelResponse, 'markdown'>,
+		turnThoughts: string | undefined,
+		modelName: string,
+		currentSession: ChatSession,
+		renderEntry: (entry: GeminiConversationEntry, reasoningOnly: boolean) => Promise<void>
+	): Promise<void> {
+		// Only finalize and save if response has content
+		if (response.markdown && response.markdown.trim()) {
+			const aiEntry: GeminiConversationEntry = {
+				role: 'model',
+				message: response.markdown,
+				notePath: '',
+				created_at: new Date(),
+				model: modelName,
+				...(turnThoughts ? { thoughts: turnThoughts } : {}),
+			};
+			await renderEntry(aiEntry, false);
+			// Save AI response to history (user message already saved early)
+			await this.ctx.plugin.sessionHistory.addEntryToSession(currentSession, aiEntry);
+			// Hide progress bar after successful response
+			this.ctx.progress.hide();
+		} else if (turnThoughts) {
+			// No answer text, but the model did reason — show and persist the
+			// reasoning instead of a bare "empty response" notice.
+			const reasoningEntry: GeminiConversationEntry = {
+				role: 'model',
+				message: '',
+				notePath: '',
+				created_at: new Date(),
+				model: modelName,
+				thoughts: turnThoughts,
+			};
+			await renderEntry(reasoningEntry, true);
+			await this.ctx.plugin.sessionHistory.addEntryToSession(currentSession, reasoningEntry);
+			this.ctx.progress.hide();
+		} else {
+			// Empty response - might be thinking tokens.
+			// User message already saved early in sendMessage().
+			this.ctx.plugin.logger.warn('Model returned empty response');
+			new Notice(t('agent.send.emptyResponse'));
+			// Hide progress bar
+			this.ctx.progress.hide();
 		}
 	}
 

@@ -18,6 +18,7 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Obnovit mé porozumění vašemu vaultu',
 	'agent.empty.initContext': 'Inicializovat kontext trezoru',
 	'agent.empty.initContextDesc': 'Pomozte mi porozumět struktuře a organizaci vašeho vaultu',
+	'agent.empty.initContextFailed': 'Nepodařilo se inicializovat kontext vaultu',
 	'agent.empty.recentSessions': 'Nedávné relace:',
 	'agent.empty.examplesHeader': 'Vyzkoušejte tyto příklady:',
 	'i18n.aiTranslatedNotice': 'Tento překlad rozhraní je generován AI. PR s vylepšeními jsou vítány.',
@@ -60,6 +61,9 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Model pro doplňování',
 	'settings.general.completionModelDesc':
 		'Model používaný pro řádkové doplňování (ve stylu IDE) během psaní v poznámkách.',
+	'settings.general.ollamaModelName': 'Model Ollama',
+	'settings.general.ollamaModelDesc':
+		'Model používaný pro všechny případy použití Ollama: chat, sumarizace, doplňování a přepisování.',
 	'settings.general.imageModelName': 'Model pro obrázky',
 	'settings.general.imageModelDesc': 'Model používaný pro generování obrázků.',
 	'settings.general.stateFolderName': 'Složka stavu pluginu',
@@ -142,7 +146,7 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 		'Zapisovat záznamy protokolu do souboru ve složce stavu pluginu. Chyby a varování jsou protokolovány vždy; záznamy ladění vyžadují režim ladění. Soubory protokolu jsou automaticky rotovány při velikosti 1 MB.',
 	'settings.agentConfig.useInteractionsApiName': 'Použít Interactions API',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'Směrovat požadavky Gemini přes novější Interactions API od Google namísto staršího generateContent API. Běží bezstavově – historie konverzace se přehrává při každém tahu a na straně Google se mezi tahy neukládá. Experimentální – pokud narazíte na problémy, nechte vypnuté.',
+		'Směrujte požadavky Gemini přes novější Interactions API od Google namísto staršího generateContent API. Jedná se o výchozí přenos. Běží bezstavově – historie konverzace se přehrává při každém tahu a neukládá se na straně Google mezi jednotlivými tahy. Vypněte tuto možnost, pokud narazíte na problémy a chcete se vrátit k generateContent.',
 	'settings.agentConfig.customEndpointName': 'Vlastní koncový bod API',
 	'settings.agentConfig.customEndpointDesc':
 		'Přepsat výchozí základní URL adresu Google API (např. pro firemní proxy nebo lokální bránu). Ponechte prázdné pro použití oficiálního koncového bodu.',
@@ -555,7 +559,7 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 		'Omezit spouštění na cesty odpovídající tomuto globu. Příklady: Daily/**/*.md, Notes/*.md. Pro jakoukoli cestu ponechte prázdné.',
 	'hooks.commandIdSetting': 'ID příkazu',
 	'hooks.commandIdDesc':
-		'ID příkazu z palety příkazů, který se má spustit. Příklady: editor:save-file, gemini-scribe-summarize-active-file. ID příkazů zobrazíte v Nastavení → Klávesové zkratky (otevřete vývojářskou konzoli pomocí Ctrl+Shift+I pro zobrazení ID).',
+		'ID příkazu z palety příkazů, který se má spustit. Příklady: editor:save-file, gemini-scribe:summarize-active-file. ID příkazů si můžete zobrazit v Nastavení → Klávesové zkratky (otevřete vývojářskou konzoli pomocí Ctrl+Shift+I pro zobrazení ID).',
 	'hooks.focusFileSetting': 'Zaměřit spouštěcí soubor před odesláním',
 	'hooks.focusFileDesc':
 		'Pokud je zapnuto, spouštěcí soubor se před spuštěním příkazu otevře v pracovní ploše – užitečné pro příkazy vázané na editor. Pokud je vypnuto, příkaz se spustí nad aktuálně aktivním souborem. Výchozí stav je vypnuto.',
@@ -828,6 +832,7 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Nepodařilo se převést poznámku na projekt',
 	'notice.main.noProjectsFound': 'Nebyly nalezeny žádné projekty',
 	'notice.main.noSessionsForProject': 'Pro projekt {name} nebyly nalezeny žádné relace',
+	'notice.main.resumeProjectSessionFailed': 'Nepodařilo se obnovit relaci projektu',
 	'notice.main.projectRemoved': 'Stav projektu byl odebrán z: {name}',
 	'notice.main.projectRemoveFailed': 'Nepodařilo se odebrat stav projektu',
 	'notice.main.selectTextFirst': 'Nejprve prosím vyberte nějaký text',
@@ -840,9 +845,6 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'Synchronizace RAG pozastavena',
 	'notice.main.ragNotPaused': 'Synchronizace RAG není pozastavena',
 	'notice.main.ragResumed': 'Synchronizace RAG obnovena',
-	'notice.main.ragIndexComplete': 'Prohledání dokončeno: {indexed} znovu indexováno, {skipped} beze změny',
-	'notice.main.ragIndexFailed': 'Indexování RAG selhalo: {error}',
-	'notice.main.ragSyncingPending': 'RAG index: Synchronizace čekajících změn...',
 	'notice.main.readyToUse': 'Gemini Scribe je nyní připraven k použití!',
 	'component.managementModalBase.managerUnavailable': 'Správce pro {label} není k dispozici.',
 	'component.managementModalBase.deleteConfirm':

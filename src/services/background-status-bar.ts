@@ -1,5 +1,5 @@
 import { setIcon, setTooltip } from 'obsidian';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import type { BackgroundTaskManager } from './background-task-manager';
 import type { RagStatusProvider } from './rag-status-bar';
 import { t } from '../i18n';
@@ -53,21 +53,29 @@ export class BackgroundStatusBar {
 		this.statusBarItem.createSpan({ cls: 'gemini-bg-status-text' });
 		this.statusBarItem.createSpan({ cls: 'gemini-bg-status-badge' });
 
-		this.statusBarItem.addEventListener('click', async () => {
-			// Pending catch-up approvals take priority — open the approval modal first
-			if (this._pendingCatchUpCount > 0 && this.plugin.scheduledTaskManager) {
-				const pending = this.plugin.scheduledTaskManager.detectMissedRuns();
-				if (pending.length > 0) {
-					const { CatchUpModal } = await import('../ui/catch-up-modal');
-					new CatchUpModal(this.plugin.app, this.plugin, pending).open();
-					return;
+		this.statusBarItem.addEventListener('click', () => {
+			void (async () => {
+				try {
+					// Pending catch-up approvals take priority — open the approval modal first
+					if (this._pendingCatchUpCount > 0 && this.plugin.scheduledTaskManager) {
+						const pending = this.plugin.scheduledTaskManager.detectMissedRuns();
+						if (pending.length > 0) {
+							const { CatchUpModal } = await import('../ui/catch-up-modal');
+							new CatchUpModal(this.plugin.app, this.plugin, pending).open();
+							return;
+						}
+						// detectMissedRuns returned empty — stale badge; self-correct
+						this.setPendingCatchUpCount(0);
+					}
+					const { BackgroundTasksModal } = await import('../ui/background-tasks-modal');
+					const defaultTab = this.taskManager.runningCount > 0 ? 'tasks' : 'rag';
+					new BackgroundTasksModal(this.plugin.app, this.plugin, defaultTab).open();
+				} catch (error) {
+					// Mirror the RagStatusBar click handler's guard so a dynamic import or
+					// modal-open failure can't become an unhandled promise rejection.
+					this.plugin.logger.error('BackgroundStatusBar: failed to open status UI', error);
 				}
-				// detectMissedRuns returned empty — stale badge; self-correct
-				this.setPendingCatchUpCount(0);
-			}
-			const { BackgroundTasksModal } = await import('../ui/background-tasks-modal');
-			const defaultTab = this.taskManager.runningCount > 0 ? 'tasks' : 'rag';
-			new BackgroundTasksModal(this.plugin.app, this.plugin, defaultTab).open();
+			})();
 		});
 
 		this.update();
@@ -77,20 +85,19 @@ export class BackgroundStatusBar {
 	update(): void {
 		if (!this.statusBarItem) return;
 
-		const iconEl = this.statusBarItem.querySelector('.gemini-bg-status-icon') as HTMLElement | null;
-		const textEl = this.statusBarItem.querySelector('.gemini-bg-status-text') as HTMLElement | null;
-		const badgeEl = this.statusBarItem.querySelector('.gemini-bg-status-badge') as HTMLElement | null;
+		const iconEl = this.statusBarItem.querySelector<HTMLElement>('.gemini-bg-status-icon');
+		const textEl = this.statusBarItem.querySelector<HTMLElement>('.gemini-bg-status-text');
+		const badgeEl = this.statusBarItem.querySelector<HTMLElement>('.gemini-bg-status-badge');
 		if (!iconEl || !textEl) return;
 
 		// Catch-up badge — show ! when there are pending approvals
 		if (badgeEl) {
 			if (this._pendingCatchUpCount > 0) {
 				badgeEl.setText('!');
-				badgeEl.style.display = 'inline-block';
 			} else {
 				badgeEl.setText('');
-				badgeEl.style.display = 'none';
 			}
+			badgeEl.toggleClass('is-visible', this._pendingCatchUpCount > 0);
 		}
 
 		const runningCount = this.taskManager.runningCount;
@@ -100,11 +107,11 @@ export class BackgroundStatusBar {
 		// AND there are no pending catch-up approvals (otherwise the ! badge would be
 		// unreachable). When RAG is idle, show the database icon + indexed-file count.
 		if (runningCount === 0 && ragStatus === 'disabled' && this._pendingCatchUpCount === 0) {
-			this.statusBarItem.style.display = 'none';
+			this.statusBarItem.hide();
 			return;
 		}
 
-		this.statusBarItem.style.display = '';
+		this.statusBarItem.show();
 		this.statusBarItem.removeClass('gemini-bg-active');
 
 		const tooltipParts: string[] = [];

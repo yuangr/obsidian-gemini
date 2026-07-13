@@ -22,17 +22,16 @@ export class RagCleanupModal extends Modal {
 			text: t('ragCleanup.body'),
 		});
 
-		const noteEl = contentEl.createEl('div', { cls: 'rag-cleanup-note' });
+		const noteEl = contentEl.createDiv({ cls: 'rag-cleanup-note' });
 		noteEl.createEl('p', {
 			text: t('ragCleanup.keepNote'),
 			cls: 'setting-item-description',
 		});
 
-		const warningEl = noteEl.createEl('p', {
+		noteEl.createEl('p', {
 			text: t('ragCleanup.deleteWarning'),
-			cls: 'setting-item-description',
+			cls: 'setting-item-description gemini-warning-text',
 		});
-		warningEl.style.color = 'var(--text-warning)';
 
 		new Setting(contentEl)
 			.addButton((btn) =>
@@ -44,6 +43,8 @@ export class RagCleanupModal extends Modal {
 			.addButton((btn) =>
 				btn
 					.setButtonText(t('ragCleanup.deleteButton'))
+					// setDestructive() (the recommended replacement) requires Obsidian 1.13.0, above the current minAppVersion 1.11.4; keep setWarning until the floor is raised (#1040).
+					// eslint-disable-next-line @typescript-eslint/no-deprecated -- setDestructive() needs Obsidian 1.13.0, above minAppVersion 1.11.4 (#1040)
 					.setWarning()
 					.onClick(() => {
 						this.close();

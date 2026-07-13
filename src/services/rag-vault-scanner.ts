@@ -1,7 +1,7 @@
 import { TFile, Notice } from 'obsidian';
 import type { GoogleGenAI } from '@google/genai';
-import type { FileUploader } from '@allenhutchison/gemini-utils';
-import type ObsidianGemini from '../main';
+import type { FileUploader, UploadProgressEvent } from '@allenhutchison/gemini-utils';
+import type { ObsidianGemini } from '../types/plugin';
 import type { ObsidianVaultAdapter } from './obsidian-file-adapter';
 import type { RagCache } from './rag-cache';
 import type { RagRateLimiter } from './rag-rate-limiter';
@@ -249,17 +249,19 @@ export class RagVaultScanner {
 		const { RagResumeModal } = await import('../ui/rag-resume-modal');
 
 		return new Promise<void>((resolve) => {
-			const modal = new RagResumeModal(this.plugin.app, resumeInfo, async (resume: boolean) => {
-				if (resume) {
-					// Resume: just start indexing - smart sync will skip already-indexed files
-					new Notice(t('notice.rag.resuming'));
-					this.startResumeIndexing(progressProvider);
-				} else {
-					// Start fresh: clear cache and store, then reindex
-					new Notice(t('notice.rag.startingFresh'));
-					await this.startFresh(progressProvider);
-				}
-				resolve();
+			const modal = new RagResumeModal(this.plugin.app, resumeInfo, (resume: boolean) => {
+				void (async () => {
+					if (resume) {
+						// Resume: just start indexing - smart sync will skip already-indexed files
+						new Notice(t('notice.rag.resuming'));
+						this.startResumeIndexing(progressProvider);
+					} else {
+						// Start fresh: clear cache and store, then reindex
+						new Notice(t('notice.rag.startingFresh'));
+						await this.startFresh(progressProvider);
+					}
+					resolve();
+				})();
 			});
 			modal.open();
 		});
@@ -270,7 +272,8 @@ export class RagVaultScanner {
 	 * @param progressProvider - The object to pass to the progress modal (typically the orchestrator)
 	 */
 	startResumeIndexing(progressProvider: RagProgressProvider): void {
-		import('../ui/rag-progress-modal').then(({ RagProgressModal }) => {
+		// Fire-and-forget: lazy-load and open the progress modal; indexing itself is handled below.
+		void import('../ui/rag-progress-modal').then(({ RagProgressModal }) => {
 			const progressModal = new RagProgressModal(this.plugin.app, progressProvider, (result) => {
 				new Notice(t('notice.rag.indexingComplete', { indexed: result.indexed, skipped: result.skipped }));
 			});
@@ -417,13 +420,19 @@ export class RagVaultScanner {
 				smartSync: true,
 				parallel: { maxConcurrent: 5 },
 				logger: {
-					debug: (msg: string, ...args: any[]) => this.plugin.logger.debug(msg, ...args),
+					debug: (msg: string, ...args: unknown[]) => this.plugin.logger.debug(msg, ...args),
 					// Per-file upload failures are already tracked via the file_error progress
 					// event and surfaced in the RAG Failures tab — downgrade to warn to avoid
 					// alarming console noise for routine skips (empty files, inaccessible notes).
-					error: (msg: string, ...args: any[]) => this.plugin.logger.warn(msg, ...args),
+					error: (msg: string, ...args: unknown[]) => this.plugin.logger.warn(msg, ...args),
 				},
-				onProgress: async (event: any) => {
+				// ProgressCallback is typed `(event) => void`, but this handler must be async:
+				// it awaits per-file hashing / incremental cache saves, and it *throws* to signal
+				// cancellation and rate-limit cooldown, which callers (including the uploader mock
+				// in tests) await and rely on propagating. Wrapping the body to void the promise
+				// would swallow those throws, so the async signature is intentional here.
+				// eslint-disable-next-line @typescript-eslint/no-misused-promises -- async handler must propagate cancellation/rate-limit throws
+				onProgress: async (event: UploadProgressEvent) => {
 					// Check for cancellation
 					if (this.cancelRequested) {
 						throw new Error('Indexing cancelled by user');

@@ -1,10 +1,13 @@
 import { TFolder, TFile, Notice } from 'obsidian';
-import type ObsidianGemini from '../main';
+import { getActiveChatModel } from '../models';
+import type { ObsidianGemini } from '../types/plugin';
 import { ModelClientFactory } from '../api';
 import { AgentsMemoryData } from './agents-memory';
 import { VaultAnalysisModal } from '../ui/vault-analysis-modal';
 import { collectFilesFromFolder } from '../utils/folder-walk';
+import { isPathInFolder } from '../utils/file-utils';
 import { t } from '../i18n';
+import { asRecord, getRawErrorMessageOr } from '../utils/error-utils';
 
 /**
  * Simple cache entry for vault information
@@ -45,7 +48,7 @@ export class VaultAnalyzer {
 		modal.open();
 
 		// Get the model name for display
-		const modelName = this.plugin.settings.chatModelName;
+		const modelName = getActiveChatModel(this.plugin.settings);
 
 		// Define steps
 		modal.addStep('collect', t('modal.vaultAnalysis.stepCollect'));
@@ -79,7 +82,7 @@ export class VaultAnalyzer {
 			const response = await modelApi.generateModelResponse({
 				kind: 'base',
 				prompt: analysisPrompt,
-				model: this.plugin.settings.chatModelName,
+				model: getActiveChatModel(this.plugin.settings),
 			});
 			await this.ensureMinimumDelay(stepStart);
 			modal.setStepComplete('analyze');
@@ -133,7 +136,7 @@ export class VaultAnalyzer {
 			const examplePromptsResponse = await modelApi.generateModelResponse({
 				kind: 'base',
 				prompt: examplePromptsPrompt,
-				model: this.plugin.settings.chatModelName,
+				model: getActiveChatModel(this.plugin.settings),
 			});
 			await this.ensureMinimumDelay(stepStart);
 			modal.setStepComplete('examples');
@@ -164,10 +167,7 @@ export class VaultAnalyzer {
 			}
 		} catch (error) {
 			this.plugin.logger.error('Failed to initialize AGENTS.md:', error);
-			modal.setStepFailed(
-				modal.currentStep,
-				error instanceof Error ? error.message : t('modal.vaultAnalysis.unknownError')
-			);
+			modal.setStepFailed(modal.currentStep, getRawErrorMessageOr(error, t('modal.vaultAnalysis.unknownError')));
 			new Notice(t('notice.vaultAnalysis.initFailed'));
 			window.setTimeout(() => modal.close(), 3000);
 		}
@@ -240,8 +240,8 @@ export class VaultAnalyzer {
 		const indent = '  '.repeat(depth);
 		let structure = '';
 
-		// Skip system folders
-		const skipFolders = ['.obsidian', this.plugin.settings.historyFolder];
+		// Skip system folders (the Obsidian config dir may be renamed from `.obsidian`)
+		const skipFolders = [this.plugin.app.vault.configDir, this.plugin.settings.historyFolder];
 		if (skipFolders.includes(folder.path)) {
 			return '';
 		}
@@ -253,7 +253,7 @@ export class VaultAnalyzer {
 		}
 
 		// Sort children: folders first, then files
-		const folders = folder.children.filter((c) => c instanceof TFolder) as TFolder[];
+		const folders = folder.children.filter((c) => c instanceof TFolder);
 		const files = folder.children.filter((c) => c instanceof TFile && c.extension === 'md') as TFile[];
 
 		// Add subfolders recursively
@@ -289,8 +289,10 @@ export class VaultAnalyzer {
 	 */
 	private getSampleFileNames(files: TFile[], limit: number = 20): string[] {
 		// Get files from different parts of the vault for diversity
-		const skipPaths = [this.plugin.settings.historyFolder, '.obsidian'];
-		const filteredFiles = files.filter((f) => !skipPaths.some((skip) => f.path.startsWith(skip)));
+		const skipPaths = [this.plugin.settings.historyFolder, this.plugin.app.vault.configDir];
+		// Root-anchored containment so a sibling like `gemini-scribe-backup/` or a
+		// renamed `_obsidian-notes/` is not wrongly excluded by a bare prefix match.
+		const filteredFiles = files.filter((f) => !skipPaths.some((skip) => isPathInFolder(f.path, skip)));
 
 		// Sort by modification time to get recent files
 		const sortedFiles = filteredFiles.sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, limit);
@@ -321,19 +323,21 @@ export class VaultAnalyzer {
 			const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
 			const jsonString = jsonMatch ? jsonMatch[1] : response;
 
-			const parsed = JSON.parse(jsonString);
+			const parsed: unknown = JSON.parse(jsonString);
 
 			// Validate the structure
 			if (!parsed || typeof parsed !== 'object') {
 				return null;
 			}
 
+			const record = asRecord(parsed);
+			const str = (value: unknown): string => (typeof value === 'string' ? value : '');
 			return {
-				vaultOverview: parsed.vaultOverview || '',
-				organization: parsed.organization || '',
-				keyTopics: parsed.keyTopics || '',
-				userPreferences: parsed.userPreferences || '',
-				customInstructions: parsed.customInstructions || '',
+				vaultOverview: str(record.vaultOverview),
+				organization: str(record.organization),
+				keyTopics: str(record.keyTopics),
+				userPreferences: str(record.userPreferences),
+				customInstructions: str(record.customInstructions),
 			};
 		} catch (error) {
 			this.plugin.logger.error('Failed to parse analysis response:', error);
@@ -367,7 +371,7 @@ export class VaultAnalyzer {
 				}
 			}
 
-			const parsed = JSON.parse(jsonString);
+			const parsed: unknown = JSON.parse(jsonString);
 
 			// Validate the structure: must be array
 			if (!Array.isArray(parsed)) {
@@ -375,24 +379,27 @@ export class VaultAnalyzer {
 				return null;
 			}
 
+			const items: unknown[] = parsed;
+
 			// Validate each prompt has required fields with proper types
-			const isValid = parsed.every(
-				(p) =>
-					typeof p === 'object' &&
-					typeof p.icon === 'string' &&
-					typeof p.text === 'string' &&
-					p.icon.trim().length > 0 &&
-					p.text.trim().length > 0
-			);
+			const isValid = items.every((p): p is { icon: string; text: string } => {
+				const prompt = asRecord(p);
+				return (
+					typeof prompt.icon === 'string' &&
+					typeof prompt.text === 'string' &&
+					prompt.icon.trim().length > 0 &&
+					prompt.text.trim().length > 0
+				);
+			});
 
 			if (!isValid) {
 				this.plugin.logger.warn('Invalid example prompt structure - missing or invalid fields');
-				this.plugin.logger.debug('Parsed data:', JSON.stringify(parsed, null, 2));
+				this.plugin.logger.debug('Parsed data:', JSON.stringify(items, null, 2));
 				return null;
 			}
 
-			this.plugin.logger.log(`Successfully parsed ${parsed.length} example prompts`);
-			return parsed;
+			this.plugin.logger.log(`Successfully parsed ${items.length} example prompts`);
+			return items;
 		} catch (error) {
 			this.plugin.logger.error('Failed to parse example prompts response:', error);
 			this.plugin.logger.debug('Response that failed to parse:', response.substring(0, 500));

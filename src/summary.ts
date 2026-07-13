@@ -1,4 +1,4 @@
-import type ObsidianGemini from './main';
+import type { ObsidianGemini } from './types/plugin';
 import { GeminiPrompts } from './prompts';
 import { BaseModelRequest } from './api/index';
 import { ModelClientFactory } from './api';
@@ -61,7 +61,7 @@ export class GeminiSummary {
 		};
 		const summary = await modelApi.generateModelResponse(request);
 
-		await this.plugin.app.fileManager.processFrontMatter(file, (frontmatter) => {
+		await this.plugin.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.plugin.settings.summaryFrontmatterKey] = summary.markdown;
 		});
 
@@ -70,7 +70,7 @@ export class GeminiSummary {
 
 	async setupSummarizationCommand() {
 		this.plugin.addCommand({
-			id: 'gemini-scribe-summarize-active-file',
+			id: 'summarize-active-file',
 			name: t('command.summarizeActiveFile'),
 			callback: () => this.summarizeActiveFile(),
 		});

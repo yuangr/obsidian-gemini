@@ -1,4 +1,5 @@
 import { ModelClientFactory, ModelUseCase } from '../../src/api/factory';
+import { getDefaultModelForRole } from '../../src/models';
 
 // --- Mocks ---
 
@@ -206,6 +207,56 @@ describe('ModelClientFactory', () => {
 			// Should get a non-empty default from getDefaultModelForRole
 			expect(config.model).toBeTruthy();
 		});
+
+		describe('Ollama provider', () => {
+			// Ollama keeps a single model resident at a time, so every use case
+			// resolves to the one configured ollamaModelName — the Gemini
+			// chat/summary/completions settings are ignored under Ollama, and kept
+			// separate so switching providers preserves each choice. (#1077, #1125)
+			const useCases: ModelUseCase[] = [
+				ModelUseCase.CHAT,
+				ModelUseCase.SUMMARY,
+				ModelUseCase.COMPLETIONS,
+				ModelUseCase.REWRITE,
+				ModelUseCase.SEARCH,
+			];
+
+			it.each(useCases)('resolves %s to the single ollamaModelName', (useCase) => {
+				// The Gemini fields are set to divergent values but must be ignored.
+				const plugin = createMockPlugin({
+					provider: 'ollama',
+					ollamaModelName: 'ollama-chat',
+					chatModelName: 'gemini-chat',
+					summaryModelName: 'gemini-summary',
+					completionsModelName: 'gemini-completions',
+				});
+				ModelClientFactory.createFromPlugin(plugin, useCase);
+
+				expect(MockOllamaClient).toHaveBeenCalledTimes(1);
+				expect(MockGeminiClient).not.toHaveBeenCalled();
+				const config = MockOllamaClient.mock.calls[0][0];
+				expect(config.model).toBe('ollama-chat');
+			});
+
+			it('falls back to the Ollama default for every use case when ollamaModelName is empty', () => {
+				// Even with a Gemini chat model configured, an empty ollamaModelName
+				// under Ollama resolves to the Ollama chat default — never a Gemini field.
+				const plugin = createMockPlugin({
+					provider: 'ollama',
+					ollamaModelName: '',
+					chatModelName: 'gemini-chat',
+					summaryModelName: 'gemini-summary',
+				});
+				ModelClientFactory.createFromPlugin(plugin, ModelUseCase.SUMMARY);
+
+				const config = MockOllamaClient.mock.calls[0][0];
+				// The default is resolved by the real getDefaultModelForRole (not mocked),
+				// so assert against it directly rather than a hard-coded string. In a unit
+				// context with no Ollama models loaded this is the empty-string sentinel,
+				// which is exactly the unconfigured-Ollama state the resolver passes through.
+				expect(config.model).toBe(getDefaultModelForRole('chat', 'ollama'));
+			});
+		});
 	});
 
 	describe('createChatModel', () => {
@@ -252,7 +303,7 @@ describe('ModelClientFactory', () => {
 				topP: 0.9,
 				streamingEnabled: false,
 			};
-			ModelClientFactory.createCustom(config as any);
+			ModelClientFactory.createCustom(config);
 
 			expect(MockGeminiClient).toHaveBeenCalledWith(config, undefined, undefined);
 			expect(MockRetryDecorator).toHaveBeenCalledTimes(1);
@@ -260,7 +311,7 @@ describe('ModelClientFactory', () => {
 
 		it('should use default retry config when no plugin provided', () => {
 			const config = { apiKey: 'key', model: 'model', temperature: 1, topP: 1, streamingEnabled: true };
-			ModelClientFactory.createCustom(config as any);
+			ModelClientFactory.createCustom(config);
 
 			expect(MockRetryDecorator).toHaveBeenCalledWith(
 				expect.anything(),
@@ -272,7 +323,7 @@ describe('ModelClientFactory', () => {
 		it('should use plugin retry config when plugin is provided', () => {
 			const plugin = createMockPlugin({ maxRetries: 10, initialBackoffDelay: 5000 });
 			const config = { apiKey: 'key', model: 'model', temperature: 1, topP: 1, streamingEnabled: true };
-			ModelClientFactory.createCustom(config as any, undefined, plugin);
+			ModelClientFactory.createCustom(config, undefined, plugin);
 
 			expect(MockRetryDecorator).toHaveBeenCalledWith(
 				expect.anything(),

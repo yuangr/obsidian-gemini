@@ -18,6 +18,7 @@ export const da: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Opdater min forståelse af din vault',
 	'agent.empty.initContext': 'Initialiser vault-kontekst',
 	'agent.empty.initContextDesc': 'Hjælp mig med at forstå din vaults struktur og organisering',
+	'agent.empty.initContextFailed': 'Kunne ikke initialisere vault-kontekst',
 	'agent.empty.recentSessions': 'Seneste sessioner:',
 	'agent.empty.examplesHeader': 'Prøv disse eksempler:',
 	'i18n.aiTranslatedNotice': "Denne oversættelse af brugerfladen er AI-genereret. Forbedrings-PR'er er velkomne.",
@@ -60,6 +61,9 @@ export const da: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Fuldførelsesmodel',
 	'settings.general.completionModelDesc':
 		'Model, der bruges til inline-fuldførelser i IDE-stil, mens du skriver i noter.',
+	'settings.general.ollamaModelName': 'Ollama-model',
+	'settings.general.ollamaModelDesc':
+		'Model, der bruges til alle Ollama-anvendelser: chat, opsummering, autofuldførelse og omskrivning.',
 	'settings.general.imageModelName': 'Billedmodel',
 	'settings.general.imageModelDesc': 'Model, der bruges til billedgenerering.',
 	'settings.general.stateFolderName': 'Plugin-statusmappe',
@@ -142,7 +146,7 @@ export const da: Partial<Record<TranslationKey, string>> = {
 		'Skriv logposter til en fil i plugin-statusmappen. Fejl og advarsler logges altid; fejlfindingsposter kræver fejlfindingstilstand. Logfiler roteres automatisk ved 1 MB.',
 	'settings.agentConfig.useInteractionsApiName': 'Brug Interactions API',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'Send Gemini-anmodninger gennem Googles nyere Interactions API i stedet for det ældre generateContent API. Kører tilstandsløst — samtalehistorikken afspilles igen ved hver tur og gemmes ikke på Googles side mellem ture. Eksperimentel — lad den være deaktiveret, hvis du oplever problemer.',
+		'Send Gemini-anmodninger via Googles nyere Interactions API i stedet for det ældre generateContent API. Dette er standardtransporten. Kører tilstandsløst – samtalehistorikken genafspilles ved hver tur og gemmes ikke på Googles side mellem turene. Slå det fra for at falde tilbage på generateContent, hvis du støder på problemer.',
 	'settings.agentConfig.customEndpointName': 'Brugerdefineret API-slutpunkt',
 	'settings.agentConfig.customEndpointDesc':
 		'Tilsidesæt standard Google API-basis-URL (f.eks. for en virksomhedsproxy eller lokal gateway). Lad feltet være tomt for at bruge det officielle slutpunkt.',
@@ -557,7 +561,7 @@ export const da: Partial<Record<TranslationKey, string>> = {
 		'Begræns udløsninger til stier, der matcher denne glob. Eksempler: Daily/**/*.md, Notes/*.md. Lad feltet være tomt for alle stier.',
 	'hooks.commandIdSetting': 'Kommando-id',
 	'hooks.commandIdDesc':
-		"Kommandopalet-id, der skal aktiveres. Eksempler: editor:save-file, gemini-scribe-summarize-active-file. Vis kommando-id'er via Indstillinger → Genvejstaster (åbn udviklerkonsollen med Ctrl+Shift+I for at inspicere id'er).",
+		"Kommando-id fra kommandopaletten, der skal udløses. Eksempler: editor:save-file, gemini-scribe:summarize-active-file. Se kommando-id'er via Indstillinger → Genvejstaster (åbn udviklerkonsollen med Ctrl+Shift+I for at inspicere id'er).",
 	'hooks.focusFileSetting': 'Fokuser på udløsende fil før afsendelse',
 	'hooks.focusFileDesc':
 		'Når denne er aktiveret, åbnes den udløsende fil i arbejdsområdet, før kommandoen kører — nyttigt til kommandoer, der er begrænset til editoren. Når den er deaktiveret, kører kommandoen mod den fil, der i øjeblikket er aktiv. Standard er deaktiveret.',
@@ -833,6 +837,7 @@ export const da: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Kunne ikke konvertere note til projekt',
 	'notice.main.noProjectsFound': 'Ingen projekter fundet',
 	'notice.main.noSessionsForProject': 'Ingen sessioner fundet for projektet: {name}',
+	'notice.main.resumeProjectSessionFailed': 'Kunne ikke genoptage projektsession',
 	'notice.main.projectRemoved': 'Fjernede projektstatus fra: {name}',
 	'notice.main.projectRemoveFailed': 'Kunne ikke fjerne projektstatus',
 	'notice.main.selectTextFirst': 'Vælg venligst noget tekst først',
@@ -845,9 +850,6 @@ export const da: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'RAG-synkronisering sat på pause',
 	'notice.main.ragNotPaused': 'RAG-synkronisering er ikke sat på pause',
 	'notice.main.ragResumed': 'RAG-synkronisering genoptaget',
-	'notice.main.ragIndexComplete': 'Genscanning fuldført: {indexed} genindekseret, {skipped} uændret',
-	'notice.main.ragIndexFailed': 'RAG-indeksering mislykkedes: {error}',
-	'notice.main.ragSyncingPending': 'RAG-indeks: Synkroniserer afventende ændringer...',
 	'notice.main.readyToUse': 'Gemini Scribe er nu klar til brug!',
 	'component.managementModalBase.managerUnavailable': '{label}-manager er ikke tilgængelig.',
 	'component.managementModalBase.deleteConfirm': 'Slet "{slug}"? Dette fjerner definitionsfilen for {label} permanent.',

@@ -1,5 +1,5 @@
 import { Notice } from 'obsidian';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import type { AgentEventBus } from '../agent/agent-event-bus';
 import { getErrorMessage } from '../utils/error-utils';
 import { t } from '../i18n';
@@ -215,12 +215,13 @@ export class BackgroundTaskManager {
 	private showCompletionNotice(task: BackgroundTask): void {
 		if (task.outputPath) {
 			const notice = new Notice(``, 8000);
-			const fragment = notice.noticeEl;
+			const fragment = notice.messageEl;
 			fragment.createSpan({ text: `${t('notice.backgroundTask.complete', { label: task.label })} ` });
 			const link = fragment.createEl('a', { text: t('notice.backgroundTask.openResult'), href: '#' });
 			link.addEventListener('click', (e) => {
 				e.preventDefault();
-				this.plugin.app.workspace.openLinkText(task.outputPath!, '', false);
+				// Fire-and-forget: user-initiated navigation; errors surface via Obsidian.
+				void this.plugin.app.workspace.openLinkText(task.outputPath!, '', false);
 				notice.hide();
 			});
 		} else {

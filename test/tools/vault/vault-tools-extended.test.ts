@@ -30,6 +30,7 @@ function createMockPlugin(overrides: Record<string, any> = {}): any {
 	return {
 		app: {
 			vault: {
+				configDir: '.obsidian',
 				getAbstractFileByPath: vi.fn().mockReturnValue(null),
 				getFiles: vi.fn().mockReturnValue([]),
 				modify: vi.fn().mockResolvedValue(undefined),
@@ -92,7 +93,7 @@ describe('UpdateFrontmatterTool', () => {
 	});
 
 	it('confirmationMessage formats params', () => {
-		const msg = tool.confirmationMessage!({ path: 'notes/foo.md', key: 'status', value: 'done' });
+		const msg = tool.confirmationMessage({ path: 'notes/foo.md', key: 'status', value: 'done' });
 		expect(msg).toContain('notes/foo.md');
 		expect(msg).toContain('status');
 		expect(msg).toContain('done');
@@ -284,7 +285,7 @@ describe('UpdateFrontmatterTool', () => {
 		});
 
 		// When value is already a number (not a string), skip parsing
-		await tool.execute({ path: 'notes/foo.md', key: 'num', value: 99 as any }, makeContext(plugin));
+		await tool.execute({ path: 'notes/foo.md', key: 'num', value: 99 }, makeContext(plugin));
 		expect(captured['num']).toBe(99);
 	});
 
@@ -335,12 +336,12 @@ describe('AppendContentTool', () => {
 	});
 
 	it('confirmationMessage formats params and truncates long content', () => {
-		const shortMsg = tool.confirmationMessage!({ path: 'notes/foo.md', content: 'hello' });
+		const shortMsg = tool.confirmationMessage({ path: 'notes/foo.md', content: 'hello' });
 		expect(shortMsg).toContain('notes/foo.md');
 		expect(shortMsg).toContain('hello');
 
 		const longContent = 'x'.repeat(300);
-		const longMsg = tool.confirmationMessage!({ path: 'notes/foo.md', content: longContent });
+		const longMsg = tool.confirmationMessage({ path: 'notes/foo.md', content: longContent });
 		expect(longMsg).toContain('...');
 	});
 

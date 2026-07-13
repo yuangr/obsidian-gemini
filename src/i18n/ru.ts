@@ -18,6 +18,7 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Обновить моё понимание вашего хранилища',
 	'agent.empty.initContext': 'Инициализировать контекст хранилища',
 	'agent.empty.initContextDesc': 'Помогите мне понять структуру и организацию вашего хранилища',
+	'agent.empty.initContextFailed': 'Не удалось инициализировать контекст хранилища',
 	'agent.empty.recentSessions': 'Недавние сеансы:',
 	'agent.empty.examplesHeader': 'Попробуйте эти примеры:',
 	'i18n.aiTranslatedNotice': 'Этот перевод интерфейса создан ИИ. Будем рады вашим PR с исправлениями.',
@@ -60,6 +61,9 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Модель автодополнения',
 	'settings.general.completionModelDesc':
 		'Модель, используемая для встроенного автодополнения в стиле IDE при вводе текста в заметках.',
+	'settings.general.ollamaModelName': 'Модель Ollama',
+	'settings.general.ollamaModelDesc':
+		'Модель, используемая для всех сценариев Ollama: чат, суммаризация, автодополнение и переписывание.',
 	'settings.general.imageModelName': 'Модель генерации изображений',
 	'settings.general.imageModelDesc': 'Модель, используемая для генерации изображений.',
 	'settings.general.stateFolderName': 'Папка состояния плагина',
@@ -144,7 +148,7 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 		'Записывать логи в файл в папке состояния плагина. Ошибки и предупреждения записываются всегда; для записей отладки требуется включить режим отладки. Файлы логов автоматически ротируются при достижении 1 МБ.',
 	'settings.agentConfig.useInteractionsApiName': 'Использовать Interactions API',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'Маршрутизировать запросы Gemini через более новый Interactions API от Google вместо устаревшего generateContent API. Работает без сохранения состояния — история беседы воспроизводится заново при каждом шаге и не сохраняется на стороне Google между шагами. Экспериментальная функция — отключите при возникновении проблем.',
+		'Направлять запросы Gemini через более новый Interactions API от Google вместо устаревшего API generateContent. Это транспорт по умолчанию. Работает без сохранения состояния — история беседы передается заново при каждом запросе и не сохраняется на стороне Google между ними. Отключите эту опцию, чтобы вернуться к generateContent при возникновении проблем.',
 	'settings.agentConfig.customEndpointName': 'Пользовательский эндпоинт API',
 	'settings.agentConfig.customEndpointDesc':
 		'Переопределить базовый URL-адрес Google API по умолчанию (например, для корпоративного прокси или локального шлюза). Оставьте пустым, чтобы использовать официальный эндпоинт.',
@@ -566,7 +570,7 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 		'Ограничить запуск путями, соответствующими этой маске. Примеры: Daily/**/*.md, Notes/*.md. Оставьте пустым для любых путей.',
 	'hooks.commandIdSetting': 'ID команды',
 	'hooks.commandIdDesc':
-		'ID команды из палитры команд для запуска. Примеры: editor:save-file, gemini-scribe-summarize-active-file. Вы можете посмотреть ID команд в меню Настройки → Горячие клавиши (откройте консоль разработчика с помощью Ctrl+Shift+I, чтобы узнать ID).',
+		'ID запускаемой команды из палитры команд. Примеры: editor:save-file, gemini-scribe:summarize-active-file. Просмотреть ID команд можно в меню Настройки → Горячие клавиши (откройте консоль разработчика с помощью Ctrl+Shift+I, чтобы узнать ID).',
 	'hooks.focusFileSetting': 'Фокусировать файл-триггер перед отправкой',
 	'hooks.focusFileDesc':
 		'Если включено, файл-триггер открывается в рабочей области перед запуском команды — полезно для команд редактора. Если выключено, команда выполняется для текущего активного файла. По умолчанию выключено.',
@@ -844,6 +848,7 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Не удалось преобразовать заметку в проект',
 	'notice.main.noProjectsFound': 'Проекты не найдены',
 	'notice.main.noSessionsForProject': 'Сессии для проекта не найдены: {name}',
+	'notice.main.resumeProjectSessionFailed': 'Не удалось возобновить сеанс проекта',
 	'notice.main.projectRemoved': 'Статус проекта удален для: {name}',
 	'notice.main.projectRemoveFailed': 'Не удалось удалить статус проекта',
 	'notice.main.selectTextFirst': 'Сначала выделите текст',
@@ -856,9 +861,6 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'Синхронизация RAG приостановлена',
 	'notice.main.ragNotPaused': 'Синхронизация RAG не приостановлена',
 	'notice.main.ragResumed': 'Синхронизация RAG возобновлена',
-	'notice.main.ragIndexComplete': 'Сканирование завершено: {indexed} переиндексировано, {skipped} без изменений',
-	'notice.main.ragIndexFailed': 'Ошибка индексирования RAG: {error}',
-	'notice.main.ragSyncingPending': 'Индекс RAG: синхронизация ожидающих изменений...',
 	'notice.main.readyToUse': 'Gemini Scribe готов к работе!',
 	'component.managementModalBase.managerUnavailable': 'Менеджер {label} недоступен.',
 	'component.managementModalBase.deleteConfirm': 'Удалить «{slug}»? Это навсегда удалит файл определения {label}.',

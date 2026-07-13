@@ -36,7 +36,7 @@ UI sections without a dedicated topic in this reference: _Vault search index_ (c
 - **Type**: `'gemini' | 'ollama'`
 - **Default**: `'gemini'`
 - **Description**: Selects the model backend. `gemini` calls the Google Cloud API; `ollama` calls a local Ollama daemon.
-- **Notes**: Switching providers re-initialises the plugin and resets stale model selections to the new provider's defaults. Provider-coupled features (Google Search, URL Context, Deep Research, image generation, RAG indexing) are hidden when `ollama` is active. See the [Ollama Setup Guide](/guide/ollama-setup) for details.
+- **Notes**: Switching providers re-initialises the plugin. Model selections persist across the switch — the Gemini fields (`chatModelName`, `summaryModelName`, `completionsModelName`, `imageModelName`) and `ollamaModelName` are stored separately, so returning to a provider restores the model you had there; a value is only reset if it's actually stale for its own provider (e.g. a deprecated Gemini model id), never merely because you switched providers. Provider-coupled features (Google Search, URL Context, Deep Research, image generation, RAG indexing) are hidden when `ollama` is active. See the [Ollama Setup Guide](/guide/ollama-setup) for details.
 
 ### Ollama base URL
 
@@ -71,6 +71,7 @@ UI sections without a dedicated topic in this reference: _Vault search index_ (c
 - **Structure**:
   ```text
   gemini-scribe/
+  ├── History/          # Legacy note-centric chat history files (v3.x and earlier)
   ├── Prompts/          # Custom prompt templates
   ├── Skills/           # Custom agent skills (<skill-name>/SKILL.md)
   ├── Agent-Sessions/   # Agent mode sessions with conversation history
@@ -101,7 +102,7 @@ UI sections without a dedicated topic in this reference: _Vault search index_ (c
 The active model list depends on the [`provider`](#provider) setting:
 
 - **Gemini (default)** — models are loaded from the bundled list and auto-refreshed from GitHub on startup (cached for 24h). `imageModelName` is only available on this provider. Click **Refresh model list** in Settings → General — or run the **Gemini Scribe: Refresh model list** command — to fetch the latest list immediately (bypasses the cache).
-- **Ollama** — the chat / summary / completion dropdowns are populated from `GET <ollamaBaseUrl>/api/tags`, listing whatever you have pulled. Click "Refresh model list" in settings if a freshly pulled model doesn't appear. Image generation is unavailable in this mode.
+- **Ollama** — a single **Ollama model** picker is shown (bound to its own `ollamaModelName` setting); that one model serves every use case — chat, summary, completions, and rewrite. Ollama keeps only one model resident at a time, so diverging models per use case would just thrash RAM/VRAM on each switch; the Gemini `chatModelName` / `summaryModelName` / `completionsModelName` values are ignored while Ollama is active. Because Ollama uses its own field, switching Gemini ↔ Ollama preserves each provider's model choice — returning to Gemini restores the exact chat model you had. The dropdown is populated from `GET <ollamaBaseUrl>/api/tags`, listing whatever you have pulled. Click "Refresh model list" in settings if a freshly pulled model doesn't appear. Image generation is unavailable in this mode.
 
 ### Chat model
 
@@ -126,6 +127,7 @@ The active model list depends on the [`provider`](#provider) setting:
 - **Default**: `gemini-flash-latest`
 - **Description**: Model used for document summarization
 - **Used by**: Summarize active file command
+- **Note**: Gemini only. Under Ollama every use case resolves to `ollamaModelName`, so this value is ignored and its picker is hidden.
 
 ### Completions Model
 
@@ -134,6 +136,7 @@ The active model list depends on the [`provider`](#provider) setting:
 - **Default**: `gemini-flash-lite-latest`
 - **Description**: Model used for IDE-style auto-completions
 - **Note**: Completions must be enabled via command palette
+- **Note**: Gemini only. Under Ollama every use case resolves to `ollamaModelName`, so this value is ignored and its picker is hidden.
 
 ### Image model
 
@@ -142,6 +145,14 @@ The active model list depends on the [`provider`](#provider) setting:
 - **Default**: `gemini-2.5-flash-image`
 - **Only available when**: Provider is `gemini`
 - **Description**: Model used for image generation via the `generate_image` tool and the **Generate image** command. Only models with image-generation capability appear in this dropdown.
+
+### Ollama model
+
+- **Setting**: `ollamaModelName`
+- **Type**: String
+- **Default**: `''` (backfilled to the first pulled model once the daemon's list loads)
+- **Only shown when**: Provider is `ollama`
+- **Description**: The single local model that serves every use case (chat, summary, completions, rewrite) while Ollama is the active provider. Stored separately from the Gemini `chatModelName` so switching Gemini ↔ Ollama preserves each provider's model choice. Populated from `GET <ollamaBaseUrl>/api/tags`.
 
 ## Custom Prompts
 
@@ -228,6 +239,8 @@ Below the threshold, neither phase fires — older history bytes are left untouc
 
 Re-issuing a tool call brings the full output back if the agent needs it. The behavior is always-on and not currently exposed as a setting.
 
+Compaction isn't only checked before the initial request — `AgentLoop` re-checks after every tool batch, so a long tool chain (many iterations in a single turn) can be compacted mid-flight instead of only at the start of the next user turn. Mid-loop compaction never touches the current tool chain's own turns (the ones carrying the in-flight `functionCall`/`thoughtSignature` continuity) — only turns from before the chain started are eligible, so an in-progress multi-step tool sequence is never summarized out from under itself.
+
 ### Show Token Usage
 
 - **Setting**: `showTokenUsage`
@@ -292,11 +305,12 @@ Advanced settings for developers and power users. Access by clicking "Show advan
 
 - **Setting**: `useInteractionsApi`
 - **Type**: Boolean
-- **Default**: `false`
+- **Default**: `true`
 - **Only applies when**: Provider is `gemini`
-- **Description**: Routes Gemini requests through Google's GA [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) (`interactions.create`) instead of the legacy `generateContent` API.
+- **Description**: Routes Gemini requests through Google's GA [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) (`interactions.create`) instead of the legacy `generateContent` API. This is now the default transport; existing installs are migrated to it automatically (a one-time flip you can reverse by turning the toggle off).
 - **Privacy**: Runs statelessly (`store: false`) — conversation history is replayed with each request, and the plugin does not persist Interactions state on Google's side between turns. (Requests are still sent to Google to generate each response, subject to Google's standard API data-handling terms.)
-- **Status**: Experimental. Responses stream incrementally (text, reasoning, and tool calls); turn it off to fall back to `generateContent` if you hit issues.
+- **Status**: Default-on. Responses stream incrementally (text, reasoning, and tool calls); turn it off to fall back to the legacy `generateContent` path if you hit issues.
+- **Scope**: Governs the conversational chat transport only. Image generation (the `generate_image` tool and **Generate image** command) always uses `generateContent` regardless of this setting.
 
 #### Custom API Endpoint
 
@@ -306,7 +320,7 @@ Advanced settings for developers and power users. Access by clicking "Show advan
 - **Only applies when**: Provider is `gemini`
 - **Description**: Overrides the default Google API base URL for all SDK calls. Use this to route requests through a corporate proxy, local gateway, or regional mirror.
 - **Example**: `https://my-proxy.example.com`
-- **Scope**: Applies to all Google API call sites in the plugin (chat, search, web fetch, image generation, RAG indexing, deep research, context management).
+- **Scope**: Applies to every Google API call site in the plugin (chat, streaming, image generation, web fetch, Google Search/Maps grounding, RAG indexing, deep research, context management).
 - **Note**: Leave blank to use the official Google endpoint. Invalid URLs will show a warning and be cleared automatically.
 - **Security note**: Requests routed through this proxy will include your Google API key in the `x-goog-api-key` header.
 
@@ -353,7 +367,7 @@ Advanced settings for developers and power users. Access by clicking "Show advan
 
 Model discovery is automatic — no user-configurable settings are required. On startup, the plugin fetches the latest available Gemini models from GitHub and falls back to the bundled list if the fetch fails. The remote list is cached in `data.json` under `remoteModelCache` for 24 hours; subsequent reloads within that window are no-ops.
 
-To pick up a newly-published model without waiting for the cache to expire, click **Refresh model list** in Settings → General, or run the **Gemini Scribe: Refresh model list** command (`gemini-scribe-refresh-model-list`). Both honor the same skip conditions as the auto-fetch — they no-op when the provider is Ollama or the host reports offline, and surface the outcome via a `Notice`. When the Ollama provider is active, the same row appears but re-queries the Ollama daemon for newly pulled models instead.
+To pick up a newly-published model without waiting for the cache to expire, click **Refresh model list** in Settings → General, or run the **Gemini Scribe: Refresh model list** command (`gemini-scribe:refresh-model-list`). Both honor the same skip conditions as the auto-fetch — they no-op when the provider is Ollama or the host reports offline, and surface the outcome via a `Notice`. When the Ollama provider is active, the same row appears but re-queries the Ollama daemon for newly pulled models instead.
 
 ### Tool Execution
 
@@ -421,7 +435,7 @@ Controls which agent tools execute automatically, which require user confirmatio
 - **Setting**: `toolPolicy.toolPermissions`
 - **Type**: Object (tool name → permission)
 - **Default**: `{}` (empty — preset governs all tools)
-- **Description**: Each registered tool can be individually set to `deny` (blocked), `ask` (confirmation required), or `allow` (runs automatically). Overrides take precedence over the active preset. Setting an override causes the preset to switch to `custom`. Legacy aliases `ask_user` and `approve` still parse correctly but `ask` and `allow` are the canonical forms.
+- **Description**: Each registered tool can be individually set to `deny` (blocked), `ask_user` (confirmation required), or `approve` (runs automatically) — these are the values persisted in `data.json` for this setting. Overrides take precedence over the active preset. Setting an override causes the preset to switch to `custom`. (This is distinct from the `toolPolicy` YAML block used by Projects, Scheduled Tasks, and Hooks, which uses the shorter `deny`/`ask`/`allow` aliases in frontmatter — see those guides.)
 
 ### MCP servers
 
@@ -499,7 +513,7 @@ Available permission bypasses:
 ## Security Best Practices
 
 1. **API Key**: Your API key is stored securely via Obsidian's SecretStorage and is not written to `data.json`. Never share your API key or commit it to version control
-2. **System Folders**: Plugin automatically protects `.obsidian` and plugin state folders from tool operations
+2. **System Folders**: Plugin automatically protects Obsidian's configuration folder (`.obsidian` by default, or a renamed one) and plugin state folders from tool operations
 3. **Tool permissions**: Review tool operations before approving (when confirmations are enabled)
 4. **System Prompt Override**: Use with caution; can break expected functionality
 

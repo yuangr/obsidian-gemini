@@ -46,6 +46,9 @@ Choose which operations require confirmation in **Settings → Gemini Scribe →
 - **update_frontmatter**: Modifying note properties (frontmatter)
 - **create_skill**: Creating new skill packages
 - **edit_skill**: Updating existing skill instructions
+- **generate_image**: Generating and saving images
+- **update_memory**: Updating vault memory (AGENTS.md)
+- **google_search**, **google_maps**, **fetch_url**, **deep_research**: External web/research calls (Gemini provider only)
 
 When the agent needs to perform these operations, an **in-chat confirmation request** appears with interactive buttons. You can also use "Don't ask again this session" for trusted workflows. See [Tool Confirmations](#tool-confirmations) for details.
 
@@ -72,7 +75,7 @@ Each tool call in the chat is collapsible — click a tool row to expand its det
 
 ### File Attachments & Drag-and-Drop
 
-You can include images, audio, video, PDFs, and text files in your chat. Files are automatically classified and routed:
+You can include images, audio, video, PDFs, SVGs, and text files in your chat. Files are automatically classified and routed:
 
 **Adding Files:**
 
@@ -90,14 +93,20 @@ When you drop a file, the plugin classifies it based on its extension:
 | ----------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | **Text**                      | `.md`, `.txt`, `.ts`, `.js`, `.json`, `.html`, `.css`, `.py`, etc.            | Added as context chips (the AI reads the file content)             |
 | **Binary (Gemini-supported)** | `.png`, `.jpg`, `.gif`, `.webp`, `.pdf`, `.mp3`, `.wav`, `.mp4`, `.mov`, etc. | Sent as inline data (the AI processes the binary content directly) |
+| **SVG**                       | `.svg`, `.svgz`                                                               | Rasterized to PNG on-device, then sent as inline data              |
 | **Unsupported**               | `.zip`, `.exe`, `.dmg`, etc.                                                  | Skipped with a notification                                        |
 
 **Supported Binary Formats:**
 
 - **Images**: PNG, JPEG, GIF, WebP, HEIC, HEIF
+- **Vector images**: SVG, SVGZ (rasterized to PNG before sending — see below)
 - **Audio**: WAV, MP3, AAC, FLAC
 - **Video**: MP4, MPEG, MOV, FLV, MPG, WebM, WMV, 3GP
 - **Documents**: PDF
+
+**SVG Handling:**
+
+Gemini's API can't process `image/svg+xml` directly, so SVG (and gzip-compressed `.svgz`) files are **rasterized to PNG on your device** before being sent — whether you drag, paste, `@`-mention, or have the agent read them with the Read File tool. Rasterization renders the SVG onto a white background (so transparent artwork like handwritten ink strokes stays legible for OCR) and caps the longest edge at 2048px to keep the payload within the inline-data limit. If an SVG can't be rendered (malformed markup or unresolvable external references), it's skipped with the same "unsupported file type" notice rather than sending unusable data.
 
 **How It Works:**
 
@@ -155,7 +164,7 @@ Context files are displayed in a **unified file shelf** — a horizontal strip a
 
 **Adding files:**
 
-1. Type `@` in the chat input to open the file picker (supports text files **and** Gemini-compatible binary files like images, PDFs, audio, and video)
+1. Type `@` in the chat input to open the file picker (supports text files **and** Gemini-compatible binary files like images, SVGs, PDFs, audio, and video)
 2. Type `/` in an empty chat input to open the skill picker — select a skill to insert an activation prompt you can edit before sending (see [Agent Skills](agent-skills.md) for details)
 3. Click the file icon in the session header to open the multi-select modal:
    - Already-added files appear pre-checked
@@ -255,7 +264,7 @@ Supports:
 
 #### read_file
 
-Read the contents of any file in your vault. Supports text files (markdown, code, `.base`, `.canvas`) and binary files that Gemini can process (images, audio, video, PDF):
+Read the contents of any file in your vault. Supports text files (markdown, code, `.base`, `.canvas`) and binary files that Gemini can process (images, audio, video, PDF, and SVG — SVGs are rasterized to PNG on-device first):
 
 ```
 Read the contents of my daily note
@@ -263,9 +272,10 @@ Show me what's in Projects/Todo.md
 Describe the image at images/diagram.png
 Transcribe the recording at audio/meeting.mp3
 Read the PDF at docs/report.pdf
+Transcribe the handwriting in Ink/Writing/note.svg
 ```
 
-When you ask the agent to read a binary file, it sends the file data directly to Gemini for analysis — enabling image description, audio transcription, PDF reading, and video analysis without manual drag-and-drop.
+When you ask the agent to read a binary file, it sends the file data directly to Gemini for analysis — enabling image description, audio transcription, PDF reading, and video analysis without manual drag-and-drop. SVG files are rasterized to PNG on-device before sending, so the agent can view and OCR vector artwork (e.g. handwritten ink strokes) that Gemini would otherwise reject.
 
 If a file doesn't exist, the agent receives a non-error response with `exists: false` and helpful suggestions for similar file names. This allows automation skills to probe for files without triggering error states.
 
@@ -359,6 +369,8 @@ What do you remember about my vault?
 
 ### Web & Research Operations
 
+> All four tools in this section (`google_search`, `google_maps`, `fetch_url`, `deep_research`) are available on the Gemini provider only — they're hidden when Ollama is the active provider. See the [Provider Capabilities reference](/reference/provider-capabilities) for the full matrix.
+
 #### google_search
 
 Search the web for current information:
@@ -389,7 +401,7 @@ Analyze this blog post and summarize key points
 
 #### deep_research
 
-Conduct multi-source research with citations and (optionally) save the report to your vault. Distinct from `google_search` — Deep Research runs iterative multi-turn investigation that takes minutes rather than seconds. See the [Deep Research guide](/guide/deep-research) for scope options (`web_only`, `vault_only`, `both`) and example prompts.
+Conduct multi-source research with citations and (optionally) save the report to your vault. Distinct from `google_search` — Deep Research runs iterative multi-turn investigation that takes minutes rather than seconds. By default it runs as a background task so it doesn't block the conversation; the agent only waits inline when the report is the direct answer to your current question. See the [Deep Research guide](/guide/deep-research#background-mode) for scope options (`web_only`, `vault_only`, `both`), background mode, and example prompts.
 
 ```text
 Research the latest developments in quantum error correction and save it to Research/quantum.md
@@ -397,7 +409,7 @@ Research the latest developments in quantum error correction and save it to Rese
 
 #### generate_image
 
-Generate an image from a prompt and save it to your vault. The agent picks a default attachment path if you don't specify one. Available on the Gemini provider only.
+Generate an image from a prompt and save it to your vault. The agent picks a default attachment path if you don't specify one. Like `deep_research`, it defaults to running as a background task — the agent only generates inline when the image needs to appear in the same turn. Available on the Gemini provider only.
 
 ```text
 Generate a watercolor diagram of a Zettelkasten workflow and embed it in my notes
@@ -604,6 +616,9 @@ By default, these operations require confirmation:
 - **update_frontmatter**: Modifying note properties (frontmatter)
 - **create_skill**: Creating new skill packages
 - **edit_skill**: Updating existing skill instructions
+- **generate_image**: Generating and saving images
+- **update_memory**: Updating vault memory (AGENTS.md)
+- **google_search**, **google_maps**, **fetch_url**, **deep_research**: External web/research calls (Gemini provider only)
 
 You can configure which operations require confirmation in **Settings → Gemini Scribe → Tool permissions** (enable **Show advanced settings** first).
 
@@ -784,7 +799,7 @@ Agent: I'll research productivity methods and create notes.
 
 The following folders are automatically protected:
 
-- `.obsidian/` - Plugin configurations
+- `.obsidian/` - Obsidian's configuration folder (or your renamed config directory)
 - `gemini-scribe/` - Plugin state files
 - Any folder containing plugin data
 
@@ -795,6 +810,15 @@ Prevents infinite execution loops:
 - Detects repeated identical operations
 - Stops after threshold (default: 3)
 - Configurable time window
+
+### Turn Budget
+
+Long agent turns (many tool-call batches in a row) are bounded by a soft budget instead of a hard cutoff:
+
+- As a turn nears its limit, the agent is reminded how many tool-call batches it has left so it can wrap up cleanly
+- If it runs out mid-task, it gets a one-time extension (half the original budget, rounded up) with a nudge to finish
+- Interactive agent chat sessions default to 50 tool-call batches per turn — high enough to stay out of the way of normal multi-step work
+- See [Scheduled Tasks → Tool Iteration Limit](/guide/scheduled-tasks#tool-iteration-limit) for the same mechanism as it applies to headless runs (default 20, configurable via `maxIterations`)
 
 ### Error Handling
 

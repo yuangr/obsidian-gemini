@@ -18,6 +18,7 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Làm mới hiểu biết của tôi về vault của bạn',
 	'agent.empty.initContext': 'Khởi tạo ngữ cảnh vault',
 	'agent.empty.initContextDesc': 'Giúp tôi hiểu cấu trúc và cách sắp xếp vault của bạn',
+	'agent.empty.initContextFailed': 'Không thể khởi tạo ngữ cảnh vault',
 	'agent.empty.recentSessions': 'Các phiên gần đây:',
 	'agent.empty.examplesHeader': 'Thử các ví dụ sau:',
 	'i18n.aiTranslatedNotice':
@@ -61,6 +62,9 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Mô hình hoàn thành',
 	'settings.general.completionModelDesc':
 		'Mô hình được sử dụng để tự động hoàn thành nội dung trực tiếp (inline) kiểu IDE khi bạn nhập trong ghi chú.',
+	'settings.general.ollamaModelName': 'Mô hình Ollama',
+	'settings.general.ollamaModelDesc':
+		'Mô hình được sử dụng cho tất cả các tác vụ của Ollama: trò chuyện, tóm tắt, hoàn thành và viết lại.',
 	'settings.general.imageModelName': 'Mô hình hình ảnh',
 	'settings.general.imageModelDesc': 'Mô hình được sử dụng để tạo hình ảnh.',
 	'settings.general.stateFolderName': 'Thư mục trạng thái plugin',
@@ -144,7 +148,7 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 		'Ghi nhật ký vào một tệp trong thư mục trạng thái plugin. Lỗi và cảnh báo luôn được ghi lại; các mục gỡ lỗi yêu cầu chế độ gỡ lỗi. Các tệp nhật ký được tự động xoay vòng ở kích thước 1 MB.',
 	'settings.agentConfig.useInteractionsApiName': 'Sử dụng Interactions API',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'Định tuyến các yêu cầu Gemini qua Interactions API mới hơn của Google thay vì generateContent API cũ. Chạy không lưu trạng thái (stateless) — lịch sử trò chuyện được phát lại sau mỗi lượt và không được lưu lại phía Google giữa các lượt. Thử nghiệm — hãy tắt đi nếu bạn gặp sự cố.',
+		'Định tuyến các yêu cầu Gemini qua Interactions API mới hơn của Google thay vì generateContent API cũ. Đây là phương thức truyền tải mặc định. Hoạt động không lưu trạng thái (stateless) — lịch sử trò chuyện được gửi lại sau mỗi lượt và không được lưu trữ phía Google giữa các lượt. Tắt tùy chọn này để quay lại sử dụng generateContent nếu bạn gặp sự cố.',
 	'settings.agentConfig.customEndpointName': 'Endpoint API tùy chỉnh',
 	'settings.agentConfig.customEndpointDesc':
 		'Ghi đè URL cơ sở mặc định của Google API (ví dụ: đối với proxy doanh nghiệp hoặc cổng cục bộ). Để trống để sử dụng endpoint chính thức.',
@@ -557,7 +561,7 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 		'Chỉ kích hoạt cho các đường dẫn khớp với glob này. Ví dụ: Daily/**/*.md, Notes/*.md. Để trống cho mọi đường dẫn.',
 	'hooks.commandIdSetting': 'ID lệnh',
 	'hooks.commandIdDesc':
-		'ID bảng lệnh để kích hoạt. Ví dụ: editor:save-file, gemini-scribe-summarize-active-file. Xem các ID lệnh qua Cài đặt → Phím tắt (mở bảng điều khiển cho nhà phát triển bằng Ctrl+Shift+I để kiểm tra ID).',
+		'ID bảng lệnh cần kích hoạt. Ví dụ: editor:save-file, gemini-scribe:summarize-active-file. Xem các ID lệnh qua Cài đặt → Phím tắt (mở bảng điều khiển cho nhà phát triển bằng Ctrl+Shift+I để kiểm tra ID).',
 	'hooks.focusFileSetting': 'Chuyển đến tệp kích hoạt trước khi chạy',
 	'hooks.focusFileDesc':
 		'Khi bật, tệp kích hoạt sẽ được mở trong không gian làm việc trước khi lệnh chạy — hữu ích cho các lệnh trong phạm vi trình chỉnh sửa. Khi tắt, lệnh sẽ chạy trên bất kỳ tệp nào đang hoạt động. Mặc định tắt.',
@@ -831,6 +835,7 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Chuyển đổi ghi chú thành dự án thất bại',
 	'notice.main.noProjectsFound': 'Không tìm thấy dự án nào',
 	'notice.main.noSessionsForProject': 'Không tìm thấy phiên nào cho dự án: {name}',
+	'notice.main.resumeProjectSessionFailed': 'Không thể tiếp tục phiên dự án',
 	'notice.main.projectRemoved': 'Đã gỡ bỏ trạng thái dự án khỏi: {name}',
 	'notice.main.projectRemoveFailed': 'Gỡ bỏ trạng thái dự án thất bại',
 	'notice.main.selectTextFirst': 'Vui lòng chọn một đoạn văn bản trước',
@@ -843,9 +848,6 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'Đã tạm dừng đồng bộ RAG',
 	'notice.main.ragNotPaused': 'Đồng bộ RAG không ở trạng thái tạm dừng',
 	'notice.main.ragResumed': 'Đã tiếp tục đồng bộ RAG',
-	'notice.main.ragIndexComplete': 'Hoàn tất quét lại: đã lập lại chỉ mục {indexed}, không thay đổi {skipped}',
-	'notice.main.ragIndexFailed': 'Lập chỉ mục RAG thất bại: {error}',
-	'notice.main.ragSyncingPending': 'Chỉ mục RAG: Đang đồng bộ hóa các thay đổi đang chờ xử lý...',
 	'notice.main.readyToUse': 'Gemini Scribe đã sẵn sàng để sử dụng!',
 	'component.managementModalBase.managerUnavailable': 'Trình quản lý {label} không khả dụng.',
 	'component.managementModalBase.deleteConfirm': 'Xóa "{slug}"? Thao tác này sẽ xóa vĩnh viễn tệp định nghĩa {label}.',

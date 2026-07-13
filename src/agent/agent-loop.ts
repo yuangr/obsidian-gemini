@@ -1,11 +1,14 @@
 import type { Content } from '@google/genai';
-import type ObsidianGemini from '../main';
+import { getActiveChatModel } from '../models';
+import type { ObsidianGemini } from '../types/plugin';
 import type { ChatSession, PerTurnContext } from '../types/agent';
+import type { AgentEventMap, AgentEventName } from '../types/agent-events';
 import { ToolClassification, type FeatureToolPolicy } from '../types/tool-policy';
 import type { ToolCall, ModelResponse, ModelApi, StreamChunk } from '../api/interfaces/model-api';
 import type { CustomPrompt } from '../prompts/types';
 import type { IConfirmationProvider, IToolHostView, ToolExecutionContext, ToolResult } from '../tools/types';
 import { generateToolDescription } from '../utils/text-generation';
+import { getRawErrorMessageOr } from '../utils/error-utils';
 import {
 	sortToolCallsByPriority,
 	buildToolHistoryTurns,
@@ -79,6 +82,24 @@ export interface AgentLoopHooks {
 	 * of the turn.
 	 */
 	onFollowUpChunk?(chunk: StreamChunk): void | Promise<void>;
+	/**
+	 * Fired when a streaming follow-up call is created, and again with `null`
+	 * once it settles. UI callers register the live stream in the same slot the
+	 * Stop button cancels (`currentStreamingResponse`), so pressing Stop mid-stream
+	 * halts token generation immediately instead of waiting for `stream.complete`
+	 * to resolve. Only fires on the streaming path (alongside `onFollowUpChunk`);
+	 * headless/non-streaming follow-ups leave it unset and are unaffected.
+	 */
+	onFollowUpStreamReady?(stream: { cancel: () => void } | null): void | Promise<void>;
+	/**
+	 * Fired when `ContextManager.prepareHistory` compacts history mid-loop
+	 * (after a tool batch, ahead of the follow-up request) — i.e. `wasCompacted`
+	 * came back true. UI uses this to surface the same "Context Compacted"
+	 * notice/transcript entry as the pre-turn compaction path. Headless callers
+	 * can leave it unset; the compacted history is used for the follow-up
+	 * request either way.
+	 */
+	onMidLoopCompaction?(result: { estimatedTokens: number; summaryText?: string }): void | Promise<void>;
 }
 
 export interface AgentLoopOptions {
@@ -258,6 +279,14 @@ export class AgentLoop {
 		let currentToolCalls = initialResponse.toolCalls ?? [];
 		let conversationHistory = initialHistory;
 		let userMessage = initialUserMessage;
+		// Index marking the start of this turn's tool-loop turns within the
+		// history array. Everything at or after this index carries live
+		// functionCall/thoughtSignature continuity for the in-flight tool chain
+		// and must never be folded into a mid-loop compaction summary — only
+		// entries strictly before it (prior, already-completed turns) are
+		// eligible. See #662.
+		let loopStartIndex = initialHistory.length;
+		const modelName = session?.modelConfig?.model || getActiveChatModel(plugin.settings);
 		// `perTurnContext` is a first-iteration input, like `userMessage`:
 		// `buildToolHistoryTurns` splices it into the user turn once, after which
 		// it lives in `conversationHistory`. Re-passing it on later iterations
@@ -286,8 +315,9 @@ export class AgentLoop {
 				// Deliberate lazy require to break the AgentFactory → tools → AgentLoop
 				// import cycle (see AGENTS.md). A top-level import here would be circular.
 
-				const { AgentFactory } = require('./agent-factory');
-				return AgentFactory.createAgentModel(plugin, session) as ModelApi;
+				// eslint-disable-next-line @typescript-eslint/no-require-imports -- a top-level import here would recreate that cycle
+				const { AgentFactory } = require('./agent-factory') as typeof import('./agent-factory');
+				return AgentFactory.createAgentModel(plugin, session);
 			});
 
 		while (currentToolCalls.length > 0) {
@@ -383,7 +413,7 @@ export class AgentLoop {
 				})
 			);
 
-			const updatedHistory = buildToolHistoryTurns({
+			let updatedHistory = buildToolHistoryTurns({
 				conversationHistory,
 				userMessage,
 				perTurnContext,
@@ -392,6 +422,42 @@ export class AgentLoop {
 				appendText: budgetNotice,
 			});
 
+			if (isCancelled()) {
+				return this.cancelledResult(updatedHistory, iterations);
+			}
+
+			// Compact history if this batch pushed us over the token threshold —
+			// long tool chains otherwise grow `updatedHistory` unbounded across
+			// iterations. Only turns strictly before `loopStartIndex` are eligible,
+			// so the current tool chain's functionCall/thoughtSignature turns are
+			// never summarized away. Gated internally on cached token usage, so
+			// this is a no-op on most iterations. See #662.
+			const compactionResult = await plugin.contextManager.prepareHistory(updatedHistory, modelName, {
+				protectFromIndex: loopStartIndex,
+			});
+			if (compactionResult.wasCompacted) {
+				plugin.contextManager.setUsageMetadata({
+					promptTokenCount: compactionResult.estimatedTokens,
+					totalTokenCount: compactionResult.estimatedTokens,
+				});
+				// Summarization replaced the protected prefix with a 2-entry
+				// summary — shift the boundary left by however many entries were
+				// shed so it still points at the same logical (post-compaction)
+				// start of this tool chain on subsequent iterations.
+				loopStartIndex -= updatedHistory.length - compactionResult.compactedHistory.length;
+				await this.safeHook('onMidLoopCompaction', plugin, () =>
+					hooks?.onMidLoopCompaction?.({
+						estimatedTokens: compactionResult.estimatedTokens,
+						summaryText: compactionResult.summaryText,
+					})
+				);
+			}
+			updatedHistory = compactionResult.compactedHistory;
+
+			// prepareHistory can spend real time (token counting, an LLM
+			// summarization call) — re-check cancellation before scheduling the
+			// follow-up request so a stop during compaction doesn't sneak out
+			// another model call.
 			if (isCancelled()) {
 				return this.cancelledResult(updatedHistory, iterations);
 			}
@@ -427,7 +493,15 @@ export class AgentLoop {
 						void this.safeHook('onFollowUpChunk', plugin, () => hooks?.onFollowUpChunk?.({ text: chunk.text }));
 					}
 				});
-				followUpResponse = await stream.complete;
+				// Expose the in-flight stream so a mid-stream Stop can cancel token
+				// generation immediately rather than waiting for stream.complete to
+				// settle; clear it (null) once the stream resolves or throws.
+				await this.safeHook('onFollowUpStreamReady', plugin, () => hooks?.onFollowUpStreamReady?.(stream));
+				try {
+					followUpResponse = await stream.complete;
+				} finally {
+					await this.safeHook('onFollowUpStreamReady', plugin, () => hooks?.onFollowUpStreamReady?.(null));
+				}
 				// Prefer the completed response's text; fall back to the accumulated
 				// streaming text when the response object arrives empty.
 				if (!followUpResponse.markdown?.trim() && accText.trim()) {
@@ -443,6 +517,7 @@ export class AgentLoop {
 			if (followUpResponse.usageMetadata) {
 				await this.safeEmit(plugin, 'apiResponseReceived', {
 					usageMetadata: followUpResponse.usageMetadata,
+					modelName,
 				});
 			}
 
@@ -505,6 +580,7 @@ export class AgentLoop {
 			if (retryResponse.usageMetadata) {
 				await this.safeEmit(plugin, 'apiResponseReceived', {
 					usageMetadata: retryResponse.usageMetadata,
+					modelName,
 				});
 			}
 
@@ -573,9 +649,13 @@ export class AgentLoop {
 	 * hooks. A subscriber's failure is observability noise, not a reason to
 	 * abort an in-flight agent turn.
 	 */
-	private async safeEmit(plugin: ObsidianGemini, event: string, payload: any): Promise<void> {
+	private async safeEmit<E extends AgentEventName>(
+		plugin: ObsidianGemini,
+		event: E,
+		payload: AgentEventMap[E]
+	): Promise<void> {
 		try {
-			await plugin.agentEventBus?.emit(event as any, payload);
+			await plugin.agentEventBus?.emit(event, payload);
 		} catch (error) {
 			plugin.logger.error(`[AgentLoop] Event bus emit "${event}" threw — continuing:`, error);
 		}
@@ -778,7 +858,7 @@ export class AgentLoop {
 					toolArguments: toolCall.arguments || {},
 					result: {
 						success: false,
-						error: error instanceof Error ? error.message : 'Unknown error',
+						error: getRawErrorMessageOr(error, 'Unknown error'),
 					},
 				});
 			}

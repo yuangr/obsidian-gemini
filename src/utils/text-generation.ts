@@ -1,4 +1,4 @@
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 
 /**
  * Generate a human-friendly description of a tool call using templates
@@ -15,7 +15,7 @@ import type ObsidianGemini from '../main';
 export function generateToolDescription(
 	plugin: ObsidianGemini,
 	toolName: string,
-	_toolArguments: Record<string, any>,
+	_toolArguments: Record<string, unknown>,
 	displayName: string
 ): string {
 	const fallback = `Executing: ${displayName}`;
@@ -30,7 +30,7 @@ export function generateToolDescription(
 	} catch (error) {
 		try {
 			plugin.logger.debug('Failed to generate tool description:', error);
-		} catch (_) {
+		} catch {
 			// Ignore secondary logger failures to ensure fallback is always returned
 		}
 		return fallback;

@@ -1,8 +1,9 @@
 import { Vault, TFile, TFolder, normalizePath, Notice, Modal, App } from 'obsidian';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import { CustomPrompt, PromptInfo } from './types';
 import { BundledPromptRegistry } from './bundled-prompts';
 import { t } from '../i18n';
+import { asRecord } from '../utils/error-utils';
 
 export class PromptManager {
 	constructor(
@@ -23,7 +24,7 @@ export class PromptManager {
 
 			// Use Obsidian's metadata cache to get frontmatter
 			const cache = this.plugin.app.metadataCache.getFileCache(file);
-			const frontmatter = cache?.frontmatter || {};
+			const frontmatter = asRecord(cache?.frontmatter);
 
 			// Get content without frontmatter using frontmatterPosition
 			const fullContent = await this.vault.read(file);
@@ -38,21 +39,25 @@ export class PromptManager {
 			}
 
 			// Parse tags - normalize to array of lowercase strings
-			let rawTags = frontmatter.tags;
+			const rawTags: unknown = frontmatter.tags;
+			let tagList: unknown[];
 			if (typeof rawTags === 'string') {
-				rawTags = [rawTags];
-			} else if (!Array.isArray(rawTags)) {
-				rawTags = [];
+				tagList = [rawTags];
+			} else if (Array.isArray(rawTags)) {
+				tagList = rawTags;
+			} else {
+				tagList = [];
 			}
-			const tags = rawTags
-				.filter((t: unknown): t is string => typeof t === 'string')
-				.map((t: string) => t.toLowerCase());
+			const tags = tagList.filter((t): t is string => typeof t === 'string').map((t) => t.toLowerCase());
 
+			const name = frontmatter.name;
+			const description = frontmatter.description;
+			const version = frontmatter.version;
 			return {
-				name: frontmatter.name || 'Unnamed Prompt',
-				description: frontmatter.description || '',
-				version: frontmatter.version || 1,
-				overrideSystemPrompt: frontmatter.override_system_prompt || false,
+				name: typeof name === 'string' && name ? name : 'Unnamed Prompt',
+				description: typeof description === 'string' ? description : '',
+				version: typeof version === 'number' ? version : 1,
+				overrideSystemPrompt: frontmatter.override_system_prompt === true,
 				tags: tags,
 				content: contentWithoutFrontmatter.trim(),
 			};
@@ -188,7 +193,7 @@ Focus on being helpful while maintaining intellectual honesty.`;
 	// Setup commands for prompt management
 	setupPromptCommands(): void {
 		this.plugin.addCommand({
-			id: 'gemini-scribe-create-custom-prompt',
+			id: 'create-custom-prompt',
 			name: t('command.createCustomPrompt'),
 			callback: () => this.createNewCustomPrompt(),
 		});
@@ -198,35 +203,49 @@ Focus on being helpful while maintaining intellectual honesty.`;
 	async createNewCustomPrompt(): Promise<void> {
 		try {
 			// Open input modal for prompt name
-			const modal = new PromptNameModal(this.plugin.app, async (promptName: string) => {
-				if (!promptName || promptName.trim() === '') {
-					new Notice(t('notice.prompt.nameEmpty'));
-					return;
-				}
+			const modal = new PromptNameModal(this.plugin.app, (promptName: string) => {
+				// PromptNameModal expects a void-returning callback; run the async
+				// file creation as a fire-and-forget task with its own error handling.
+				void this.createPromptFromName(promptName);
+			});
 
-				// Sanitize filename (remove special characters, keep alphanumeric, spaces, hyphens, underscores)
-				const sanitizedName = promptName
-					.trim()
-					.replace(/[^\w\s-]/g, '')
-					.replace(/\s+/g, '-');
-				if (!sanitizedName) {
-					new Notice(t('notice.prompt.nameInvalid'));
-					return;
-				}
+			modal.open();
+		} catch (error) {
+			this.plugin.logger.error('Error creating new custom prompt:', error);
+			new Notice(t('notice.prompt.createFailed'));
+		}
+	}
 
-				const promptsDir = this.getPromptsDirectory();
-				const fileName = `${sanitizedName.toLowerCase()}.md`;
-				const filePath = normalizePath(`${promptsDir}/${fileName}`);
+	// Create the prompt file for a user-supplied name (invoked from the name modal).
+	private async createPromptFromName(promptName: string): Promise<void> {
+		if (!promptName || promptName.trim() === '') {
+			new Notice(t('notice.prompt.nameEmpty'));
+			return;
+		}
 
-				// Check if file already exists
-				const existingFile = this.vault.getAbstractFileByPath(filePath);
-				if (existingFile) {
-					new Notice(t('notice.prompt.alreadyExists', { fileName }));
-					return;
-				}
+		// Sanitize filename (remove special characters, keep alphanumeric, spaces, hyphens, underscores)
+		const sanitizedName = promptName
+			.trim()
+			.replace(/[^\w\s-]/g, '')
+			.replace(/\s+/g, '-');
+		if (!sanitizedName) {
+			new Notice(t('notice.prompt.nameInvalid'));
+			return;
+		}
 
-				// Create template content
-				const templateContent = `---
+		const promptsDir = this.getPromptsDirectory();
+		const fileName = `${sanitizedName.toLowerCase()}.md`;
+		const filePath = normalizePath(`${promptsDir}/${fileName}`);
+
+		// Check if file already exists
+		const existingFile = this.vault.getAbstractFileByPath(filePath);
+		if (existingFile) {
+			new Notice(t('notice.prompt.alreadyExists', { fileName }));
+			return;
+		}
+
+		// Create template content
+		const templateContent = `---
 name: "${promptName}"
 description: "Brief description of what this prompt does"
 version: 1
@@ -246,24 +265,17 @@ Your custom prompt content goes here. This will modify how the AI behaves when a
 ## Example Usage:
 This prompt will be applied to sessions and will supplement the default system prompt unless override_system_prompt is set to true.`;
 
-				try {
-					// Create the file
-					const newFile = await this.vault.create(filePath, templateContent);
+		try {
+			// Create the file
+			const newFile = await this.vault.create(filePath, templateContent);
 
-					// Open the file for editing
-					await this.plugin.app.workspace.openLinkText(newFile.path, '', true);
+			// Open the file for editing
+			await this.plugin.app.workspace.openLinkText(newFile.path, '', true);
 
-					new Notice(t('notice.prompt.created', { name: promptName }));
-				} catch (error) {
-					this.plugin.logger.error('Error creating prompt file:', error);
-					new Notice(t('notice.prompt.createFileFailed'));
-				}
-			});
-
-			modal.open();
+			new Notice(t('notice.prompt.created', { name: promptName }));
 		} catch (error) {
-			this.plugin.logger.error('Error creating new custom prompt:', error);
-			new Notice(t('notice.prompt.createFailed'));
+			this.plugin.logger.error('Error creating prompt file:', error);
+			new Notice(t('notice.prompt.createFileFailed'));
 		}
 	}
 }
@@ -280,6 +292,7 @@ class PromptNameModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
+		contentEl.addClass('gemini-prompt-name-modal');
 
 		contentEl.createEl('h2', { text: t('modal.promptName.title') });
 
@@ -290,12 +303,6 @@ class PromptNameModal extends Modal {
 			type: 'text',
 			placeholder: t('modal.promptName.placeholder'),
 		});
-
-		this.inputEl.style.width = '100%';
-		this.inputEl.style.marginTop = '8px';
-		this.inputEl.style.padding = '8px';
-		this.inputEl.style.border = '1px solid var(--background-modifier-border)';
-		this.inputEl.style.borderRadius = '4px';
 
 		// Handle Enter key
 		this.inputEl.addEventListener('keydown', (event) => {
@@ -308,21 +315,14 @@ class PromptNameModal extends Modal {
 		});
 
 		const buttonContainer = contentEl.createDiv({ cls: 'prompt-button-container' });
-		buttonContainer.style.marginTop = '16px';
-		buttonContainer.style.display = 'flex';
-		buttonContainer.style.gap = '8px';
-		buttonContainer.style.justifyContent = 'flex-end';
 
 		const cancelButton = buttonContainer.createEl('button', { text: t('modal.promptName.cancel') });
-		cancelButton.style.padding = '8px 16px';
 		cancelButton.addEventListener('click', () => this.close());
 
-		const createButton = buttonContainer.createEl('button', { text: t('modal.promptName.create') });
-		createButton.style.padding = '8px 16px';
-		createButton.style.backgroundColor = 'var(--interactive-accent)';
-		createButton.style.color = 'var(--text-on-accent)';
-		createButton.style.border = 'none';
-		createButton.style.borderRadius = '4px';
+		const createButton = buttonContainer.createEl('button', {
+			text: t('modal.promptName.create'),
+			cls: 'prompt-create-button',
+		});
 		createButton.addEventListener('click', () => this.submit());
 
 		// Focus the input

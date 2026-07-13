@@ -18,6 +18,7 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Segarkan pemahaman saya tentang vault Anda',
 	'agent.empty.initContext': 'Inisialisasi konteks vault',
 	'agent.empty.initContextDesc': 'Bantu saya memahami struktur dan organisasi vault Anda',
+	'agent.empty.initContextFailed': 'Gagal menginisialisasi konteks vault',
 	'agent.empty.recentSessions': 'Sesi terbaru:',
 	'agent.empty.examplesHeader': 'Coba contoh-contoh ini:',
 	'i18n.aiTranslatedNotice': 'Terjemahan antarmuka ini dibuat oleh AI. PR perbaikan sangat disambut baik.',
@@ -60,6 +61,9 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Model pelengkapan',
 	'settings.general.completionModelDesc':
 		'Model yang digunakan untuk pelengkapan sebaris gaya IDE saat Anda mengetik di catatan.',
+	'settings.general.ollamaModelName': 'Model Ollama',
+	'settings.general.ollamaModelDesc':
+		'Model yang digunakan untuk semua kegunaan Ollama: obrolan, peringkasan, pelengkapan, dan penulisan ulang.',
 	'settings.general.imageModelName': 'Model gambar',
 	'settings.general.imageModelDesc': 'Model yang digunakan untuk pembuatan gambar.',
 	'settings.general.stateFolderName': 'Folder status plugin',
@@ -142,7 +146,7 @@ export const id: Partial<Record<TranslationKey, string>> = {
 		'Tulis entri log ke file di folder status plugin. Kesalahan dan peringatan selalu dicatat; entri debug memerlukan mode debug. File log dirotasi secara otomatis pada ukuran 1 MB.',
 	'settings.agentConfig.useInteractionsApiName': 'Gunakan Interactions API',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'Rute permintaan Gemini melalui Interactions API Google yang lebih baru, alih-alih generateContent API yang lama. Berjalan secara stateless — riwayat percakapan diputar ulang setiap giliran dan tidak disimpan di sisi Google di antara giliran. Eksperimental — biarkan nonaktif jika Anda mengalami masalah.',
+		'Rute permintaan Gemini melalui Interactions API Google yang lebih baru, bukan API generateContent yang lama. Ini adalah transport default. Berjalan secara stateless — riwayat percakapan diputar ulang di setiap giliran dan tidak disimpan di sisi Google di antara giliran. Matikan opsi ini untuk kembali menggunakan generateContent jika Anda mengalami masalah.',
 	'settings.agentConfig.customEndpointName': 'Endpoint API kustom',
 	'settings.agentConfig.customEndpointDesc':
 		'Timpa URL dasar Google API default (misalnya untuk proksi perusahaan atau gateway lokal). Biarkan kosong untuk menggunakan endpoint resmi.',
@@ -557,7 +561,7 @@ export const id: Partial<Record<TranslationKey, string>> = {
 		'Batasi pemicuan hanya pada jalur yang cocok dengan glob ini. Contoh: Daily/**/*.md, Notes/*.md. Biarkan kosong untuk jalur apa pun.',
 	'hooks.commandIdSetting': 'ID perintah',
 	'hooks.commandIdDesc':
-		'ID palet perintah yang akan dijalankan. Contoh: editor:save-file, gemini-scribe-summarize-active-file. Lihat ID perintah melalui Pengaturan → Tombol Pintas (buka konsol pengembang dengan Ctrl+Shift+I untuk memeriksa ID).',
+		'ID palet perintah yang akan dijalankan. Contoh: editor:save-file, gemini-scribe:summarize-active-file. Lihat ID perintah melalui Pengaturan → Pintasan keyboard (buka konsol pengembang dengan Ctrl+Shift+I untuk memeriksa ID).',
 	'hooks.focusFileSetting': 'Fokuskan file pemicu sebelum dijalankan',
 	'hooks.focusFileDesc':
 		'Saat aktif, file pemicu akan dibuka di ruang kerja sebelum perintah dijalankan — berguna untuk perintah yang berlingkup editor. Saat nonaktif, perintah dijalankan pada file apa pun yang sedang aktif. Default nonaktif.',
@@ -829,6 +833,7 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Gagal mengonversi catatan ke proyek',
 	'notice.main.noProjectsFound': 'Proyek tidak ditemukan',
 	'notice.main.noSessionsForProject': 'Sesi tidak ditemukan untuk proyek: {name}',
+	'notice.main.resumeProjectSessionFailed': 'Gagal melanjutkan sesi proyek',
 	'notice.main.projectRemoved': 'Menghapus status proyek dari: {name}',
 	'notice.main.projectRemoveFailed': 'Gagal menghapus status proyek',
 	'notice.main.selectTextFirst': 'Silakan pilih beberapa teks terlebih dahulu',
@@ -841,9 +846,6 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'Sinkronisasi RAG dijeda',
 	'notice.main.ragNotPaused': 'Sinkronisasi RAG tidak dijeda',
 	'notice.main.ragResumed': 'Sinkronisasi RAG dilanjutkan',
-	'notice.main.ragIndexComplete': 'Pemindaian ulang selesai: {indexed} diindeks ulang, {skipped} tidak berubah',
-	'notice.main.ragIndexFailed': 'Pengindeksan RAG gagal: {error}',
-	'notice.main.ragSyncingPending': 'Indeks RAG: Menyinkronkan perubahan tertunda...',
 	'notice.main.readyToUse': 'Gemini Scribe kini siap digunakan!',
 	'component.managementModalBase.managerUnavailable': 'Pengelola {label} tidak tersedia.',
 	'component.managementModalBase.deleteConfirm':

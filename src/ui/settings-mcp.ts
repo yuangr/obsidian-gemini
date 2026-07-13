@@ -1,11 +1,12 @@
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import { App, Setting, Notice, setIcon } from 'obsidian';
 import { sanitizeKeySegment } from '../mcp/mcp-oauth-provider';
 import { clearServerEnv } from '../mcp/mcp-secrets';
+import { MCPConnectionStatus } from '../mcp/types';
 import { getErrorMessage, getRawErrorMessage } from '../utils/error-utils';
 import { createCollapsibleSection } from './settings-helpers';
 import { t } from '../i18n';
-import type { SettingsSectionContext } from './settings';
+import type { SettingsSectionContext } from './settings-helpers';
 
 export async function renderMCPSettings(
 	containerEl: HTMLElement,
@@ -74,9 +75,9 @@ async function createMCPSettings(
 			const statusText = status?.status || 'disconnected';
 
 			let iconName: string;
-			if (status?.status === 'connected') {
+			if (status?.status === MCPConnectionStatus.CONNECTED) {
 				iconName = 'check-circle';
-			} else if (status?.status === 'error') {
+			} else if (status?.status === MCPConnectionStatus.ERROR) {
 				iconName = 'alert-circle';
 			} else {
 				iconName = 'circle';
@@ -151,6 +152,8 @@ async function createMCPSettings(
 				.addButton((btn) =>
 					btn
 						.setButtonText(t('settings.mcp.deleteButton'))
+						// setDestructive() (the recommended replacement) requires Obsidian 1.13.0, above the current minAppVersion 1.11.4; keep setWarning until the floor is raised (#1040).
+						// eslint-disable-next-line @typescript-eslint/no-deprecated -- setDestructive() needs Obsidian 1.13.0, above minAppVersion 1.11.4 (#1040)
 						.setWarning()
 						.onClick(async () => {
 							// Disconnect first if connected

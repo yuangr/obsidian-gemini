@@ -1,9 +1,8 @@
-import type ObsidianGemini from '../main';
-import { Setting, Notice, debounce } from 'obsidian';
-import { createCollapsibleSection } from './settings-helpers';
-import { getErrorMessage } from '../utils/error-utils';
+import type { ObsidianGemini } from '../types/plugin';
+import { Setting, Notice } from 'obsidian';
+import { createCollapsibleSection, createDebouncedSave } from './settings-helpers';
 import { t } from '../i18n';
-import type { SettingsSectionContext } from './settings';
+import type { SettingsSectionContext } from './settings-helpers';
 
 let temperatureDebounceTimer: number | null = null;
 let temperatureRunId = 0;
@@ -31,20 +30,7 @@ export async function renderAgentConfigSettings(
 		}
 	);
 
-	// Debounce saveSettings() for text inputs so typing doesn't trigger the plugin
-	// lifecycle on every keystroke. Settings are mutated immediately; only the save is delayed.
-	const debouncedSave = debounce(
-		async () => {
-			try {
-				await plugin.saveSettings();
-			} catch (error) {
-				plugin.logger.error('Failed to save settings:', error);
-				new Notice(t('settings.common.saveFailedNotice', { error: getErrorMessage(error) }));
-			}
-		},
-		300,
-		true
-	);
+	const debouncedSave = createDebouncedSave(plugin);
 
 	// --- Custom Prompts ---
 	new Setting(sectionEl).setName(t('settings.agentConfig.customPromptsHeading')).setHeading();
@@ -185,6 +171,8 @@ export async function renderAgentConfigSettings(
 		slider
 			.setLimits(5, 50, 5)
 			.setValue(plugin.settings.contextCompactionThreshold)
+			// Dropping setDynamicTooltip() is only safe on Obsidian >= 1.13.0 (where the value shows inline); minAppVersion is 1.11.4, so keep it to preserve the slider value tooltip (#1040).
+			// eslint-disable-next-line @typescript-eslint/no-deprecated -- minAppVersion 1.11.4 needs setDynamicTooltip() (#1040)
 			.setDynamicTooltip()
 			.onChange(async (value) => {
 				plugin.settings.contextCompactionThreshold = value;
@@ -215,6 +203,8 @@ export async function renderAgentConfigSettings(
 				slider
 					.setLimits(2, 10, 1)
 					.setValue(plugin.settings.loopDetectionThreshold)
+					// Dropping setDynamicTooltip() is only safe on Obsidian >= 1.13.0 (where the value shows inline); minAppVersion is 1.11.4, so keep it to preserve the slider value tooltip (#1040).
+					// eslint-disable-next-line @typescript-eslint/no-deprecated -- minAppVersion 1.11.4 needs setDynamicTooltip() (#1040)
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						plugin.settings.loopDetectionThreshold = value;
@@ -229,6 +219,8 @@ export async function renderAgentConfigSettings(
 				slider
 					.setLimits(10, 120, 5)
 					.setValue(plugin.settings.loopDetectionTimeWindowSeconds)
+					// Dropping setDynamicTooltip() is only safe on Obsidian >= 1.13.0 (where the value shows inline); minAppVersion is 1.11.4, so keep it to preserve the slider value tooltip (#1040).
+					// eslint-disable-next-line @typescript-eslint/no-deprecated -- minAppVersion 1.11.4 needs setDynamicTooltip() (#1040)
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						plugin.settings.loopDetectionTimeWindowSeconds = value;
@@ -254,6 +246,8 @@ async function createTemperatureSetting(containerEl: HTMLElement, plugin: Obsidi
 			slider
 				.setLimits(ranges.temperature.min, ranges.temperature.max, ranges.temperature.step)
 				.setValue(plugin.settings.temperature)
+				// Dropping setDynamicTooltip() is only safe on Obsidian >= 1.13.0 (where the value shows inline); minAppVersion is 1.11.4, so keep it to preserve the slider value tooltip (#1040).
+				// eslint-disable-next-line @typescript-eslint/no-deprecated -- minAppVersion 1.11.4 needs setDynamicTooltip() (#1040)
 				.setDynamicTooltip()
 				.onChange(async (value) => {
 					if (temperatureDebounceTimer) {
@@ -264,40 +258,42 @@ async function createTemperatureSetting(containerEl: HTMLElement, plugin: Obsidi
 
 					const runId = ++temperatureRunId;
 
-					temperatureDebounceTimer = window.setTimeout(async () => {
-						try {
-							// Validate the current value against model capabilities. Read from
-							// settings rather than the captured `value` so the validation always
-							// matches the most recent user input.
-							const validation = await modelManager.validateParameters(
-								plugin.settings.temperature,
-								plugin.settings.topP
-							);
+					temperatureDebounceTimer = window.setTimeout(() => {
+						void (async () => {
+							try {
+								// Validate the current value against model capabilities. Read from
+								// settings rather than the captured `value` so the validation always
+								// matches the most recent user input.
+								const validation = await modelManager.validateParameters(
+									plugin.settings.temperature,
+									plugin.settings.topP
+								);
 
-							// A newer slider change has superseded this run — discard the
-							// stale result instead of clobbering the current slider/value.
-							if (runId !== temperatureRunId) {
-								return;
-							}
-
-							if (!validation.temperature.isValid && validation.temperature.adjustedValue !== undefined) {
-								slider.setValue(validation.temperature.adjustedValue);
-								plugin.settings.temperature = validation.temperature.adjustedValue;
-								if (validation.temperature.warning) {
-									new Notice(validation.temperature.warning);
+								// A newer slider change has superseded this run — discard the
+								// stale result instead of clobbering the current slider/value.
+								if (runId !== temperatureRunId) {
+									return;
 								}
-							}
 
-							await plugin.saveSettings();
-						} catch (error) {
-							// If a newer run has superseded us, drop this stale failure silently —
-							// surfacing it would contradict whatever the current run is doing.
-							if (runId !== temperatureRunId) {
-								return;
+								if (!validation.temperature.isValid && validation.temperature.adjustedValue !== undefined) {
+									slider.setValue(validation.temperature.adjustedValue);
+									plugin.settings.temperature = validation.temperature.adjustedValue;
+									if (validation.temperature.warning) {
+										new Notice(validation.temperature.warning);
+									}
+								}
+
+								await plugin.saveSettings();
+							} catch (error) {
+								// If a newer run has superseded us, drop this stale failure silently —
+								// surfacing it would contradict whatever the current run is doing.
+								if (runId !== temperatureRunId) {
+									return;
+								}
+								plugin.logger.error('Failed to validate/save temperature setting:', error);
+								new Notice(t('settings.agentConfig.temperatureSaveFailedNotice'));
 							}
-							plugin.logger.error('Failed to validate/save temperature setting:', error);
-							new Notice(t('settings.agentConfig.temperatureSaveFailedNotice'));
-						}
+						})();
 					}, 300);
 				})
 		);
@@ -319,6 +315,8 @@ async function createTopPSetting(containerEl: HTMLElement, plugin: ObsidianGemin
 			slider
 				.setLimits(ranges.topP.min, ranges.topP.max, ranges.topP.step)
 				.setValue(plugin.settings.topP)
+				// Dropping setDynamicTooltip() is only safe on Obsidian >= 1.13.0 (where the value shows inline); minAppVersion is 1.11.4, so keep it to preserve the slider value tooltip (#1040).
+				// eslint-disable-next-line @typescript-eslint/no-deprecated -- minAppVersion 1.11.4 needs setDynamicTooltip() (#1040)
 				.setDynamicTooltip()
 				.onChange(async (value) => {
 					if (topPDebounceTimer) {
@@ -329,33 +327,35 @@ async function createTopPSetting(containerEl: HTMLElement, plugin: ObsidianGemin
 
 					const runId = ++topPRunId;
 
-					topPDebounceTimer = window.setTimeout(async () => {
-						try {
-							const validation = await modelManager.validateParameters(
-								plugin.settings.temperature,
-								plugin.settings.topP
-							);
+					topPDebounceTimer = window.setTimeout(() => {
+						void (async () => {
+							try {
+								const validation = await modelManager.validateParameters(
+									plugin.settings.temperature,
+									plugin.settings.topP
+								);
 
-							if (runId !== topPRunId) {
-								return;
-							}
-
-							if (!validation.topP.isValid && validation.topP.adjustedValue !== undefined) {
-								slider.setValue(validation.topP.adjustedValue);
-								plugin.settings.topP = validation.topP.adjustedValue;
-								if (validation.topP.warning) {
-									new Notice(validation.topP.warning);
+								if (runId !== topPRunId) {
+									return;
 								}
-							}
 
-							await plugin.saveSettings();
-						} catch (error) {
-							if (runId !== topPRunId) {
-								return;
+								if (!validation.topP.isValid && validation.topP.adjustedValue !== undefined) {
+									slider.setValue(validation.topP.adjustedValue);
+									plugin.settings.topP = validation.topP.adjustedValue;
+									if (validation.topP.warning) {
+										new Notice(validation.topP.warning);
+									}
+								}
+
+								await plugin.saveSettings();
+							} catch (error) {
+								if (runId !== topPRunId) {
+									return;
+								}
+								plugin.logger.error('Failed to validate/save topP setting:', error);
+								new Notice(t('settings.agentConfig.topPSaveFailedNotice'));
 							}
-							plugin.logger.error('Failed to validate/save topP setting:', error);
-							new Notice(t('settings.agentConfig.topPSaveFailedNotice'));
-						}
+						})();
 					}, 300);
 				})
 		);

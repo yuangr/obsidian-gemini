@@ -1,5 +1,5 @@
 import { App, Modal, setIcon } from 'obsidian';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import type { ScheduledTask, TaskState } from '../services/scheduled-task-manager';
 import { t } from '../i18n';
 
@@ -95,7 +95,7 @@ export class ScheduledTasksModal extends Modal {
 					text: this.truncateError(taskState.lastError),
 					cls: 'gemini-scheduled-task-error',
 					title: taskState.lastError, // full message on hover
-				} as any);
+				});
 			}
 		}
 
@@ -107,11 +107,21 @@ export class ScheduledTasksModal extends Modal {
 				text: t('scheduledTasks.resetButton'),
 				cls: 'gemini-scheduled-task-reset',
 			});
-			resetBtn.addEventListener('click', async () => {
-				resetBtn.disabled = true;
-				resetBtn.setText(t('scheduledTasks.resetting'));
-				await this.plugin.scheduledTaskManager?.resetTask(task.slug);
-				this.onOpen(); // re-render
+			resetBtn.addEventListener('click', () => {
+				void (async () => {
+					resetBtn.disabled = true;
+					resetBtn.setText(t('scheduledTasks.resetting'));
+					try {
+						await this.plugin.scheduledTaskManager?.resetTask(task.slug);
+						this.onOpen(); // re-render
+					} catch (error) {
+						// resetTask failed before the re-render, so restore the button
+						// instead of leaving it stuck disabled/"…"-ing.
+						this.plugin.logger.error(`[ScheduledTasksModal] resetTask failed for "${task.slug}":`, error);
+						resetBtn.disabled = false;
+						resetBtn.setText(t('scheduledTasks.resetButton'));
+					}
+				})();
 			});
 		}
 
@@ -122,16 +132,21 @@ export class ScheduledTasksModal extends Modal {
 		});
 		if (isPaused || isDisabled) runBtn.disabled = true;
 
-		runBtn.addEventListener('click', async () => {
-			runBtn.disabled = true;
-			runBtn.setText(t('scheduledTasks.running'));
-			try {
-				await this.plugin.scheduledTaskManager?.runNow(task.slug);
-				runBtn.setText(t('scheduledTasks.submitted'));
-			} catch (error) {
-				runBtn.setText(t('scheduledTasks.runError'));
-				this.plugin.logger.error(`[ScheduledTasksModal] runNow failed for "${task.slug}":`, error);
-			}
+		runBtn.addEventListener('click', () => {
+			void (async () => {
+				runBtn.disabled = true;
+				runBtn.setText(t('scheduledTasks.running'));
+				try {
+					await this.plugin.scheduledTaskManager?.runNow(task.slug);
+					runBtn.setText(t('scheduledTasks.submitted'));
+				} catch (error) {
+					runBtn.setText(t('scheduledTasks.runError'));
+					// Restore the disabled state so the user can retry, matching the
+					// scheduler-management run-button sibling.
+					runBtn.disabled = false;
+					this.plugin.logger.error(`[ScheduledTasksModal] runNow failed for "${task.slug}":`, error);
+				}
+			})();
 		});
 	}
 

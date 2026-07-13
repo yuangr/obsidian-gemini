@@ -1,31 +1,34 @@
+// This suite exists specifically to exercise the race behavior of the settings tab's
+// `display()` override, so it calls the deprecated `PluginSettingTab.display()` directly.
+// Migrating off `display()` to `getSettingDefinitions()` is out of scope for #1040.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Counters that the section-render mocks bump so the test can assert on
 // per-section call counts. Declared with `var` so vi.mock's hoisted factory
 // can capture them (TDZ safe).
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var generalCalls = 0;
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var uiCalls = 0;
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var automationCalls = 0;
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var agentConfigCalls = 0;
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var toolCalls = 0;
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var mcpCalls = 0;
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var ragCalls = 0;
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var debugCalls = 0;
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var advancedToggleCalls = 0;
 
 // `gate` is a deferred promise the test resolves to release the first
 // in-flight render. Letting `renderGeneralSettings` block on it lets us
 // interleave a second display() call before the first finishes.
-// eslint-disable-next-line no-var
+// eslint-disable-next-line no-var -- vi.mock hoisted factory must capture it (TDZ safe)
 var gate: Promise<void> | null = null;
 
 vi.mock('../../src/ui/settings-general', () => ({
@@ -109,6 +112,13 @@ vi.mock('obsidian', () => {
 
 import ObsidianGeminiSettingTab from '../../src/ui/settings';
 
+// `display()` returns void (it must, to satisfy PluginSettingTab's void-typed
+// override); the awaitable rendering — including the token-based race guard —
+// lives in the private `renderSettings()`, which `display()` kicks off
+// fire-and-forget. Tests reach it directly to observe render completion.
+const invokeRender = (tab: ObsidianGeminiSettingTab): Promise<void> =>
+	(tab as unknown as { renderSettings(): Promise<void> }).renderSettings();
+
 describe('ObsidianGeminiSettingTab.display() concurrent-call guard', () => {
 	beforeEach(() => {
 		generalCalls = 0;
@@ -134,7 +144,7 @@ describe('ObsidianGeminiSettingTab.display() concurrent-call guard', () => {
 
 		// Kick off the first render — it will block inside renderGeneralSettings
 		// until we resolve the gate. Don't await yet.
-		const first = tab.display();
+		const first = invokeRender(tab);
 		// Yield so renderGeneralSettings starts and bumps generalCalls.
 		await Promise.resolve();
 		expect(generalCalls).toBe(1);
@@ -146,7 +156,7 @@ describe('ObsidianGeminiSettingTab.display() concurrent-call guard', () => {
 		// arrives. With the token guard, the first render must abort after the
 		// gate resolves and the second render owns the container.
 		gate = null; // second render does not block
-		const second = tab.display();
+		const second = invokeRender(tab);
 
 		// Release the first render. With the guard, it should bail out before
 		// running renderUISettings / renderContextSettings.
@@ -167,7 +177,7 @@ describe('ObsidianGeminiSettingTab.display() concurrent-call guard', () => {
 		const plugin = { settings: { debugMode: false }, saveSettings: vi.fn() };
 		const tab = new ObsidianGeminiSettingTab({} as never, plugin as never);
 
-		await tab.display();
+		await invokeRender(tab);
 
 		expect(generalCalls).toBe(1);
 		expect(uiCalls).toBe(1);

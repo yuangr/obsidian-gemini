@@ -7,28 +7,34 @@ Gemini Scribe is an Obsidian plugin that integrates Google's Gemini AI models, p
 > **Note:** Pick one of two setup paths in plugin settings → **Provider**:
 >
 > - **Google Gemini (cloud)** — requires a Gemini API key (free tier available at [Google AI Studio](https://aistudio.google.com/apikey)).
-> - **Ollama (local)** — runs locally with no API key; install [Ollama](https://ollama.com), pull a model, and select it in settings. See [docs/guide/ollama-setup.md](docs/guide/ollama-setup.md) for the feature-parity table.
+> - **Ollama (local)** — runs locally with no API key; install [Ollama](https://ollama.com), pull a model, and select it in settings. See [docs/guide/ollama-setup.md](docs/guide/ollama-setup.md) and the [provider capability matrix](docs/reference/provider-capabilities.md) for what's supported.
 
-## What's New in v4.10.2 (Opt Edition)
+## What's New in v4.11.0 (Opt Edition)
 
-**🛠️ Gemini Scribe 4.10.2 - Interactions API transport fix, recoverable deletes & AI Optimizations**
+**🎨 Gemini Scribe 4.11.0 - Design System, Plan Mode & Smarter Agent Runs (with Opt Edition Optimizations)**
 
-- **⚡ Parallel Tool Execution** - Independent, non-modifying read and search tools run concurrently in parallel, reducing latency in agent turns.
-- **💾 Context Caching** - Automatically caches conversation history prefix for sessions exceeding `32,768` tokens, dramatically reducing token costs and response latency for long chats.
-- **📂 Files API Uploads** - Uploads audio, video, PDF, and image attachments to Google's hosted Files API once per session, avoiding repeated base64 payloads across follow-up turns. Fallbacks to base64 if custom endpoints do not support it.
-- **🧪 Interactions API transport fixed** - With **Use Interactions API** enabled, every request failed with a CORS error ("Failed to fetch") after the Gemini SDK update to `@google/genai` 2.10.0, breaking chat and summarization for anyone who had the opt-in transport on. Requests now route through Obsidian's `requestUrl` again, so the Interactions path works. The transport remains off by default.
-- **🗑️ Safer file deletion** - When the agent deletes a file or folder it now follows your Obsidian "Deleted files" setting (system trash or the vault's `.trash` folder) instead of permanently removing it, so deletions are recoverable; includes minor correctness fixes.
+_A large feature release — a full visual refresh plus smarter, more responsive agent runs, combined with our signature Opt Edition optimizations:_
 
-_The full 4.10 feature set is unchanged:_
+- **🎨 Design system overhaul** - A refreshed visual identity built on a new theme-adaptive design-token layer: a signature Gemini accent (bold user message bubbles, a gradient send button, and a brand mark), a unified elevation/shadow scale, a gradient progress bar across all states, motion polish, and consistent icon sizing — adapting cleanly to light, dark, and custom themes. (#1090, #1104, #1107, #1109, #1110, #1112)
+- **⚡ Parallel Tool Execution (Opt Edition)** - Independent, non-modifying read and search tools run concurrently in parallel, reducing latency in agent turns.
+- **💾 Context Caching (Opt Edition)** - Automatically caches conversation history prefix for sessions exceeding `32,768` tokens, dramatically reducing token costs and response latency for long chats.
+- **📂 Files API Uploads (Opt Edition)** - Uploads audio, video, PDF, and image attachments to Google's hosted Files API once per session, avoiding repeated base64 payloads across follow-up turns. Fallbacks to base64 if custom endpoints do not support it.
+- **📋 Plan Mode (opt-in)** - A new toggle in the agent view (and a command) that has the agent lay out its plan before it starts acting, shown as a "Plan" pill; leave it off for the usual direct execution. (#1046)
+- **⚙️ Background execution by default for long-running tools** - Deep research and image generation now run in the background automatically, so the agent view stays responsive and you can track them in the Background Tasks panel. (#1085)
+- **⏹️ Stop halts a streaming response immediately** - The Stop button now cancels a mid-stream follow-up right away instead of waiting for it to finish, and follow-up requests stream live as they arrive. (#1053, #1097)
+- **🖥️ Ollama improvements** - A single Ollama model field that persists independently, so switching Gemini → Ollama → Gemini no longer changes your Gemini chat model; automatic vision-capability detection; and accurate token counts from the model's own reporting. (#1125, #1058, #1076, #1152)
+- **🖼️ SVG attachments** - SVG and SVGZ files are now rasterized to PNG before being sent to the model, so vector images work as attachments. (#1082)
+- **📱 Cleaner startup, especially on mobile** - The plugin no longer triggers "attempted to load NodeJS package" notices when it loads, fixing startup toast spam and a latent mobile-compatibility gap. (#1154)
+- **🧠 Smarter long agent runs** - Context is now compacted during a long tool chain (not just before a turn), so extended runs stay within budget without dropping the work already in flight. (#1074)
+- **🔎 RAG polish** - "Reindex All" is renamed "Rescan Vault" to match what it does, and the "show all files" affordance is now keyboard-accessible. (#1056, #1159)
+- **🗑️ Safer file deletion (Opt Edition)** - When the agent deletes a file or folder it now follows your Obsidian "Deleted files" setting (system trash or the vault's `.trash` folder) instead of permanently removing it, so deletions are recoverable.
+- **🐛 Fixes** - Deep Research works again on `@google/genai` 2.x (#1151); agent tool logs no longer fold into the preceding reasoning block in session history (#1084); and error messages no longer mislabel non-network failures as connectivity problems (#1153).
+- **🔧 Under the hood** - The plugin's entire softened-lint backlog is now cleared and enforced at zero warnings and all 150 circular imports were eliminated, moving the Obsidian community-directory review toward clean. (#1032)
 
-- **🌍 Localized UI in 20 languages** - The entire plugin interface (settings, modals, agent view, commands, notices) is now translated, auto-selected from your Obsidian language with graceful fallback to English.
-- **🧠 Model reasoning display** - The agent shows the model's thinking inline in the tool activity block and persists it in session history, so you can follow how it reached an answer.
-- **🧪 Interactions API transport (experimental, opt-in)** - New **Use Interactions API** setting routes Gemini chat through Google's newer Interactions API, with full streaming of text, reasoning, tool calls, and grounded sources. Off by default and runs statelessly (your conversation history stays on your device); enable it under **Settings → Agent config → API configuration**, or leave it off to keep using the proven `generateContent` path.
-- **🗺️ Google Maps grounding tool** - The agent can ground answers in Google Maps data for place and location questions.
-- **🧠 Per-use-case thinking depth** - Reasoning effort is now tuned per task (completions think the least, agent chat the most) instead of one global setting, balancing latency and quality.
-- **⏳ Soft agent turn budget** - Long agent runs get a gentle reminder as they approach the turn limit, plus a one-shot extension, instead of stopping abruptly.
-- **📋 Copy buttons for tool calls** - Quickly copy tool-call parameters and results from the agent view.
-- **🔄 In-app model-list refresh** - Refresh the available Gemini model list without restarting.
+**Previous Updates (v4.10.2):**
+
+- **🛠️ Interactions API transport fix** - Restored the opt-in Interactions API transport, which failed with a CORS error after the `@google/genai` 2.10.0 update; requests route through Obsidian's `requestUrl` again. (#1045)
+- **🗑️ Safer file deletion** - Agent deletions now follow your Obsidian "Deleted files" setting (system trash or `.trash`) instead of permanently removing files. (#1030)
 
 **Previous Updates (v4.10.1):**
 
@@ -146,7 +152,7 @@ _The full 4.10 feature set is unchanged:_
       - **Temperature:** Control AI creativity and randomness (0-2.0, automatically adjusted based on available models).
       - **Top P:** Control response diversity and focus (0-1.0).
       - **Model Discovery:** Gemini models are automatically fetched on startup (cached for 24h); click **Refresh model list** in General settings or run the "Gemini Scribe: Refresh model list" command to fetch a newly-published model immediately. Ollama users can click the same **Refresh model list** button after pulling new models.
-      - **API configuration:** Configure retry behavior, backoff delays, and the optional Use Interactions API transport (Gemini provider only).
+      - **API configuration:** Configure retry behavior, backoff delays, and the Use Interactions API transport (Gemini provider only; on by default, with `generateContent` retained as a fallback).
       - **Tool Execution:** Control whether to stop agent execution on tool errors.
       - **Tool loop detection:** Prevent infinite tool execution loops.
       - **Developer Options:** Debug mode, file logging, and advanced configuration tools.
@@ -167,7 +173,7 @@ Let the AI actively work with your vault through tool calling capabilities.
 
 - **Search Files by Name:** Find any file by filename patterns (wildcards supported)
 - **Search File Contents:** Grep-style text search within note contents (supports regex and case-sensitive search)
-- **Read Files:** Access text files or analyze binary files (images, audio, video, PDF) directly through Gemini
+- **Read Files:** Access text files or analyze binary files (images, audio, video, PDF, SVG) directly through Gemini — SVGs are rasterized to PNG on-device so vector artwork and handwritten ink can be viewed and OCR'd
 - **Create Notes:** Generate new notes with specified content
 - **Edit Notes:** Modify existing notes with precision
 - **Move/Rename Files:** Reorganize and rename notes in your vault
@@ -234,6 +240,7 @@ For detailed guides on all features, visit the [Documentation Site](https://alle
 
 - [Settings Reference](docs/reference/settings.md) - Complete settings documentation
 - [Advanced Settings Guide](docs/reference/advanced-settings.md)
+- [Provider Capabilities](docs/reference/provider-capabilities.md) - Gemini vs. Ollama feature matrix
 - [Tool Development Guide](docs/contributing/tool-development.md) - Create custom agent tools
 
 ### Chat Interface
@@ -293,7 +300,7 @@ Precisely rewrite any portion of your text with AI assistance. This feature prov
 
 1.  **Toggle Completions:** Use the command palette (Ctrl/Cmd + P) and select "Gemini Scribe: Toggle completions". A notice will confirm whether completions are enabled or disabled.
 2.  **Write:** Begin typing in a Markdown file.
-3.  **Suggestions:** After a short pause in typing (750ms), Gemini will provide an inline suggestion based on your current context.
+3.  **Suggestions:** After a short pause in typing (500ms), Gemini will provide an inline suggestion based on your current context.
 4.  **Accept/Dismiss:**
     - Press `Tab` to accept the suggestion.
     - Press any other key to dismiss the suggestion and continue typing.

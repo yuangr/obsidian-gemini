@@ -20,7 +20,7 @@ function createMockApi(responses: Array<ModelResponse | Error>): ModelApi {
 			return {
 				complete: promise,
 				cancel: vi.fn(),
-			} as StreamingModelResponse;
+			};
 		}),
 	};
 }
@@ -147,7 +147,8 @@ describe('RetryDecorator', () => {
 
 			// Verify that it hasn't resolved before the 5000ms delay has elapsed
 			let resolved = false;
-			promise.then(() => {
+			// Fire-and-forget probe: the promise itself is awaited below.
+			void promise.then(() => {
 				resolved = true;
 			});
 

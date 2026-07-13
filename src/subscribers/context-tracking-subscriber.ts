@@ -1,4 +1,4 @@
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import { HandlerPriority } from '../types/agent-events';
 
 /**
@@ -26,7 +26,7 @@ export class ContextTrackingSubscriber {
 				'apiResponseReceived',
 				async (payload) => {
 					if (payload.usageMetadata) {
-						plugin.contextManager?.updateUsageMetadata(payload.usageMetadata);
+						plugin.contextManager?.updateUsageMetadata(payload.usageMetadata, payload.modelName);
 					}
 				},
 				HandlerPriority.INTERNAL

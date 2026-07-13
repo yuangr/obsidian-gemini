@@ -1,4 +1,6 @@
 import { DeepResearchService, DeepResearchParams } from '../../src/services/deep-research';
+import { proxyFetch } from '../../src/utils/proxy-fetch';
+import { GoogleGenAI } from '@google/genai';
 import { TFile } from 'obsidian';
 
 // Mock obsidian
@@ -16,7 +18,7 @@ const mockPoll = vi.fn();
 const mockCancel = vi.fn();
 const mockGenerateMarkdown = vi.fn();
 
-vi.mock('@allenhutchison/gemini-utils', () => ({
+vi.mock('@allenhutchison/gemini-utils/research', () => ({
 	ResearchManager: vi.fn().mockImplementation(function () {
 		return {
 			startResearch: mockStartResearch,
@@ -31,16 +33,16 @@ vi.mock('@allenhutchison/gemini-utils', () => ({
 	}),
 }));
 
-// Mock Google GenAI with interactions structure for proxyFetch injection
+// Mock Google GenAI. In @google/genai 2.x, `interactions` is a stable object whose
+// Speakeasy `sdk` (holding the HTTP client / fetcher) is created lazily on the first
+// request and assigned to `interactions.sdk` — there is no `sdk` up front, only
+// `parentClient`. `genAiMock.interactions` is refreshed on each client construction so
+// tests can inspect and drive the lazy assignment.
+const genAiMock = vi.hoisted(() => ({ interactions: undefined as any }));
 vi.mock('@google/genai', () => ({
 	GoogleGenAI: vi.fn().mockImplementation(function () {
-		return {
-			interactions: {
-				_client: {
-					fetch: undefined,
-				},
-			},
-		};
+		genAiMock.interactions = { parentClient: {} };
+		return { interactions: genAiMock.interactions };
 	}),
 }));
 
@@ -69,6 +71,7 @@ describe('DeepResearchService', () => {
 
 		// Setup mock vault
 		mockVault = {
+			configDir: '.obsidian',
 			getAbstractFileByPath: vi.fn(),
 			modify: vi.fn(),
 			create: vi.fn(),
@@ -514,6 +517,45 @@ describe('DeepResearchService', () => {
 
 		it('allows arbitrary paths outside the state folder', () => {
 			expect(validate('Notes/foo.md')).toBe('Notes/foo.md');
+		});
+	});
+
+	describe('proxyFetch injection into the interactions client', () => {
+		// The Deep Research (interactions) endpoint is not CORS-accessible from
+		// Obsidian's renderer with the default fetch, so its Speakeasy HTTP client's
+		// fetcher must be swapped for proxyFetch. The client is created lazily on the
+		// first request and assigned to `interactions.sdk`, so the service traps that
+		// assignment. These tests guard that wiring against future SDK-shape drift.
+		const buildManager = () => (service as any).ensureResearchManager();
+
+		it('swaps in proxyFetch when the SDK lazily creates its HTTP client', () => {
+			buildManager();
+
+			// Simulate @google/genai building the Speakeasy client on the first request.
+			const originalFetcher = vi.fn();
+			genAiMock.interactions.sdk = { _httpClient: { fetcher: originalFetcher } };
+
+			expect(genAiMock.interactions.sdk._httpClient.fetcher).toBe(proxyFetch);
+			expect(genAiMock.interactions.sdk._httpClient.fetcher).not.toBe(originalFetcher);
+		});
+
+		it('still exposes the assigned sdk through the trap getter', () => {
+			buildManager();
+
+			const sdk = { _httpClient: { fetcher: vi.fn() } };
+			genAiMock.interactions.sdk = sdk;
+
+			// Reading back returns the same client the SDK assigned (now patched).
+			expect(genAiMock.interactions.sdk).toBe(sdk);
+		});
+
+		it('does not throw when the interactions client is missing', () => {
+			// A future SDK without an interactions client must degrade gracefully.
+			(GoogleGenAI as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(function () {
+				return { interactions: undefined };
+			});
+			expect(() => buildManager()).not.toThrow();
+			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('no interactions client'));
 		});
 	});
 });

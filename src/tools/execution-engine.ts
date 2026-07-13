@@ -4,14 +4,16 @@ import {
 	ToolExecutionContext,
 	ToolCall,
 	ToolExecution,
+	ToolParams,
 	IConfirmationProvider,
 	DiffContext,
 	ConfirmationResult,
 } from './types';
+import { getRawErrorMessageOr } from '../utils/error-utils';
 import { ToolRegistry } from './tool-registry';
 import { ToolLoopDetector } from './loop-detector';
 import { TFile, normalizePath } from 'obsidian';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import { shouldExcludePath } from '../utils/file-utils';
 import { resolvePathToFile } from './vault/utils';
 
@@ -181,7 +183,7 @@ export class ToolExecutionEngine {
 
 			return result;
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+			const errorMessage = getRawErrorMessageOr(error, 'Unknown error');
 			return {
 				success: false,
 				error: errorMessage,
@@ -217,7 +219,7 @@ export class ToolExecutionEngine {
 	 */
 	private async requestUserConfirmation(
 		tool: Tool,
-		parameters: any,
+		parameters: ToolParams,
 		confirmationProvider: IConfirmationProvider
 	): Promise<ConfirmationResult> {
 		// Generate unique execution ID for tracking
@@ -239,33 +241,41 @@ export class ToolExecutionEngine {
 	 * - create_skill: originalContent = empty (new SKILL.md body), proposedContent = parameters.content
 	 * - edit_skill: originalContent = current SKILL.md body, proposedContent = parameters.content
 	 */
-	private async buildDiffContext(tool: Tool, parameters: any): Promise<DiffContext | undefined> {
+	private async buildDiffContext(tool: Tool, parameters: ToolParams): Promise<DiffContext | undefined> {
 		const plugin = this.plugin;
 
-		if (tool.name === 'write_file' && parameters.path && parameters.content !== undefined) {
-			const normalizedPath = normalizePath(parameters.path);
-			if (shouldExcludePath(normalizedPath, plugin.settings.historyFolder)) return undefined;
+		// Narrow the dynamic, model-supplied fields this method reads to their
+		// expected string types once, so each branch works with concrete values.
+		const path = typeof parameters.path === 'string' ? parameters.path : undefined;
+		const content = typeof parameters.content === 'string' ? parameters.content : undefined;
+		const name = typeof parameters.name === 'string' ? parameters.name : undefined;
+		const description = typeof parameters.description === 'string' ? parameters.description : undefined;
+
+		if (tool.name === 'write_file' && path && content !== undefined) {
+			const normalizedPath = normalizePath(path);
+			if (shouldExcludePath(normalizedPath, plugin.settings.historyFolder, plugin.app.vault.configDir))
+				return undefined;
 
 			const file = plugin.app.vault.getAbstractFileByPath(normalizedPath);
 			const originalContent = file instanceof TFile ? await this.safeReadFile(file) : '';
 			return {
-				filePath: parameters.path,
+				filePath: path,
 				originalContent,
-				proposedContent: parameters.content,
+				proposedContent: content,
 				isNewFile: !file,
 			};
 		}
 
-		if (tool.name === 'append_content' && parameters.path && parameters.content !== undefined) {
+		if (tool.name === 'append_content' && path && content !== undefined) {
 			// Use the canonical resolver, same as AppendContentTool — applies
 			// system-folder exclusion at every resolution strategy (including
 			// the wikilink path), so the diff matches what will actually be written.
-			const { file } = resolvePathToFile(parameters.path, plugin);
+			const { file } = resolvePathToFile(path, plugin);
 			if (!file) return undefined; // Tool will return its own error
 
 			const originalContent = await this.safeReadFile(file);
 			// Mirror the newline-insertion logic from AppendContentTool.execute()
-			let contentToAppend = parameters.content;
+			let contentToAppend = content;
 			if (originalContent.length > 0 && !originalContent.endsWith('\n') && !contentToAppend.startsWith('\n')) {
 				contentToAppend = '\n' + contentToAppend;
 			}
@@ -277,10 +287,10 @@ export class ToolExecutionEngine {
 			};
 		}
 
-		if (tool.name === 'create_skill' && parameters.name && parameters.content !== undefined) {
+		if (tool.name === 'create_skill' && name && content !== undefined) {
 			// Normalize name the same way CreateSkillTool.execute() does
-			const normalizedName = parameters.name.trim().toLowerCase();
-			const proposedBody = parameters.content.trim();
+			const normalizedName = name.trim().toLowerCase();
+			const proposedBody = content.trim();
 			return {
 				filePath: this.getSkillFilePath(normalizedName),
 				originalContent: '',
@@ -289,11 +299,11 @@ export class ToolExecutionEngine {
 			};
 		}
 
-		if (tool.name === 'edit_skill' && parameters.name) {
+		if (tool.name === 'edit_skill' && name) {
 			// Normalize name the same way EditSkillTool.execute() does
-			const normalizedName = parameters.name.trim().toLowerCase();
-			const proposedContent = parameters.content?.trim();
-			const proposedDescription = parameters.description?.trim();
+			const normalizedName = name.trim().toLowerCase();
+			const proposedContent = content?.trim();
+			const proposedDescription = description?.trim();
 
 			// Skip diff if neither content nor description is provided
 			if (!proposedContent && !proposedDescription) return undefined;

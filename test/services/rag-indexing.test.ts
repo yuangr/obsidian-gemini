@@ -35,7 +35,7 @@ vi.mock('@google/genai', () => ({
 }));
 
 // Mock FileUploader
-vi.mock('@allenhutchison/gemini-utils', () => ({
+vi.mock('@allenhutchison/gemini-utils/file-search', () => ({
 	FileUploader: vi.fn().mockImplementation(function () {
 		return {
 			uploadWithAdapter: vi.fn().mockResolvedValue(undefined),
@@ -889,7 +889,7 @@ describe('RagIndexingService', () => {
 			});
 
 			// Mock _doIndexVault on the vault scanner to return our controlled promise
-			const doIndexSpy = vi.spyOn(getVaultScanner(service) as any, '_doIndexVault').mockReturnValue(slowPromise);
+			const doIndexSpy = vi.spyOn(getVaultScanner(service), '_doIndexVault').mockReturnValue(slowPromise);
 
 			// Start two concurrent index operations
 			const promise1 = service.indexVault();
@@ -935,7 +935,7 @@ describe('RagIndexingService', () => {
 
 			// Simulate an active indexing promise
 			getVaultScanner(service)._indexingPromise = slowPromise;
-			vi.spyOn(getVaultScanner(service) as any, '_doIndexVault').mockReturnValue(slowPromise);
+			vi.spyOn(getVaultScanner(service), '_doIndexVault').mockReturnValue(slowPromise);
 			(service as any).status = 'idle';
 			(service as any).ai = {};
 

@@ -14,7 +14,7 @@ import {
 } from './mcp-constants';
 import { withTimeout } from '../utils/timeout';
 import { getRawErrorMessage } from '../utils/error-utils';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import { Logger } from '../utils/logger';
 import { Notice, Platform } from 'obsidian';
 import { t } from '../i18n';
@@ -49,19 +49,21 @@ function patchSetTimeoutForElectron(): void {
 	if (typeof origSetTimeout === 'function') {
 		// Test if unref already works (true Node.js environment)
 		const testTimer = origSetTimeout(() => {}, 0);
-		if (typeof (testTimer as any).unref === 'function') {
+		if (typeof (testTimer as unknown as { unref?: unknown }).unref === 'function') {
 			// Already has .unref() — no patch needed
-			window.clearTimeout(testTimer as any);
+			window.clearTimeout(testTimer);
 			return;
 		}
-		window.clearTimeout(testTimer as any);
+		window.clearTimeout(testTimer);
 
-		// Patch: wrap return value to add .unref() and .ref() as no-ops
-		(window as any).setTimeout = function patchedSetTimeout(
-			callback: (...args: any[]) => void,
+		// Patch: wrap return value to add .unref() and .ref() as no-ops. The wrapper
+		// deliberately does not match the native `number` return type, so the
+		// assignment is bridged through `unknown` — a genuine monkey-patch boundary.
+		window.setTimeout = function patchedSetTimeout(
+			callback: (...args: unknown[]) => void,
 			ms?: number,
-			...args: any[]
-		): any {
+			...args: unknown[]
+		) {
 			const id = origSetTimeout(callback, ms, ...args);
 			return {
 				[Symbol.toPrimitive]() {
@@ -76,17 +78,17 @@ function patchSetTimeoutForElectron(): void {
 				// Preserve the raw id so clearTimeout still works
 				__timerId: id,
 			};
-		} as any;
+		} as unknown as typeof window.setTimeout;
 
 		// Also patch clearTimeout to handle our wrapper objects
 		const origClearTimeout = window.clearTimeout;
-		(window as any).clearTimeout = function patchedClearTimeout(id: any): void {
+		window.clearTimeout = function patchedClearTimeout(id?: unknown): void {
 			if (id && typeof id === 'object' && '__timerId' in id) {
-				origClearTimeout(id.__timerId);
+				origClearTimeout((id as { __timerId?: number }).__timerId);
 			} else {
-				origClearTimeout(id);
+				origClearTimeout(id as number | undefined);
 			}
-		} as any;
+		};
 	}
 }
 
@@ -182,10 +184,7 @@ export class MCPManager {
 			try {
 				await this.connectServer(config);
 			} catch (error) {
-				this.logger.warn(
-					`MCP: Reconnect on online event failed for "${config.name}":`,
-					error instanceof Error ? error.message : error
-				);
+				this.logger.warn(`MCP: Reconnect on online event failed for "${config.name}":`, getRawErrorMessage(error));
 			}
 		}
 	}
@@ -214,10 +213,7 @@ export class MCPManager {
 			try {
 				await this.connectServer(config);
 			} catch (error) {
-				this.logger.warn(
-					`MCP: Failed to connect to server "${config.name}":`,
-					error instanceof Error ? error.message : error
-				);
+				this.logger.warn(`MCP: Failed to connect to server "${config.name}":`, getRawErrorMessage(error));
 			}
 		}
 	}
@@ -532,7 +528,7 @@ export class MCPManager {
 					this.logger.debug(`MCP: OAuth callback server listening on port ${OAUTH_CALLBACK_PORT}`);
 				} catch (serverErr) {
 					// Non-fatal: if the port is busy, OAuth just won't work
-					this.logger.warn(`MCP: Could not start OAuth callback server: ${serverErr}`);
+					this.logger.warn(`MCP: Could not start OAuth callback server: ${getRawErrorMessage(serverErr)}`);
 				}
 			}
 		} else {

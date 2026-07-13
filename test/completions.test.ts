@@ -77,7 +77,7 @@ describe('GeminiCompletions', () => {
 			addCommand: vi.fn(),
 		};
 
-		completions = new GeminiCompletions(mockPlugin as unknown as ObsidianGemini);
+		completions = new GeminiCompletions(mockPlugin);
 	});
 
 	describe('complete() generator', () => {
@@ -156,7 +156,7 @@ describe('GeminiCompletions', () => {
 			await completions.setupCompletionsCommands();
 			expect(mockPlugin.addCommand).toHaveBeenCalledWith(
 				expect.objectContaining({
-					id: 'gemini-scribe-toggle-completions',
+					id: 'toggle-completions',
 					name: 'Toggle completions',
 					callback: expect.any(Function),
 				})

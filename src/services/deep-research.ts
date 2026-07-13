@@ -1,15 +1,14 @@
 import { TFile, normalizePath } from 'obsidian';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
+import { isPathInFolder } from '../utils/file-utils';
 import type { Interactions } from '@google/genai';
-import { ResearchManager, ReportGenerator, Interaction, InteractionOutput } from '@allenhutchison/gemini-utils';
+// The `/research` subpath is built-in-free (no fs/path/crypto), unlike the
+// barrel — import from it so this module stays mobile-safe at load (#1154).
+import { ResearchManager, ReportGenerator } from '@allenhutchison/gemini-utils/research';
+import type { Interaction, InteractionOutput } from '@allenhutchison/gemini-utils/research';
 import { proxyFetch } from '../utils/proxy-fetch';
 import { executeWithRetry, RetryConfig, DEFAULT_RETRY_CONFIG } from '../utils/retry';
 import { createGoogleGenAI } from '../api/providers/gemini/google-genai-factory';
-
-/**
- * System folders that should not be written to
- */
-const PROTECTED_FOLDER_SEGMENTS = ['.obsidian'];
 
 /**
  * Research scope options
@@ -60,27 +59,66 @@ export class DeepResearchService {
 
 		if (!this.researchManager) {
 			const genAI = createGoogleGenAI(this.plugin);
-			// WORKAROUND (as of @google/genai v0.14.x): The GoogleGenAI interactions getter creates
-			// a new client that ignores the fetch option passed to the constructor. We must manually
-			// inject our proxyFetch into the generated interactions client to ensure CORS requests
-			// are handled correctly in Obsidian's browser environment.
-			// This may break if the SDK internal structure changes - monitor on SDK updates.
-			const interactions = genAI.interactions as any;
-			if (interactions && interactions._client) {
-				this.plugin.logger.log('[DeepResearch] Injecting proxyFetch into interactions client');
-				interactions._client.fetch = proxyFetch;
-			} else {
-				// Fail fast - without proxyFetch injection, all research requests will fail with CORS errors
-				throw new Error(
-					'Failed to initialize research client: SDK structure has changed and proxyFetch injection failed. ' +
-						'Please update the plugin or report this issue at https://github.com/allenhutchison/obsidian-gemini/issues'
-				);
-			}
-
+			this.injectProxyFetch(genAI);
 			this.researchManager = new ResearchManager(genAI);
 		}
 
 		return this.researchManager;
+	}
+
+	/**
+	 * Route the Deep Research (`interactions`) API through Obsidian's requestUrl-based
+	 * {@link proxyFetch}. Unlike `models.*` (which reach Google's endpoint directly
+	 * from the renderer), the interactions endpoint is not CORS-accessible with the
+	 * default `fetch`, so its requests must go through the proxy or they fail with
+	 * "Failed to fetch".
+	 *
+	 * In `@google/genai` 2.x the interactions client is a Speakeasy-generated
+	 * `ClientSDK` created **lazily on the first request** and assigned to
+	 * `interactions.sdk`; its fetch lives at `sdk._httpClient.fetcher` (this was
+	 * `interactions._client.fetch` in the 0.14.x SDK the old workaround targeted).
+	 * Because the client doesn't exist until the first call, we trap the `sdk`
+	 * assignment on the (stable) interactions instance and swap in `proxyFetch` the
+	 * moment the client is built — and patch it immediately if it already exists.
+	 */
+	private injectProxyFetch(genAI: unknown): void {
+		type SpeakeasyClient = { _httpClient?: { fetcher?: unknown } };
+		const interactions = (genAI as { interactions?: { sdk?: SpeakeasyClient } }).interactions;
+		if (!interactions) {
+			this.plugin.logger.warn('[DeepResearch] GoogleGenAI has no interactions client; proxyFetch not injected');
+			return;
+		}
+
+		const patch = (sdk: SpeakeasyClient | undefined) => {
+			const httpClient = sdk?._httpClient;
+			if (httpClient && typeof httpClient.fetcher === 'function' && httpClient.fetcher !== proxyFetch) {
+				httpClient.fetcher = proxyFetch;
+				this.plugin.logger.log('[DeepResearch] Injected proxyFetch into interactions HTTP client');
+			}
+		};
+
+		// Patch an already-built client (e.g. a warm getter) up front...
+		patch(interactions.sdk);
+
+		// ...and trap future lazy assignment so the client built on the first request
+		// gets proxyFetch before it makes any call.
+		let current = interactions.sdk;
+		try {
+			Object.defineProperty(interactions, 'sdk', {
+				configurable: true,
+				enumerable: true,
+				get: () => current,
+				set: (value: SpeakeasyClient | undefined) => {
+					patch(value);
+					current = value;
+				},
+			});
+		} catch (error) {
+			this.plugin.logger.warn(
+				'[DeepResearch] Could not install interactions fetch trap; Deep Research may fail with CORS errors',
+				error
+			);
+		}
 	}
 
 	/**
@@ -162,7 +200,7 @@ export class DeepResearchService {
 
 		// Check status
 		if (completed.status === 'failed') {
-			const errorMessage = (completed as any).error?.message || 'Unknown error';
+			const errorMessage = (completed as { error?: { message?: string } }).error?.message || 'Unknown error';
 			// Clear interaction ID on terminal failure state
 			this.currentInteractionId = null;
 			throw new Error(`Research failed: ${errorMessage}`);
@@ -308,16 +346,14 @@ export class DeepResearchService {
 		// Normalize the path using Obsidian's normalizePath (handles slashes, removes redundant separators)
 		const normalizedPath = normalizePath(rawFilePath);
 
-		// Split into segments to check for protected folders
-		const segments = normalizedPath.split('/');
-
-		// Check for protected folder segments
-		for (const segment of segments) {
-			if (PROTECTED_FOLDER_SEGMENTS.includes(segment)) {
-				throw new Error(
-					`Cannot write report to protected system folder: "${segment}". Please choose a different output location.`
-				);
-			}
+		// The Obsidian configuration directory (default `.obsidian`, but the user
+		// may have renamed it) must never be written to. Root-anchored, matching
+		// the image-generation write-path validator.
+		const configDir = this.plugin.app.vault.configDir;
+		if (isPathInFolder(normalizedPath, configDir)) {
+			throw new Error(
+				`Cannot write report to protected system folder: "${configDir}". Please choose a different output location.`
+			);
 		}
 
 		// Check if path is inside the plugin's history folder (or is the folder itself).

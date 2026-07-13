@@ -2,7 +2,7 @@ import { SearchFilesTool } from '../../../src/tools/vault';
 import { ToolExecutionContext } from '../../../src/tools/types';
 
 // Mock gemini-utils (needed by file-classification, imported by vault-tools)
-vi.mock('@allenhutchison/gemini-utils', () => ({
+vi.mock('@allenhutchison/gemini-utils/mime', () => ({
 	EXTENSION_TO_MIME: {
 		'.md': 'text/markdown',
 		'.txt': 'text/plain',
@@ -43,6 +43,7 @@ vi.mock('obsidian', async () => ({
 import { TFile } from 'obsidian';
 
 const mockVault = {
+	configDir: '.obsidian',
 	getAbstractFileByPath: vi.fn(),
 	read: vi.fn(),
 	readBinary: vi.fn(),
@@ -297,7 +298,7 @@ describe('SearchFilesTool', () => {
 		const contextWithProject: ToolExecutionContext = {
 			...mockContext,
 			projectRootPath: 'projects/myproj',
-		} as any;
+		};
 
 		const result = await tool.execute({ pattern: 'todo' }, contextWithProject);
 

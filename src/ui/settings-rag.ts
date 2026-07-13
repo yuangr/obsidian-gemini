@@ -1,9 +1,9 @@
-import type ObsidianGemini from '../main';
-import { App, Setting, Notice, debounce } from 'obsidian';
+import type { ObsidianGemini } from '../types/plugin';
+import { App, Setting, Notice } from 'obsidian';
 import { getErrorMessage } from '../utils/error-utils';
-import { createCollapsibleSection } from './settings-helpers';
+import { createCollapsibleSection, createDebouncedSave } from './settings-helpers';
 import { t } from '../i18n';
-import type { SettingsSectionContext } from './settings';
+import type { SettingsSectionContext } from './settings-helpers';
 
 export async function renderRAGSettings(
 	outerContainerEl: HTMLElement,
@@ -14,29 +14,14 @@ export async function renderRAGSettings(
 	const containerEl = createCollapsibleSection(plugin, outerContainerEl, t('settings.rag.sectionTitle'), 'rag', {
 		description: t('settings.rag.sectionDesc'),
 	});
-	// Debounce saveSettings() for text inputs so typing doesn't trigger the plugin
-	// lifecycle on every keystroke. Settings are mutated immediately; only the save is delayed.
-	const debouncedSave = debounce(
-		async () => {
-			try {
-				await plugin.saveSettings();
-			} catch (error) {
-				plugin.logger.error('Failed to save RAG settings:', error);
-				new Notice(t('settings.common.saveFailedNotice', { error: getErrorMessage(error) }));
-			}
-		},
-		300,
-		true
-	);
+	const debouncedSave = createDebouncedSave(plugin, 'Failed to save RAG settings:');
 
 	// Privacy warning
-	const privacyWarning = containerEl.createDiv({ cls: 'setting-item' });
-	privacyWarning.createEl('div', {
+	const privacyWarning = containerEl.createDiv({ cls: 'setting-item gemini-rag-privacy-notice' });
+	privacyWarning.createDiv({
 		cls: 'setting-item-description',
 		text: t('settings.rag.privacyNotice'),
 	});
-	privacyWarning.style.marginBottom = '1em';
-	privacyWarning.style.color = 'var(--text-warning)';
 
 	new Setting(containerEl)
 		.setName(t('settings.rag.enableName'))
@@ -50,13 +35,26 @@ export async function renderRAGSettings(
 					// Show cleanup modal when disabling
 					try {
 						const { RagCleanupModal } = await import('./rag-cleanup-modal');
-						const modal = new RagCleanupModal(app, async (deleteData) => {
-							if (deleteData && plugin.ragIndexing) {
-								await plugin.ragIndexing.deleteFileSearchStore();
-							}
-							plugin.settings.ragIndexing.enabled = false;
-							await plugin.saveSettings();
-							context.redisplay();
+						const modal = new RagCleanupModal(app, (deleteData) => {
+							void (async () => {
+								const previousEnabled = plugin.settings.ragIndexing.enabled;
+								try {
+									if (deleteData && plugin.ragIndexing) {
+										await plugin.ragIndexing.deleteFileSearchStore();
+									}
+									plugin.settings.ragIndexing.enabled = false;
+									await plugin.saveSettings();
+									context.redisplay();
+								} catch (error) {
+									// Revert the in-memory flag so it can't drift from the persisted
+									// value when saveSettings()/deleteFileSearchStore() throws after it
+									// was flipped, then surface it and redisplay (mirrors delete-index).
+									plugin.settings.ragIndexing.enabled = previousEnabled;
+									plugin.logger.error('Failed to disable RAG indexing:', error);
+									new Notice(t('settings.rag.deleteIndexFailed', { error: getErrorMessage(error) }));
+									context.redisplay();
+								}
+							})();
 						});
 						modal.open();
 					} catch (error) {
@@ -117,6 +115,8 @@ export async function renderRAGSettings(
 			.addButton((button) =>
 				button
 					.setButtonText(t('settings.rag.deleteIndexButton'))
+					// setDestructive() (the recommended replacement) requires Obsidian 1.13.0, above the current minAppVersion 1.11.4; keep setWarning until the floor is raised (#1040).
+					// eslint-disable-next-line @typescript-eslint/no-deprecated -- setDestructive() needs Obsidian 1.13.0, above minAppVersion 1.11.4 (#1040)
 					.setWarning()
 					.onClick(async () => {
 						if (!plugin.ragIndexing) {
@@ -127,22 +127,24 @@ export async function renderRAGSettings(
 						// Show confirmation modal
 						try {
 							const { RagCleanupModal } = await import('./rag-cleanup-modal');
-							const modal = new RagCleanupModal(app, async (deleteData) => {
-								if (deleteData && plugin.ragIndexing) {
-									button.setButtonText(t('settings.rag.deletingButton'));
-									button.setDisabled(true);
+							const modal = new RagCleanupModal(app, (deleteData) => {
+								void (async () => {
+									if (deleteData && plugin.ragIndexing) {
+										button.setButtonText(t('settings.rag.deletingButton'));
+										button.setDisabled(true);
 
-									try {
-										await plugin.ragIndexing.deleteFileSearchStore();
-										new Notice(t('settings.rag.indexDeletedNotice'));
-										context.redisplay();
-									} catch (error) {
-										new Notice(t('settings.rag.deleteIndexFailed', { error: getErrorMessage(error) }));
-									} finally {
-										button.setButtonText(t('settings.rag.deleteIndexButton'));
-										button.setDisabled(false);
+										try {
+											await plugin.ragIndexing.deleteFileSearchStore();
+											new Notice(t('settings.rag.indexDeletedNotice'));
+											context.redisplay();
+										} catch (error) {
+											new Notice(t('settings.rag.deleteIndexFailed', { error: getErrorMessage(error) }));
+										} finally {
+											button.setButtonText(t('settings.rag.deleteIndexButton'));
+											button.setDisabled(false);
+										}
 									}
-								}
+								})();
 							});
 							modal.open();
 						} catch (error) {
@@ -163,7 +165,7 @@ export async function renderRAGSettings(
 		if (currentStoreName) {
 			storeNameSetting
 				.addText((text) => {
-					text.inputEl.style.width = '30ch';
+					text.inputEl.addClass('gemini-input-wide');
 					text.setValue(currentStoreName);
 					text.setDisabled(true);
 				})
@@ -200,7 +202,7 @@ export async function renderRAGSettings(
 			);
 
 		// Build the list of excluded folders including system folders
-		const systemFolders = [plugin.settings.historyFolder, '.obsidian'];
+		const systemFolders = [plugin.settings.historyFolder, plugin.app.vault.configDir];
 		const userFolders = plugin.settings.ragIndexing.excludeFolders.filter((f) => !systemFolders.includes(f)); // Remove duplicates with system folders
 
 		new Setting(containerEl)

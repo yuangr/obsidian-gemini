@@ -32,7 +32,7 @@ import {
 	isExtendedRequest,
 } from '../../interfaces/model-api';
 import { GeminiPrompts } from '../../../prompts';
-import type ObsidianGemini from '../../../main';
+import type { ObsidianGemini } from '../../../types/plugin';
 import type { OllamaClientConfig } from './config';
 
 export class OllamaClient implements ModelApi {
@@ -253,6 +253,9 @@ export class OllamaClient implements ModelApi {
 		}
 		const allAttachments: InlineDataPart[] = [
 			...(request.inlineAttachments || []),
+			// `imageAttachments` is the deprecated alias for `inlineAttachments`; still merged here for
+			// backward-compat with callers passing the legacy field (#1040).
+			// eslint-disable-next-line @typescript-eslint/no-deprecated -- deprecated imageAttachments alias merged for backward-compat (#1040)
 			...(request.imageAttachments || []),
 		];
 		for (const att of allAttachments) {
@@ -291,17 +294,24 @@ export class OllamaClient implements ModelApi {
 		return this.prompts.buildExtendedSystemInstruction(request);
 	}
 
-	private convertHistoryEntry(entry: any): Message[] | null {
-		if (!entry) return null;
+	private convertHistoryEntry(entry: unknown): Message[] | null {
+		if (!entry || typeof entry !== 'object') return null;
+		const record = entry as Record<string, unknown>;
 
 		// Gemini Content shape: { role: 'user'|'model', parts: Part[] }
-		if ('role' in entry && Array.isArray(entry.parts)) {
-			const role = entry.role === 'model' ? 'assistant' : entry.role === 'system' ? 'system' : 'user';
+		if ('role' in record && Array.isArray(record.parts)) {
+			const role = record.role === 'model' ? 'assistant' : record.role === 'system' ? 'system' : 'user';
 			const textChunks: string[] = [];
 			const images: string[] = [];
-			const toolCallParts: { name: string; arguments: Record<string, any> }[] = [];
-			const toolResponseParts: { name: string; response: any }[] = [];
-			for (const part of entry.parts) {
+			const toolCallParts: { name: string; arguments: Record<string, unknown> }[] = [];
+			const toolResponseParts: { name: string; response: unknown }[] = [];
+			for (const rawPart of record.parts) {
+				const part = rawPart as {
+					text?: unknown;
+					inlineData?: { mimeType?: string; data?: string };
+					functionCall?: { name: string; args?: Record<string, unknown> };
+					functionResponse?: { name: string; response?: unknown };
+				};
 				if (typeof part?.text === 'string') {
 					textChunks.push(part.text);
 				} else if (part?.inlineData?.mimeType?.startsWith('image/') && part.inlineData.data) {
@@ -362,10 +372,10 @@ export class OllamaClient implements ModelApi {
 		}
 
 		// Internal shape: { role, text } or { role, message }
-		if ('role' in entry) {
-			const text = entry.text ?? entry.message;
+		if ('role' in record) {
+			const text = record.text ?? record.message;
 			if (typeof text !== 'string' || !text.trim()) return null;
-			const role = entry.role === 'model' || entry.role === 'assistant' ? 'assistant' : 'user';
+			const role = record.role === 'model' || record.role === 'assistant' ? 'assistant' : 'user';
 			return [{ role, content: text }];
 		}
 
@@ -380,7 +390,12 @@ export class OllamaClient implements ModelApi {
 				description: tool.description,
 				parameters: {
 					type: tool.parameters.type ?? 'object',
-					properties: tool.parameters.properties ?? {},
+					// `ToolDefinition.parameters.properties` is a provider-agnostic JSON-schema
+					// bag (`Record<string, unknown>`); narrow it to Ollama's property-schema map
+					// at this boundary where the shapes are known to line up.
+					properties: (tool.parameters.properties ?? {}) as NonNullable<
+						NonNullable<Tool['function']['parameters']>['properties']
+					>,
 					required: tool.parameters.required ?? [],
 				},
 			},

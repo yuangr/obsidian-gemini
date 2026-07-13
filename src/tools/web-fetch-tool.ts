@@ -1,12 +1,13 @@
 import { Tool, ToolResult, ToolExecutionContext } from './types';
 import { ToolCategory } from '../types/agent';
 import { ToolClassification } from '../types/tool-policy';
-import type ObsidianGemini from '../main';
+import type { ObsidianGemini } from '../types/plugin';
 import { requestUrlWithRetry } from '../utils/proxy-fetch';
 import { executeWithRetry } from '../utils/retry';
 import TurndownService from 'turndown';
 import { decodeHtmlEntities } from '../utils/html-entities';
 import { createGoogleGenAI } from '../api/providers/gemini/google-genai-factory';
+import { getRawErrorMessageOr } from '../utils/error-utils';
 
 /**
  * Web fetch tool using Google's URL Context feature
@@ -127,8 +128,10 @@ export class WebFetchTool implements Tool {
 			}
 
 			// Check if URL retrieval failed - the field is urlRetrievalStatus (camelCase)
-			const urlRetrievalFailed = urlMetadata?.urlMetadata?.some((meta: any) => {
-				const status = meta.urlRetrievalStatus;
+			const urlRetrievalFailed = urlMetadata?.urlMetadata?.some((meta) => {
+				// Widen the SDK enum to a plain string so the failure-status checks below
+				// stay a straight string comparison (avoiding no-unsafe-enum-comparison).
+				const status: string = meta.urlRetrievalStatus ?? '';
 				plugin.logger.log('Checking URL status:', status);
 				return (
 					status === 'URL_RETRIEVAL_STATUS_ERROR' ||
@@ -150,7 +153,7 @@ export class WebFetchTool implements Tool {
 					query: params.query,
 					content: text,
 					urlsRetrieved:
-						urlMetadata?.urlMetadata?.map((meta: any) => ({
+						urlMetadata?.urlMetadata?.map((meta) => ({
 							url: meta.retrievedUrl,
 							status: meta.urlRetrievalStatus,
 						})) || [],
@@ -194,10 +197,10 @@ export class WebFetchTool implements Tool {
 			plugin.logger.log('Primary web fetch failed, attempting fallback...');
 			try {
 				return await this.fallbackFetch(params, plugin);
-			} catch (fallbackError) {
+			} catch {
 				return {
 					success: false,
-					error: `Failed to fetch URL with both methods: ${error instanceof Error ? error.message : 'Unknown error'}`,
+					error: `Failed to fetch URL with both methods: ${getRawErrorMessageOr(error, 'Unknown error')}`,
 				};
 			}
 		}
@@ -299,7 +302,7 @@ export class WebFetchTool implements Tool {
 			plugin.logger.error('Fallback fetch error:', error);
 			return {
 				success: false,
-				error: `Fallback fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				error: `Fallback fetch failed: ${getRawErrorMessageOr(error, 'Unknown error')}`,
 			};
 		}
 	}

@@ -2,7 +2,7 @@ import { MoveFileTool } from '../../../src/tools/vault';
 import { ToolExecutionContext } from '../../../src/tools/types';
 
 // Mock gemini-utils (needed by file-classification, imported by vault-tools)
-vi.mock('@allenhutchison/gemini-utils', () => ({
+vi.mock('@allenhutchison/gemini-utils/mime', () => ({
 	EXTENSION_TO_MIME: {
 		'.md': 'text/markdown',
 		'.txt': 'text/plain',
@@ -59,6 +59,7 @@ mockFolder.name = 'folder';
 mockFolder.children = [mockFile];
 
 const mockVault = {
+	configDir: '.obsidian',
 	getAbstractFileByPath: vi.fn(),
 	read: vi.fn(),
 	readBinary: vi.fn(),
@@ -254,7 +255,7 @@ describe('MoveFileTool', () => {
 	});
 
 	it('should have confirmation message', () => {
-		const message = tool.confirmationMessage!({
+		const message = tool.confirmationMessage({
 			sourcePath: 'old.md',
 			targetPath: 'new.md',
 		});

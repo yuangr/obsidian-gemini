@@ -1,8 +1,9 @@
-import { Tool, ToolResult, ToolExecutionContext } from '../types';
+import { Tool, ToolResult, ToolExecutionContext, ToolParams } from '../types';
 import { ToolCategory } from '../../types/agent';
 import { ToolClassification } from '../../types/tool-policy';
 import { MarkdownView } from 'obsidian';
 import { shouldExcludePathForPlugin as shouldExcludePath } from '../../utils/file-utils';
+import { getRawErrorMessageOr } from '../../utils/error-utils';
 
 /** Maximum characters of selected text to include in workspace state */
 const MAX_SELECTION_LENGTH = 1000;
@@ -25,11 +26,11 @@ export class GetWorkspaceStateTool implements Tool {
 		required: [],
 	};
 
-	getProgressDescription(_params: any): string {
+	getProgressDescription(_params: ToolParams): string {
 		return 'Getting workspace state';
 	}
 
-	async execute(_params: any, context: ToolExecutionContext): Promise<ToolResult> {
+	async execute(_params: ToolParams, context: ToolExecutionContext): Promise<ToolResult> {
 		const plugin = context.plugin;
 
 		try {
@@ -52,7 +53,7 @@ export class GetWorkspaceStateTool implements Tool {
 				// Skip system/excluded files
 				if (shouldExcludePath(path, plugin)) return;
 
-				const isVisible = (leaf as any).containerEl?.isShown?.() ?? false;
+				const isVisible = (leaf as { containerEl?: { isShown?: () => boolean } }).containerEl?.isShown?.() ?? false;
 				const isActive = activeFile !== null && file.path === activeFile.path;
 				const isActiveLeaf = view === activeView;
 
@@ -119,7 +120,7 @@ export class GetWorkspaceStateTool implements Tool {
 		} catch (error) {
 			return {
 				success: false,
-				error: `Error getting workspace state: ${error instanceof Error ? error.message : 'Unknown error'}`,
+				error: `Error getting workspace state: ${getRawErrorMessageOr(error, 'Unknown error')}`,
 			};
 		}
 	}

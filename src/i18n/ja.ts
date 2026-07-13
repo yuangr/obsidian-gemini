@@ -18,6 +18,7 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': '保管庫に対する理解を更新します',
 	'agent.empty.initContext': '保管庫のコンテキストを初期化',
 	'agent.empty.initContextDesc': '保管庫の構造や整理方法の理解を助けます',
+	'agent.empty.initContextFailed': '保管庫のコンテキストの初期化に失敗しました',
 	'agent.empty.recentSessions': '最近のセッション:',
 	'agent.empty.examplesHeader': '次の例をお試しください:',
 	'i18n.aiTranslatedNotice':
@@ -60,6 +61,9 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 		'フロントマターに要約を追加する「アクティブなファイルを要約」コマンドに使用されるモデル。',
 	'settings.general.completionModelName': '補完モデル',
 	'settings.general.completionModelDesc': 'ノートに入力する際のIDEスタイルのインライン補完に使用されるモデル。',
+	'settings.general.ollamaModelName': 'Ollamaモデル',
+	'settings.general.ollamaModelDesc':
+		'チャット、要約、補完、書き換えなど、すべてのOllamaのユースケースで使用されるモデル。',
 	'settings.general.imageModelName': '画像モデル',
 	'settings.general.imageModelDesc': '画像生成に使用されるモデル。',
 	'settings.general.stateFolderName': 'プラグインのステートフォルダ',
@@ -142,7 +146,7 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 		'ログエントリをプラグインのステートフォルダ内のファイルに書き込みます。エラーと警告は常に記録されます。デバッグエントリの記録にはデバッグモードが必要です。ログファイルは1 MBで自動的にローテーションされます。',
 	'settings.agentConfig.useInteractionsApiName': 'Interactions APIを使用する',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'Geminiのリクエストを、従来のgenerateContent APIではなく、Googleの新しいInteractions API経由でルーティングします。ステートレスに動作し、会話履歴はターンごとに再送され、ターンの間にGoogle側で保持されません。実験的機能です。問題が発生した場合はオフにしてください。',
+		'Geminiのリクエストを、従来のgenerateContent APIではなく、Googleの新しいInteractions API経由で送信します。これがデフォルトの転送方式です。ステートレスに動作し、会話履歴はターンごとに再送信され、ターンの合間にGoogle側で保存されることはありません。問題が発生した場合は、オフにしてgenerateContentにフォールバックしてください。',
 	'settings.agentConfig.customEndpointName': 'カスタムAPIエンドポイント',
 	'settings.agentConfig.customEndpointDesc':
 		'デフォルトのGoogle APIベースURLを上書きします（例：企業プロキシやローカルゲートウェイ用）。公式エンドポイントを使用する場合は空白のままにしてください。',
@@ -555,7 +559,7 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 		'このGlobパターンに一致するパスのみに実行を制限します。例: Daily/**/*.md, Notes/*.md。すべてのパスを対象にする場合は空欄にしてください。',
 	'hooks.commandIdSetting': 'コマンドID',
 	'hooks.commandIdDesc':
-		'実行するコマンドパレットのID。例: editor:save-file、gemini-scribe-summarize-active-file。コマンドIDは 設定 → ホットキー で確認できます（Ctrl+Shift+I でデベロッパーコンソールを開いてIDを確認できます）。',
+		'実行するコマンドパレットのID。例: editor:save-file、gemini-scribe:summarize-active-file。コマンドIDは 設定 → ホットキー で確認できます（Ctrl+Shift+Iでデベロッパーコンソールを開き、IDを確認してください）。',
 	'hooks.focusFileSetting': '実行前にトリガーとなったファイルにフォーカスする',
 	'hooks.focusFileDesc':
 		'オンにすると、コマンドが実行される前にトリガーとなったファイルがワークスペースで開かれます（エディタースコープのコマンドに便利です）。オフの場合、コマンドは現在アクティブなファイルに対して実行されます。デフォルトはオフです。',
@@ -833,6 +837,7 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'ノートのプロジェクトへの変換に失敗しました',
 	'notice.main.noProjectsFound': 'プロジェクトが見つかりません',
 	'notice.main.noSessionsForProject': 'プロジェクトのセッションが見つかりません: {name}',
+	'notice.main.resumeProjectSessionFailed': 'プロジェクトセッションの再開に失敗しました',
 	'notice.main.projectRemoved': 'プロジェクトのステータスを削除しました: {name}',
 	'notice.main.projectRemoveFailed': 'プロジェクトステータスの削除に失敗しました',
 	'notice.main.selectTextFirst': '最初にテキストを選択してください',
@@ -845,9 +850,6 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'RAG同期を一時停止しました',
 	'notice.main.ragNotPaused': 'RAG同期は一時停止されていません',
 	'notice.main.ragResumed': 'RAG同期を再開しました',
-	'notice.main.ragIndexComplete': '再スキャン完了: {indexed} 件を再インデックス、{skipped} 件は変更なし',
-	'notice.main.ragIndexFailed': 'RAGインデックス作成失敗: {error}',
-	'notice.main.ragSyncingPending': 'RAGインデックス: 保留中の変更を同期中...',
 	'notice.main.readyToUse': 'Gemini Scribe の準備が整いました！',
 	'component.managementModalBase.managerUnavailable': '{label} マネージャーが利用できません。',
 	'component.managementModalBase.deleteConfirm':

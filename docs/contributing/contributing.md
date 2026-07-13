@@ -28,9 +28,10 @@ npm run dev    # Development build with watch mode
 | `npm install`          | Install dependencies                     |
 | `npm run dev`          | Development build with watch mode        |
 | `npm run build`        | Production build (runs TypeScript check) |
-| `npm test`             | Run Jest tests                           |
+| `npm test`             | Generate refs and run Vitest tests       |
 | `npm run format`       | Format code with Prettier                |
 | `npm run format-check` | Check formatting without changes         |
+| `npm run lint:actions` | Verify GitHub Actions are SHA-pinned     |
 
 ## Pull Request Requirements
 
@@ -45,10 +46,18 @@ Before requesting a review, ensure **all CI checks are green**. Run these locall
 ```bash
 npm run format-check   # Prettier formatting
 npm run build          # TypeScript type checking + production build
-npm test               # Jest test suite
+npm test               # Generate refs and run Vitest test suite
 ```
 
 PRs with failing CI will not be reviewed. Fix the failures first.
+
+**GitHub Actions must be SHA-pinned.** Every third-party action referenced in `.github/workflows/*` must be pinned to a full commit SHA with a version comment (tags are mutable and can be silently re-pointed upstream). The `Lint & Format` workflow runs `npm run lint:actions` and fails on any unpinned reference, so if you add or edit a workflow, pin new actions like this:
+
+```yaml
+- uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+```
+
+Resolve the SHA for a tag with `git ls-remote https://github.com/<owner>/<repo> <tag>`. Dependabot (configured for the `github-actions` ecosystem) keeps the pins current with automated update PRs.
 
 ### 3. Proof of Functionality
 
@@ -67,6 +76,8 @@ Gemini Scribe runs on **both Desktop and Mobile** (iOS/Android via Obsidian Mobi
 - Include appropriate platform guards to prevent crashes on unsupported platforms.
 
 Do not use Node.js-specific APIs, browser-only APIs, or desktop-only Electron APIs without checking platform availability first. Test on mobile if your change touches UI or file system operations.
+
+**Never let a Node built-in (`fs`, `path`, `crypto`, `url`, …) evaluate at plugin load.** Even a value import of a module that _transitively_ requires a built-in makes Obsidian raise "attempted to load NodeJS package" warnings on every load (the plugin declares mobile support via `isDesktopOnly: false`). In particular, import `@allenhutchison/gemini-utils` helpers from its built-in-free subpaths (`/mime`, `/support-registry`) rather than the barrel, keep type-only imports as `import type`, and lazy-load desktop-only managers (`FileUploader`, etc.) via `await import('@allenhutchison/gemini-utils/file-search')` at first use so their `fs`/`crypto` requires never run at load. See [testing.md → Mobile Testing](testing.md#mobile-testing) for how to verify.
 
 ### 5. Use the Obsidian API
 

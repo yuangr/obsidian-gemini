@@ -18,6 +18,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': 'Mijn begrip van je vault vernieuwen',
 	'agent.empty.initContext': 'Vault-context initialiseren',
 	'agent.empty.initContextDesc': 'Help mij de structuur en organisatie van je vault te begrijpen',
+	'agent.empty.initContextFailed': 'Initialiseren van vault-context mislukt',
 	'agent.empty.recentSessions': 'Recente sessies:',
 	'agent.empty.examplesHeader': 'Probeer deze voorbeelden:',
 	'i18n.aiTranslatedNotice': "Deze interfacevertaling is door AI gegenereerd. PR's voor verbeteringen zijn welkom.",
@@ -60,6 +61,9 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'settings.general.completionModelName': 'Aanvullingsmodel',
 	'settings.general.completionModelDesc':
 		'Model dat wordt gebruikt voor inline aanvullingen in IDE-stijl terwijl je in notities typt.',
+	'settings.general.ollamaModelName': 'Ollama-model',
+	'settings.general.ollamaModelDesc':
+		'Model gebruikt voor alle Ollama-toepassingen: chat, samenvatten, aanvullen en herschrijven.',
 	'settings.general.imageModelName': 'Afbeeldingsmodel',
 	'settings.general.imageModelDesc': 'Model dat wordt gebruikt voor het genereren van afbeeldingen.',
 	'settings.general.stateFolderName': 'Plugin-statusmap',
@@ -143,7 +147,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 		'Schrijf logboekvermeldingen naar een bestand in de plugin-statusmap. Fouten en waarschuwingen worden altijd gelogd; debug-vermeldingen vereisen de foutopsporingsmodus. Logbestanden worden automatisch geroteerd bij 1 MB.',
 	'settings.agentConfig.useInteractionsApiName': 'Interactions API gebruiken',
 	'settings.agentConfig.useInteractionsApiDesc':
-		"Stuur Gemini-verzoeken via Google's nieuwere Interactions API in plaats van de verouderde generateContent API. Werkt staatloos — de gespreksgeschiedenis wordt bij elke beurt opnieuw afgespeeld en niet bewaard aan de kant van Google tussen beurten. Experimenteel — laat uitgeschakeld als je problemen ondervindt.",
+		"Routeer Gemini-verzoeken via Google's nieuwere Interactions API in plaats van de verouderde generateContent API. Dit is het standaardtransport. Werkt staatloos — gespreksgeschiedenis wordt bij elke beurt opnieuw afgespeeld en niet bewaard aan de kant van Google tussen beurten door. Schakel dit uit om terug te vallen op generateContent als je problemen ondervindt.",
 	'settings.agentConfig.customEndpointName': 'Aangepast API-eindpunt',
 	'settings.agentConfig.customEndpointDesc':
 		'Overschrijf de standaard Google API-basis-URL (bijv. voor een bedrijfsproxy of lokale gateway). Laat leeg om het officiële eindpunt te gebruiken.',
@@ -559,7 +563,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 		'Beperk activeringen tot paden die overeenkomen met deze glob. Voorbeelden: Daily/**/*.md, Notes/*.md. Laat leeg voor elk pad.',
 	'hooks.commandIdSetting': 'Opdracht-ID',
 	'hooks.commandIdDesc':
-		"ID van het te activeren commando in het opdrachtpalet. Voorbeelden: editor:save-file, gemini-scribe-summarize-active-file. Bekijk commando-ID's via Instellingen → Sneltoetsen (open de ontwikkelaarsconsole met Ctrl+Shift+I om ID's te inspecteren).",
+		"Uit te voeren opdrachtpalet-ID. Voorbeelden: editor:save-file, gemini-scribe:summarize-active-file. Bekijk opdracht-ID's via Instellingen → Sneltoetsen (open de ontwikkelaarsconsole met Ctrl+Shift+I om ID's te inspecteren).",
 	'hooks.focusFileSetting': 'Focus op triggerbestand vóór verzending',
 	'hooks.focusFileDesc':
 		'Indien ingeschakeld, wordt het activerende bestand geopend in de werkruimte voordat de opdracht wordt uitgevoerd — handig voor opdrachten binnen de editor. Indien uitgeschakeld, wordt de opdracht uitgevoerd op het bestand dat momenteel actief is. Standaard uitgeschakeld.',
@@ -839,6 +843,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': 'Converteren van notitie naar project mislukt',
 	'notice.main.noProjectsFound': 'Geen projecten gevonden',
 	'notice.main.noSessionsForProject': 'Geen sessies gevonden voor project: {name}',
+	'notice.main.resumeProjectSessionFailed': 'Hervatten van projectsessie mislukt',
 	'notice.main.projectRemoved': 'Projectstatus verwijderd van: {name}',
 	'notice.main.projectRemoveFailed': 'Verwijderen van projectstatus mislukt',
 	'notice.main.selectTextFirst': 'Selecteer eerst wat tekst',
@@ -851,9 +856,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'RAG-synchronisatie gepauzeerd',
 	'notice.main.ragNotPaused': 'RAG-synchronisatie is niet gepauzeerd',
 	'notice.main.ragResumed': 'RAG-synchronisatie hervat',
-	'notice.main.ragIndexComplete': 'Herscan voltooid: {indexed} opnieuw geïndexeerd, {skipped} ongewijzigd',
-	'notice.main.ragIndexFailed': 'RAG-indexering mislukt: {error}',
-	'notice.main.ragSyncingPending': 'RAG-index: Wachtende wijzigingen synchroniseren...',
 	'notice.main.readyToUse': 'Gemini Scribe is nu klaar voor gebruik!',
 	'component.managementModalBase.managerUnavailable': '{label}-manager niet beschikbaar.',
 	'component.managementModalBase.deleteConfirm':

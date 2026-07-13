@@ -1,4 +1,4 @@
-import type ObsidianGemini from './main';
+import type { ObsidianGemini } from './types/plugin';
 import { MarkdownView, Notice } from 'obsidian';
 import { forceableInlineSuggestion, Suggestion } from 'codemirror-companion-extension';
 import { BaseModelRequest } from './api/index';
@@ -73,7 +73,7 @@ export class GeminiCompletions {
 	async setupCompletionsCommands() {
 		try {
 			this.plugin.addCommand({
-				id: 'gemini-scribe-toggle-completions', // Add plugin prefix
+				id: 'toggle-completions',
 				name: t('command.toggleCompletions'),
 				callback: () => {
 					// Use callback instead of editorCallback

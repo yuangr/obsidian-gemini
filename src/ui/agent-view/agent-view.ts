@@ -1,7 +1,9 @@
 import { ItemView, MarkdownView, Platform, WorkspaceLeaf, TFile, Notice } from 'obsidian';
+import { getActiveChatModel } from '../../models';
 import { ChatSession, SessionModelConfig } from '../../types/agent';
+import { isSameSession } from './session-identity';
 import { GeminiConversationEntry } from '../../types/conversation';
-import type ObsidianGemini from '../../main';
+import type { ObsidianGemini } from '../../types/plugin';
 import type { Tool, ToolResult } from '../../tools/types';
 import { HandlerPriority } from '../../types/agent-events';
 
@@ -22,9 +24,9 @@ import { ProjectPickerModal } from './project-picker-modal';
 // Import modals from agent-view directory
 import { FilePickerModal } from './file-picker-modal';
 import { SessionListModal } from './session-list-modal';
-import { SkillMentionModal } from './skill-mention-modal';
+import { SkillMentionModal, formatSkillTrigger } from './skill-mention-modal';
 import { SessionSettingsModal } from './session-settings-modal';
-import { moveCursorToEnd } from '../../utils/dom-context';
+import { insertTextAtCursor, moveCursorToEnd } from '../../utils/dom-context';
 import { t } from '../../i18n';
 
 export const VIEW_TYPE_AGENT = 'gemini-agent-view';
@@ -112,7 +114,7 @@ export class AgentView extends ItemView {
 			'.mod-mobile-toolbar',
 		];
 		for (const sel of selectors) {
-			const el = document.querySelector<HTMLElement>(sel);
+			const el = this.containerEl.ownerDocument.querySelector<HTMLElement>(sel);
 			if (el && el.offsetHeight > 0) return el;
 		}
 		return null;
@@ -139,8 +141,11 @@ export class AgentView extends ItemView {
 			const ctrBottom = container.getBoundingClientRect().bottom;
 			const navbarTop = this.findMobileNavbar()?.getBoundingClientRect().top ?? Infinity;
 			const targetBottom = Math.min(ctrBottom, navbarTop);
+			// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- inline !important is the point (see doc comment): it must beat theme !important flex rules, which a class cannot
 			chat.style.setProperty('flex-grow', '0', 'important');
+			// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- see above
 			chat.style.setProperty('flex-shrink', '0', 'important');
+			// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- see above
 			chat.style.setProperty('flex-basis', 'auto', 'important');
 			for (let i = 0; i < 3; i++) {
 				const delta = targetBottom - iarea.getBoundingClientRect().bottom;
@@ -174,7 +179,9 @@ export class AgentView extends ItemView {
 					priority: parent.style.getPropertyPriority('overflow'),
 				}
 			: null;
+		// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- paired with the inline save/restore above on host elements Obsidian reuses; a class can't round-trip the pre-existing inline value
 		container.style.setProperty('overflow', 'hidden', 'important');
+		// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- see above
 		parent?.style.setProperty('overflow', 'hidden', 'important');
 		const onScroll = () => {
 			if (container.scrollTop !== 0) container.scrollTop = 0;
@@ -250,14 +257,16 @@ export class AgentView extends ItemView {
 				onRemoveTextFile: (file: TFile) => {
 					this.context.removeContextFile(file, this.currentSession);
 					this.updateSessionHeader();
-					this.updateSessionMetadata();
+					// Fire-and-forget: persist session metadata in the background from this sync handler.
+					void this.updateSessionMetadata();
 				},
 				onRemoveFolder: (files: TFile[]) => {
 					for (const file of files) {
 						this.context.removeContextFile(file, this.currentSession);
 					}
 					this.updateSessionHeader();
-					this.updateSessionMetadata();
+					// Fire-and-forget: persist session metadata in the background from this sync handler.
+					void this.updateSessionMetadata();
 				},
 				onRemoveAttachment: () => {
 					// Shelf handles its own state; nothing else to sync
@@ -500,7 +509,10 @@ export class AgentView extends ItemView {
 			(skill) => {
 				this.attachments.removeTrailingTriggerChar('/');
 				if (this.userInput) {
-					this.userInput.innerText = `Use the "${skill.name}" skill to help me with: `;
+					// Insert the literal `/skill-name ` token and leave it in the box so the
+					// user can append instructions or send as-is. The model recognizes this
+					// convention (see prompts/toolCatalogPrompt.hbs) and activates the skill.
+					insertTextAtCursor(this.userInput, formatSkillTrigger(skill.name));
 					moveCursorToEnd(this.userInput);
 				}
 			},
@@ -517,13 +529,14 @@ export class AgentView extends ItemView {
 			this.app,
 			this.plugin,
 			{
-				onSelect: async (session: ChatSession) => {
-					await this.loadSession(session);
+				onSelect: (session: ChatSession) => {
+					void this.loadSession(session);
 				},
 				onDelete: (session: ChatSession) => {
 					// If the deleted session is the current one, create a new session
 					if (this.currentSession && this.currentSession.id === session.id) {
-						this.createNewSession();
+						// Fire-and-forget: replacing the deleted session; errors are handled within.
+						void this.createNewSession();
 					}
 				},
 			},
@@ -596,22 +609,24 @@ export class AgentView extends ItemView {
 			this.app,
 			this.plugin,
 			{
-				onSelect: async (project) => {
-					if (!this.currentSession) return;
+				onSelect: (project) => {
+					void (async () => {
+						if (!this.currentSession) return;
 
-					const previousProjectPath = this.currentSession.projectPath;
-					this.currentSession.projectPath = project?.filePath ?? undefined;
+						const previousProjectPath = this.currentSession.projectPath;
+						this.currentSession.projectPath = project?.filePath ?? undefined;
 
-					try {
-						await this.plugin.sessionHistory.updateSessionMetadata(this.currentSession);
-						this.updateSessionHeader();
-						this.plugin.logger.log(`Switched project to: ${project?.name ?? 'none'}`);
-					} catch (error) {
-						// Rollback on persistence failure
-						this.currentSession.projectPath = previousProjectPath;
-						this.updateSessionHeader();
-						this.plugin.logger.error('Failed to persist project change:', error);
-					}
+						try {
+							await this.plugin.sessionHistory.updateSessionMetadata(this.currentSession);
+							this.updateSessionHeader();
+							this.plugin.logger.log(`Switched project to: ${project?.name ?? 'none'}`);
+						} catch (error) {
+							// Rollback on persistence failure
+							this.currentSession.projectPath = previousProjectPath;
+							this.updateSessionHeader();
+							this.plugin.logger.error('Failed to persist project change:', error);
+						}
+					})();
 				},
 			},
 			this.currentSession.projectPath ?? null
@@ -624,8 +639,7 @@ export class AgentView extends ItemView {
 	 * Compares both session ID and history path for robustness
 	 */
 	private isCurrentSession(session: ChatSession): boolean {
-		if (!this.currentSession) return false;
-		return session.id === this.currentSession.id || session.historyPath === this.currentSession.historyPath;
+		return isSameSession(session, this.currentSession);
 	}
 
 	/**
@@ -669,7 +683,7 @@ export class AgentView extends ItemView {
 	 */
 	public async showConfirmationInChat(
 		tool: Tool,
-		parameters: any,
+		parameters: Record<string, unknown>,
 		executionId: string,
 		diffContext?: import('../../tools/types').DiffContext
 	): Promise<import('../../tools/types').ConfirmationResult> {
@@ -693,7 +707,8 @@ export class AgentView extends ItemView {
 				evt.preventDefault();
 				const href = target.getAttribute('href');
 				if (href) {
-					this.app.workspace.openLinkText(href, '', false);
+					// Fire-and-forget: user-initiated navigation; errors surface via Obsidian.
+					void this.app.workspace.openLinkText(href, '', false);
 				}
 			}
 		});
@@ -744,6 +759,7 @@ export class AgentView extends ItemView {
 			displayMessage: (entry: GeminiConversationEntry) => this.displayMessage(entry),
 			renderReasoning: (container: HTMLElement, thoughts: string, sourcePath: string) =>
 				this.messages.renderReasoningInto(container, thoughts, sourcePath),
+			updateTokenUsage: () => this.updateTokenUsage(),
 			incrementToolCallCount: (count: number) => {
 				this.send?.incrementToolCallCount(count);
 			},
@@ -758,6 +774,7 @@ export class AgentView extends ItemView {
 				updateSessionMetadata: () => this.updateSessionMetadata(),
 			},
 			createFollowUpStream: () => this.messages.createStreamingMessageContainer('model'),
+			registerFollowUpStream: (stream: { cancel: () => void } | null) => this.send?.setActiveStreamingResponse(stream),
 			finalizeFollowUpStream: async (container: HTMLElement, entry: GeminiConversationEntry) => {
 				await this.messages.finalizeStreamingMessage(container, entry.message, entry, this.currentSession);
 				this.messages.scrollToBottom();
@@ -769,7 +786,7 @@ export class AgentView extends ItemView {
 	 * Public method to show tool execution (delegates to tools component)
 	 * Used by tests and external components
 	 */
-	async showToolExecution(toolName: string, parameters: any, executionId?: string): Promise<void> {
+	async showToolExecution(toolName: string, parameters: Record<string, unknown>, executionId?: string): Promise<void> {
 		// Lazy initialization for tests that don't call onOpen()
 		if (!this.tools) {
 			this.ensureToolsInitialized();
@@ -810,13 +827,13 @@ export class AgentView extends ItemView {
 	private async updateTokenUsage(): Promise<void> {
 		if (!this.plugin.contextManager || !this.plugin.settings.showTokenUsage || !this.tokenUsageContainer) {
 			if (this.tokenUsageContainer) {
-				this.tokenUsageContainer.style.display = 'none';
+				this.tokenUsageContainer.hide();
 			}
 			return;
 		}
 
 		try {
-			const modelName = this.currentSession?.modelConfig?.model || this.plugin.settings.chatModelName;
+			const modelName = this.currentSession?.modelConfig?.model || getActiveChatModel(this.plugin.settings);
 			let usage = await this.plugin.contextManager.getTokenUsage(modelName);
 
 			// If no cached data, try counting from conversation history as fallback
@@ -837,11 +854,11 @@ export class AgentView extends ItemView {
 
 			// Still no data (e.g., new session with no messages)
 			if (usage.estimatedTokens === 0) {
-				this.tokenUsageContainer.style.display = 'none';
+				this.tokenUsageContainer.hide();
 				return;
 			}
 
-			this.tokenUsageContainer.style.display = '';
+			this.tokenUsageContainer.show();
 			this.tokenUsageContainer.empty();
 
 			const tokenText = this.tokenUsageContainer.createSpan({ cls: 'gemini-agent-token-text' });
@@ -888,7 +905,7 @@ export class AgentView extends ItemView {
 		}
 
 		try {
-			const modelName = this.currentSession?.modelConfig?.model || this.plugin.settings.chatModelName;
+			const modelName = this.currentSession?.modelConfig?.model || getActiveChatModel(this.plugin.settings);
 			const conversationHistory = await this.plugin.sessionHistory.getHistoryForSession(this.currentSession);
 			if (conversationHistory && conversationHistory.length > 0) {
 				const tokenCount = await this.plugin.contextManager.countTokens(modelName, conversationHistory);

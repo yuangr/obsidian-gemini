@@ -1,5 +1,6 @@
 import type { Content } from '@google/genai';
-import type ObsidianGemini from '../../main';
+import { getActiveChatModel } from '../../models';
+import type { ObsidianGemini } from '../../types/plugin';
 import { ChatSession } from '../../types/agent';
 import { GeminiConversationEntry } from '../../types/conversation';
 import { IConfirmationProvider, IToolHostView, ToolResult } from '../../tools/types';
@@ -22,6 +23,8 @@ export interface AgentViewContext {
 	displayMessage(entry: GeminiConversationEntry): Promise<void>;
 	/** Render a reasoning line into an arbitrary container (e.g. the tool group body). */
 	renderReasoning(container: HTMLElement, thoughts: string, sourcePath: string): Promise<void>;
+	/** Refresh the header token-usage display from ContextManager's cached metadata. */
+	updateTokenUsage?(): Promise<void>;
 	incrementToolCallCount?(count: number): void;
 	/** Who approves tool calls that require confirmation — AgentView implements this. */
 	confirmationProvider: IConfirmationProvider;
@@ -39,6 +42,12 @@ export interface AgentViewContext {
 	 * a follow-up was streamed.
 	 */
 	finalizeFollowUpStream?(container: HTMLElement, entry: GeminiConversationEntry): Promise<void>;
+	/**
+	 * Register the in-flight follow-up stream (or clear it with `null`) so the
+	 * Stop button can cancel it mid-stream. The view forwards this to the same
+	 * `currentStreamingResponse` slot the initial request uses.
+	 */
+	registerFollowUpStream?(stream: { cancel: () => void } | null): void;
 }
 
 /**
@@ -104,7 +113,7 @@ export class AgentViewTools {
 				message: '',
 				notePath: '',
 				created_at: new Date(),
-				model: currentSession.modelConfig?.model || this.plugin.settings.chatModelName,
+				model: currentSession.modelConfig?.model || getActiveChatModel(this.plugin.settings),
 				thoughts: this.pendingReasoning,
 			});
 		}
@@ -179,12 +188,15 @@ export class AgentViewTools {
 								this.context.updateProgress(t('agent.progress.generating'), 'streaming');
 							}
 							if (!this.streamingFollowUpContainer) return;
-							const contentDiv = this.streamingFollowUpContainer.querySelector(
-								'.gemini-agent-message-content'
-							) as HTMLElement | null;
+							const contentDiv = this.streamingFollowUpContainer.querySelector('.gemini-agent-message-content');
 							if (contentDiv) {
-								contentDiv.appendChild(document.createTextNode(chunk.text));
+								contentDiv.appendChild(contentDiv.ownerDocument.createTextNode(chunk.text));
 							}
+						},
+						onFollowUpStreamReady: (stream) => {
+							// Route the live follow-up stream to the view's Stop target so
+							// pressing Stop cancels token generation immediately.
+							this.context.registerFollowUpStream?.(stream);
 						},
 						onModelReasoning: async (thoughts) => {
 							// Reasoning the model produced before deciding to call the
@@ -196,9 +208,27 @@ export class AgentViewTools {
 								message: '',
 								notePath: '',
 								created_at: new Date(),
-								model: currentSession.modelConfig?.model || this.plugin.settings.chatModelName,
+								model: currentSession.modelConfig?.model || getActiveChatModel(this.plugin.settings),
 								thoughts,
 							});
+						},
+						onMidLoopCompaction: async ({ summaryText }) => {
+							// Mirrors the pre-turn "Context Compacted" notice in
+							// agent-view-send.ts — surface the same notification when
+							// AgentLoop compacts history mid-tool-chain. AgentLoop already
+							// force-set the post-compaction usage metadata before firing
+							// this hook, so refreshing the header just re-reads it.
+							await this.context.updateTokenUsage?.();
+							if (!summaryText) return;
+							const compactionEntry: GeminiConversationEntry = {
+								role: 'model',
+								message: `> [!info] Context Compacted\n> Older conversation turns have been summarized to maintain performance.\n\n${summaryText}`,
+								notePath: '',
+								created_at: new Date(),
+								model: currentSession.modelConfig?.model || getActiveChatModel(this.plugin.settings),
+							};
+							await this.context.displayMessage(compactionEntry);
+							await this.plugin.sessionHistory.addEntryToSession(currentSession, compactionEntry);
 						},
 					},
 				},
@@ -228,7 +258,7 @@ export class AgentViewTools {
 				message: result.markdown,
 				notePath: '',
 				created_at: new Date(),
-				model: currentSession.modelConfig?.model || this.plugin.settings.chatModelName,
+				model: currentSession.modelConfig?.model || getActiveChatModel(this.plugin.settings),
 				...(result.thoughts ? { thoughts: result.thoughts } : {}),
 			};
 
@@ -297,7 +327,7 @@ export class AgentViewTools {
 	 */
 	private async renderReasoningInGroup(thoughts: string): Promise<void> {
 		if (!this.currentGroupContainer) return;
-		const body = this.currentGroupContainer.querySelector('.gemini-tool-group-body') as HTMLElement | null;
+		const body = this.currentGroupContainer.querySelector<HTMLElement>('.gemini-tool-group-body');
 		if (!body) return;
 		const sourcePath = this.context.getCurrentSession()?.historyPath || '';
 		await this.context.renderReasoning(body, thoughts, sourcePath);
@@ -321,7 +351,11 @@ export class AgentViewTools {
 	 * Show tool execution in the UI as a compact row inside a group container.
 	 * If no group container is active, creates a standalone fallback.
 	 */
-	public async showToolExecution(toolName: string, parameters: any, executionId?: string): Promise<void> {
+	public async showToolExecution(
+		toolName: string,
+		parameters: Record<string, unknown>,
+		executionId?: string
+	): Promise<void> {
 		return this.display.showToolExecution(toolName, parameters, executionId, this.currentGroupContainer);
 	}
 

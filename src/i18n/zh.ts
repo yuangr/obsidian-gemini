@@ -18,6 +18,7 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.updateContextDesc': '刷新我对您 vault 的理解',
 	'agent.empty.initContext': '初始化 vault 上下文',
 	'agent.empty.initContextDesc': '帮助我理解您 vault 的结构和组织',
+	'agent.empty.initContextFailed': '初始化仓库上下文失败',
 	'agent.empty.recentSessions': '最近的会话：',
 	'agent.empty.examplesHeader': '尝试这些示例：',
 	'i18n.aiTranslatedNotice': '此界面翻译由 AI 生成。欢迎提交 PR 进行改进。',
@@ -55,6 +56,8 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'settings.general.summaryModelDesc': '用于 "总结当前文件" 命令的模型，该命令会将摘要添加到 frontmatter 中。',
 	'settings.general.completionModelName': '补全模型',
 	'settings.general.completionModelDesc': '用于在您在笔记中输入时进行 IDE 风格行内补全的模型。',
+	'settings.general.ollamaModelName': 'Ollama 模型',
+	'settings.general.ollamaModelDesc': '用于所有 Ollama 使用场景的模型：对话、摘要、补全和重写。',
 	'settings.general.imageModelName': '图像模型',
 	'settings.general.imageModelDesc': '用于生成图像的模型。',
 	'settings.general.stateFolderName': '插件状态文件夹',
@@ -130,7 +133,7 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 		'将日志条目写入插件状态文件夹中的文件。错误和警告始终会被记录；调试条目需要启用调试模式。日志文件在达到 1 MB 时会自动轮转。',
 	'settings.agentConfig.useInteractionsApiName': '使用 Interactions API',
 	'settings.agentConfig.useInteractionsApiDesc':
-		'通过 Google 较新的 Interactions API 而不是旧版的 generateContent API 路由 Gemini 请求。以无状态方式运行 —— 对话历史记录在每轮中重新播放，且不会在每轮之间保留在 Google 端。实验性功能 —— 如果遇到问题，请保持关闭。',
+		'通过 Google 较新的 Interactions API（而非旧版的 generateContent API）路由 Gemini 请求。这是默认的传输方式。无状态运行——对话历史在每轮中重新发送，且不会在轮次之间持久化保存在 Google 端。如果遇到问题，可关闭此选项以回退到 generateContent。',
 	'settings.agentConfig.customEndpointName': '自定义 API 端点',
 	'settings.agentConfig.customEndpointDesc':
 		'覆盖默认的 Google API 基础 URL（例如用于公司代理或本地网关）。留空则使用官方端点。',
@@ -520,7 +523,7 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'hooks.pathGlobDesc': '仅限匹配此 glob 的路径触发。示例：Daily/**/*.md, Notes/*.md。留空表示允许任何路径。',
 	'hooks.commandIdSetting': '命令 ID',
 	'hooks.commandIdDesc':
-		'要触发的命令面板 ID。例如：editor:save-file, gemini-scribe-summarize-active-file。可通过“设置” → “快捷键”查看命令 ID（使用 Ctrl+Shift+I 打开开发者控制台以检查 ID）。',
+		'要触发的命令面板 ID。例如：editor:save-file、gemini-scribe:summarize-active-file。可通过“设置” → “快捷键”查看命令 ID（按 Ctrl+Shift+I 打开开发者控制台以检查 ID）。',
 	'hooks.focusFileSetting': '发送前聚焦触发文件',
 	'hooks.focusFileDesc':
 		'开启时，在运行命令之前会在工作区中打开触发文件 —— 这对编辑器范围的命令很有用。关闭时，命令将针对当前活动的任何文件运行。默认关闭。',
@@ -781,6 +784,7 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'notice.main.convertToProjectFailed': '未能将笔记转换为项目',
 	'notice.main.noProjectsFound': '未找到项目',
 	'notice.main.noSessionsForProject': '未找到项目 {name} 的会话',
+	'notice.main.resumeProjectSessionFailed': '恢复项目会话失败',
 	'notice.main.projectRemoved': '已取消项目状态: {name}',
 	'notice.main.projectRemoveFailed': '移除项目状态失败',
 	'notice.main.selectTextFirst': '请先选择一些文本',
@@ -793,9 +797,6 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'notice.main.ragPaused': 'RAG 同步已暂停',
 	'notice.main.ragNotPaused': 'RAG 同步未暂停',
 	'notice.main.ragResumed': 'RAG 同步已恢复',
-	'notice.main.ragIndexComplete': '重新扫描完成：{indexed} 已重新索引，{skipped} 未更改',
-	'notice.main.ragIndexFailed': 'RAG 索引失败：{error}',
-	'notice.main.ragSyncingPending': 'RAG 索引：正在同步待处理的更改...',
 	'notice.main.readyToUse': 'Gemini Scribe 现在可以使用了！',
 	'component.managementModalBase.managerUnavailable': '{label} 管理器不可用。',
 	'component.managementModalBase.deleteConfirm': '确定要删除 "{slug}" 吗？这将永久移除该 {label} 定义文件。',

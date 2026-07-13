@@ -3,7 +3,7 @@ import { MCPServerConfig, MCP_TRANSPORT_STDIO, MCP_TRANSPORT_HTTP, MCPTransportT
 import { MCPManager } from '../mcp/mcp-manager';
 import { ObsidianOAuthClientProvider } from '../mcp/mcp-oauth-provider';
 import { resolveServerEnv, writeServerEnv } from '../mcp/mcp-secrets';
-import { getRawErrorMessage } from '../utils/error-utils';
+import { getRawErrorMessage, getRawErrorMessageOr } from '../utils/error-utils';
 import { t } from '../i18n';
 
 /**
@@ -109,7 +109,7 @@ export class MCPServerModal extends Modal {
 				.setName(t('mcpServer.urlSetting'))
 				.setDesc(t('mcpServer.urlDesc'))
 				.addText((text) => {
-					text.inputEl.style.width = '30ch';
+					text.inputEl.addClass('gemini-input-wide');
 					text
 						.setPlaceholder(t('mcpServer.urlPlaceholder'))
 						.setValue(this.config.url || '')
@@ -127,6 +127,8 @@ export class MCPServerModal extends Modal {
 					.addButton((btn) =>
 						btn
 							.setButtonText(t('mcpServer.oauthClearButton'))
+							// setDestructive() (the recommended replacement) requires Obsidian 1.13.0, above the current minAppVersion 1.11.4; keep setWarning until the floor is raised (#1040).
+							// eslint-disable-next-line @typescript-eslint/no-deprecated -- setDestructive() needs Obsidian 1.13.0, above minAppVersion 1.11.4 (#1040)
 							.setWarning()
 							.onClick(() => {
 								oauthProvider.clearAll();
@@ -143,7 +145,7 @@ export class MCPServerModal extends Modal {
 				.setName(t('mcpServer.commandSetting'))
 				.setDesc(t('mcpServer.commandDesc'))
 				.addText((text) => {
-					text.inputEl.style.width = '30ch';
+					text.inputEl.addClass('gemini-input-wide');
 					text
 						.setPlaceholder(t('mcpServer.commandPlaceholder'))
 						.setValue(this.config.command)
@@ -288,7 +290,7 @@ export class MCPServerModal extends Modal {
 							try {
 								writeServerEnv(this.app, this.config, this.env);
 							} catch (error) {
-								new Notice(error instanceof Error ? error.message : t('mcpServer.envStoreFailed'));
+								new Notice(getRawErrorMessageOr(error, t('mcpServer.envStoreFailed')));
 								return;
 							}
 						}
@@ -305,11 +307,10 @@ export class MCPServerModal extends Modal {
 		if (this.discoveredTools.length === 0) return;
 
 		this.discoveredToolsContainer.createEl('h3', { text: t('mcpServer.discoveredToolsTitle') });
-		const desc = this.discoveredToolsContainer.createEl('p', {
+		this.discoveredToolsContainer.createEl('p', {
 			text: t('mcpServer.discoveredToolsDesc'),
-			cls: 'setting-item-description',
+			cls: 'setting-item-description gemini-discovered-tools-desc',
 		});
-		desc.style.marginBottom = '0.5em';
 
 		const toolList = this.discoveredToolsContainer.createEl('ul');
 		for (const toolName of this.discoveredTools) {

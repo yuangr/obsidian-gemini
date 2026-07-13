@@ -1,14 +1,73 @@
-import { Setting } from 'obsidian';
-import type ObsidianGemini from '../main';
-import type { ObsidianGeminiSettings } from '../main';
+import { Setting, Notice, debounce } from 'obsidian';
+import type { ObsidianGemini } from '../types/plugin';
+import type { ObsidianGeminiSettings } from '../types/settings';
 import { GEMINI_MODELS } from '../models';
+import { getErrorMessage } from '../utils/error-utils';
 import { t } from '../i18n';
+
+/**
+ * Shared context handed to each settings-section renderer. Lives here (a leaf
+ * the section modules already import) rather than in settings.ts so sections
+ * don't import the settings tab back, which would create an import cycle
+ * (see #1155). settings.ts re-exports it, so external paths are unchanged.
+ */
+export interface SettingsSectionContext {
+	/** Call to trigger a full re-render of the settings tab */
+	redisplay: () => void;
+	/** Whether advanced settings are currently visible */
+	showDeveloperSettings: boolean;
+	/** Update the show-advanced flag from inside a section (e.g. the toggle in General). */
+	setShowDeveloperSettings: (value: boolean) => void;
+}
+
+/**
+ * Create a debounced `saveSettings()` callback shared by the settings renderers.
+ *
+ * Text inputs invoke this on every keystroke; debouncing avoids re-running the
+ * plugin lifecycle (and its reload) until typing settles. The callback is async
+ * and wrapped in try/catch so a rejected save surfaces a Notice instead of an
+ * unhandled promise rejection.
+ *
+ * @param plugin - The plugin instance whose settings are saved.
+ * @param logLabel - Debug-log prefix used when a save fails; pass a
+ *   section-specific label to keep failure logs greppable.
+ */
+export function createDebouncedSave(plugin: ObsidianGemini, logLabel: string = 'Failed to save settings:'): () => void {
+	return debounce(
+		async () => {
+			try {
+				await plugin.saveSettings();
+			} catch (error) {
+				plugin.logger.error(logLabel, error);
+				new Notice(t('settings.common.saveFailedNotice', { error: getErrorMessage(error) }));
+			}
+		},
+		300,
+		true
+	);
+}
 
 export interface CollapsibleSectionOptions {
 	/** Description shown under the title; visible whether the section is open or closed. */
 	description?: string;
 	/** When true, render an "Advanced" badge next to the title. */
 	advanced?: boolean;
+}
+
+/**
+ * When `containerEl` isn't a real DOM node (unit tests pass a bare `{}` stub
+ * without `appendChild`), return a detached div so callers can keep handing the
+ * result to `new Setting(...)` without DOM side-effects. Returns `null` for a
+ * real container, signalling the caller to proceed with normal rendering.
+ *
+ * The returned node is never inserted into a live view.
+ */
+function createDetachedStubIfNeeded(containerEl: HTMLElement): HTMLElement | null {
+	if (typeof (containerEl as { appendChild?: unknown })?.appendChild === 'function') {
+		return null;
+	}
+	// eslint-disable-next-line obsidianmd/prefer-create-el -- jsdom unit tests exercise this path; Obsidian's createDiv global doesn't exist there
+	return typeof activeDocument !== 'undefined' ? activeDocument.createElement('div') : containerEl;
 }
 
 /**
@@ -32,44 +91,45 @@ export function createCollapsibleSection(
 	id: string,
 	options: CollapsibleSectionOptions = {}
 ): HTMLElement {
-	if (typeof (containerEl as { appendChild?: unknown })?.appendChild !== 'function') {
-		// Stub container in unit tests — return a detached div so callers can
-		// keep passing it to `new Setting(...)` without DOM side-effects.
-		return typeof document !== 'undefined' ? document.createElement('div') : (containerEl as HTMLElement);
-	}
+	const stub = createDetachedStubIfNeeded(containerEl);
+	if (stub) return stub;
 
 	const expanded = plugin.settings.expandedSettingsSections ?? [];
 	const isOpen = expanded.includes(id);
 
-	const details = document.createElement('details');
+	// Create nodes in the container's own document so the section renders correctly
+	// when the settings tab lives in a popout window.
+	const doc = containerEl.ownerDocument;
+
+	const details = doc.createElement('details');
 	details.classList.add('gemini-settings-section');
 	if (options.advanced) details.classList.add('gemini-settings-section--advanced');
 	details.dataset.sectionId = id;
 	if (isOpen) details.setAttribute('open', '');
 	containerEl.appendChild(details);
 
-	const summary = document.createElement('summary');
+	const summary = doc.createElement('summary');
 	summary.classList.add('gemini-settings-section-summary');
 
 	// HTML spec: <summary> only permits phrasing/heading content; <div> isn't
 	// valid here. Use <span>s styled with flex/block via CSS instead.
-	const header = document.createElement('span');
+	const header = doc.createElement('span');
 	header.classList.add('gemini-settings-section-header');
-	const titleRow = document.createElement('span');
+	const titleRow = doc.createElement('span');
 	titleRow.classList.add('gemini-settings-section-title-row');
-	const titleEl = document.createElement('span');
+	const titleEl = doc.createElement('span');
 	titleEl.classList.add('gemini-settings-section-title');
 	titleEl.textContent = title;
 	titleRow.appendChild(titleEl);
 	if (options.advanced) {
-		const badge = document.createElement('span');
+		const badge = doc.createElement('span');
 		badge.classList.add('gemini-settings-section-badge');
 		badge.textContent = t('settings.common.advancedBadge');
 		titleRow.appendChild(badge);
 	}
 	header.appendChild(titleRow);
 	if (options.description) {
-		const descEl = document.createElement('span');
+		const descEl = doc.createElement('span');
 		descEl.classList.add('gemini-settings-section-description');
 		descEl.textContent = options.description;
 		header.appendChild(descEl);
@@ -77,25 +137,27 @@ export function createCollapsibleSection(
 	summary.appendChild(header);
 	details.appendChild(summary);
 
-	const content = document.createElement('div');
+	const content = doc.createElement('div');
 	content.classList.add('gemini-settings-section-content');
 	details.appendChild(content);
 
-	details.addEventListener('toggle', async () => {
-		const current = plugin.settings.expandedSettingsSections ?? [];
-		const next = details.open ? Array.from(new Set([...current, id])) : current.filter((x) => x !== id);
-		// Skip the save if nothing actually changed (e.g. a programmatic toggle that
-		// fires after setAttribute('open') without altering the user's persisted set).
-		if (next.length === current.length && next.every((x, i) => x === current[i])) return;
-		plugin.settings.expandedSettingsSections = next;
-		// Persist directly via saveData rather than saveSettings — this is UI-only
-		// state and shouldn't trigger plugin.saveSettings()'s lifecycle reconciliation
-		// (re-init on api-key/provider/RAG changes).
-		try {
-			await plugin.saveData(plugin.settings);
-		} catch (error) {
-			plugin.logger.error('Failed to save expandedSettingsSections:', error);
-		}
+	details.addEventListener('toggle', () => {
+		void (async () => {
+			const current = plugin.settings.expandedSettingsSections ?? [];
+			const next = details.open ? Array.from(new Set([...current, id])) : current.filter((x) => x !== id);
+			// Skip the save if nothing actually changed (e.g. a programmatic toggle that
+			// fires after setAttribute('open') without altering the user's persisted set).
+			if (next.length === current.length && next.every((x, i) => x === current[i])) return;
+			plugin.settings.expandedSettingsSections = next;
+			// Persist directly via saveData rather than saveSettings — this is UI-only
+			// state and shouldn't trigger plugin.saveSettings()'s lifecycle reconciliation
+			// (re-init on api-key/provider/RAG changes).
+			try {
+				await plugin.saveData(plugin.settings);
+			} catch (error) {
+				plugin.logger.error('Failed to save expandedSettingsSections:', error);
+			}
+		})();
 	});
 
 	return content;
@@ -106,34 +168,36 @@ export function createCollapsibleSection(
  * the inner content element; visually matches the collapsibles minus chevron.
  */
 export function createAlwaysOpenSection(containerEl: HTMLElement, title: string, description?: string): HTMLElement {
-	if (typeof (containerEl as { appendChild?: unknown })?.appendChild !== 'function') {
-		return typeof document !== 'undefined' ? document.createElement('div') : (containerEl as HTMLElement);
-	}
+	const stub = createDetachedStubIfNeeded(containerEl);
+	if (stub) return stub;
 
-	const wrapper = document.createElement('div');
+	// Create nodes in the container's own document for popout-window compatibility.
+	const doc = containerEl.ownerDocument;
+
+	const wrapper = doc.createElement('div');
 	wrapper.classList.add('gemini-settings-section', 'gemini-settings-section--always-open');
 	containerEl.appendChild(wrapper);
 
 	// Use spans here too for parity with the collapsible variant (where the
 	// elements live inside <summary> and must be phrasing content).
-	const header = document.createElement('span');
+	const header = doc.createElement('span');
 	header.classList.add('gemini-settings-section-header');
-	const titleRow = document.createElement('span');
+	const titleRow = doc.createElement('span');
 	titleRow.classList.add('gemini-settings-section-title-row');
-	const titleEl = document.createElement('span');
+	const titleEl = doc.createElement('span');
 	titleEl.classList.add('gemini-settings-section-title');
 	titleEl.textContent = title;
 	titleRow.appendChild(titleEl);
 	header.appendChild(titleRow);
 	if (description) {
-		const descEl = document.createElement('span');
+		const descEl = doc.createElement('span');
 		descEl.classList.add('gemini-settings-section-description');
 		descEl.textContent = description;
 		header.appendChild(descEl);
 	}
 	wrapper.appendChild(header);
 
-	const content = document.createElement('div');
+	const content = doc.createElement('div');
 	content.classList.add('gemini-settings-section-content');
 	wrapper.appendChild(content);
 
@@ -188,7 +252,7 @@ export async function selectModelSetting(
 			});
 
 			// Get current setting value
-			const currentValue = String((plugin.settings as ObsidianGeminiSettings)[settingName]);
+			const currentValue = String(plugin.settings[settingName]);
 
 			// Check if current value exists in available models
 			const valueExists = availableModels.some((m) => m.value === currentValue);
@@ -199,7 +263,7 @@ export async function selectModelSetting(
 				plugin.logger.warn(
 					`${label}: Current value "${currentValue}" not found in available models. Defaulting to "${defaultValue}"`
 				);
-				(plugin.settings as ObsidianGeminiSettings)[settingName] = defaultValue;
+				plugin.settings[settingName] = defaultValue;
 				dropdown.setValue(defaultValue);
 				// Save the corrected setting
 				plugin.saveSettings().catch((e) => plugin.logger.error(`Failed to save corrected ${label} setting:`, e));
@@ -208,7 +272,7 @@ export async function selectModelSetting(
 			}
 
 			dropdown.onChange(async (value) => {
-				(plugin.settings as ObsidianGeminiSettings)[settingName] = value;
+				plugin.settings[settingName] = value;
 				await plugin.saveSettings();
 			});
 			return dropdown;

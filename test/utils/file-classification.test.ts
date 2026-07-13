@@ -9,7 +9,7 @@ import {
 } from '../../src/utils/file-classification';
 
 // Mock the gemini-utils module
-vi.mock('@allenhutchison/gemini-utils', () => ({
+vi.mock('@allenhutchison/gemini-utils/mime', () => ({
 	EXTENSION_TO_MIME: {
 		'.md': 'text/markdown',
 		'.txt': 'text/plain',
@@ -87,6 +87,23 @@ describe('file-classification', () => {
 			const result = classifyFile('webm');
 			expect(result.category).toBe(FileCategory.GEMINI_BINARY);
 			expect(result.mimeType).toBe('video/webm');
+		});
+
+		it('should classify .svg as SVG (requires rasterization)', () => {
+			const result = classifyFile('svg');
+			expect(result.category).toBe(FileCategory.SVG);
+			expect(result.mimeType).toBe('image/svg+xml');
+		});
+
+		it('should classify .svgz as SVG (requires rasterization)', () => {
+			const result = classifyFile('svgz');
+			expect(result.category).toBe(FileCategory.SVG);
+			expect(result.mimeType).toBe('image/svg+xml');
+		});
+
+		it('should classify SVG case-insensitively', () => {
+			expect(classifyFile('.SVG').category).toBe(FileCategory.SVG);
+			expect(classifyFile('SvgZ').category).toBe(FileCategory.SVG);
 		});
 
 		it('should classify .zip as UNSUPPORTED', () => {

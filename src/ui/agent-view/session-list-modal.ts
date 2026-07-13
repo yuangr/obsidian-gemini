@@ -1,6 +1,6 @@
 import { Modal, App, TFile, Notice, setIcon } from 'obsidian';
 import { ChatSession } from '../../types/agent';
-import type ObsidianGemini from '../../main';
+import type { ObsidianGemini } from '../../types/plugin';
 import { t } from '../../i18n';
 
 /** Filter value representing all sessions regardless of project. */
@@ -73,13 +73,15 @@ export class SessionListModal extends Modal {
 			text: t('agent.menu.newSession'),
 			cls: 'mod-cta',
 		});
-		newSessionBtn.addEventListener('click', async () => {
+		newSessionBtn.addEventListener('click', () => {
 			this.close();
-			// Create a new session by passing null
-			if (this.callbacks.onSelect) {
-				const newSession = await this.plugin.sessionManager.createAgentSession();
-				this.callbacks.onSelect(newSession);
-			}
+			void (async () => {
+				// Create a new session by passing null
+				if (this.callbacks.onSelect) {
+					const newSession = await this.plugin.sessionManager.createAgentSession();
+					this.callbacks.onSelect(newSession);
+				}
+			})();
 		});
 	}
 
@@ -236,11 +238,11 @@ export class SessionListModal extends Modal {
 				});
 				setIcon(deleteBtn, 'trash-2');
 
-				deleteBtn.addEventListener('click', async (e) => {
+				deleteBtn.addEventListener('click', (e) => {
 					e.stopPropagation();
 					// eslint-disable-next-line no-alert -- TODO: replace with Obsidian confirmation Modal
 					if (confirm(t('agent.sessionList.deleteConfirm', { title: session.title }))) {
-						await this.deleteSession(session);
+						void this.deleteSession(session);
 					}
 				});
 			}
