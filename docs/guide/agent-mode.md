@@ -20,7 +20,7 @@ In v4.0+, the agent is always available and can:
 ### 1. Open Agent Chat
 
 - Use Command Palette: "Gemini Scribe: Open Gemini chat"
-- Or click the sparkles icon (⭐) in the ribbon
+- Or click the sparkles icon (✨) in the ribbon
 - Or use your configured hotkey
 - You can also manage sessions directly from the command palette with:
   - "New agent session"
@@ -44,6 +44,7 @@ Choose which operations require confirmation in **Settings → Gemini Scribe →
 - **move_file**: Moving or renaming files
 - **append_content**: Adding text to the end of files
 - **update_frontmatter**: Modifying note properties (frontmatter)
+- **create_folder**: Creating new folders
 - **create_skill**: Creating new skill packages
 - **edit_skill**: Updating existing skill instructions
 - **generate_image**: Generating and saving images
@@ -169,7 +170,7 @@ Context files are displayed in a **unified file shelf** — a horizontal strip a
 3. Click the file icon in the session header to open the multi-select modal:
    - Already-added files appear pre-checked
    - Type to fuzzy-search; **Enter** toggles a file or folder; **Esc** confirms and closes
-   - Selecting a folder adds all markdown files inside it (folders are re-expanded each turn, so newly added files are automatically included)
+   - Selecting a folder adds all text files inside it — markdown plus other text formats like `.canvas`, `.base`, `.json` (folders are re-expanded each turn, so newly added files are automatically included)
    - Unchecking a file or folder removes it from context
 4. Drag and drop files or folders from the file explorer or your OS
 5. Paste images from your clipboard
@@ -187,7 +188,7 @@ For detailed information about context files and advanced usage, see the [Contex
 ### Session Management
 
 - Each conversation is a separate session
-- Sessions persist across Obsidian restarts
+- Sessions persist across Obsidian restarts when the "Session History" setting is enabled (off by default — see [Settings Reference](/reference/settings))
 - Access previous sessions from the dropdown
 - Configure session-specific settings
 - Sessions are automatically titled with a YYYY-MM-DD date prefix and AI-generated description after the first exchange
@@ -203,6 +204,7 @@ When you use a thinking model (e.g. Gemini 2.5 Pro), the agent captures the mode
 - The final answer's reasoning appears as a 🧠 line directly beneath the answer.
 - Reasoning is persisted to the session history file as a collapsed `[!reasoning]` callout, so it round-trips when you reopen a past session — making session files a faithful, self-contained record of the whole interaction: your request → reasoning → tools → answer.
 - Sessions created before this feature simply have no reasoning lines — nothing changes for them.
+- Reasoning depth is tuned automatically per task and model family — Gemini 3.x models use per-task thinking levels (deepest for agent chat, lightest for completions), while Gemini 2.5 models use a dynamic thinking budget. There is no setting to configure.
 
 ### Plan Mode
 
@@ -614,6 +616,7 @@ By default, these operations require confirmation:
 - **move_file**: Moving or renaming files
 - **append_content**: Adding text to the end of files
 - **update_frontmatter**: Modifying note properties (frontmatter)
+- **create_folder**: Creating new folders
 - **create_skill**: Creating new skill packages
 - **edit_skill**: Updating existing skill instructions
 - **generate_image**: Generating and saving images

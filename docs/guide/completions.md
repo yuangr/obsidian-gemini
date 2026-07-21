@@ -40,7 +40,7 @@ Completions provide:
 1. Open Command Palette (`Ctrl/Cmd + P`)
 2. Search for "Gemini Scribe: Toggle completions"
 3. Press Enter
-4. See confirmation notice: "Completions enabled" or "Completions disabled"
+4. See confirmation notice: "Gemini Scribe completions are now enabled." or "Gemini Scribe completions are now disabled."
 
 ### Quick Test
 
@@ -76,9 +76,10 @@ Completions understand:
 
 - **Lists**: Continues numbered or bulleted lists
 - **Headers**: Suggests appropriate content
-- **Code blocks**: Language-aware suggestions
 - **Links**: Completes wiki-links and markdown links
 - **Tables**: Helps with table formatting
+
+These aren't separate engineered features — completions use one fixed, general-purpose prompt (see [Integration with Other Features](#integration-with-other-features)) that reads the surrounding text and continues it naturally, whatever the content looks like. There's no dedicated code-language detection or per-content-type logic.
 
 ## Using Completions
 
@@ -260,15 +261,6 @@ Suggestion: " Notes]] for more details"
 Suggestion: "More Data |"
 ```
 
-### 4. Code Block Completion
-
-````
-```python
-def calculate_
-[pause]
-Suggestion: "average(numbers):"
-````
-
 ### 5. Template Expansion
 
 Create shortcuts:
@@ -350,8 +342,7 @@ Train the AI by:
    - Look for confirmation
 
 2. **Verify file type**
-   - Must be markdown (.md)
-   - Not in code blocks
+   - Must be an open Markdown view (.md file)
 
 3. **Check timing**
    - Wait full 500ms
@@ -492,9 +483,9 @@ Turn off for:
 
 ### With Custom Prompts
 
-- Completions respect active prompts
-- Suggestions match prompt style
-- Consistency across features
+- Completions use a fixed, dedicated prompt template and do not read the session's active custom prompt
+- Suggestions are based only on the surrounding document text, not any custom prompt's style or persona
+- Custom prompts affect Chat, Rewrite, and selection features, not completions
 
 ### With Chat
 

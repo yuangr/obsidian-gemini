@@ -1,7 +1,33 @@
 import { TFile, TFolder, normalizePath } from 'obsidian';
 import type { TAbstractFile } from 'obsidian';
 import type { ObsidianGemini } from '../../types/plugin';
+import type { ToolResult } from '../types';
 import { shouldExcludePathForPlugin as shouldExcludePath } from '../../utils/file-utils';
+
+/**
+ * System-folder guard shared by the write/destructive vault tools. Returns a
+ * failure `ToolResult` when `normalizedPath` lands inside a protected folder
+ * (the plugin state folder or `.obsidian`), or `null` when the path is allowed.
+ * Callers pass the fully-formed, tool-specific error message so each tool keeps
+ * its own wording ("Cannot write to…", "Cannot delete…", etc.).
+ */
+export function guardExcludedPath(normalizedPath: string, plugin: ObsidianGemini, error: string): ToolResult | null {
+	return shouldExcludePath(normalizedPath, plugin) ? { success: false, error } : null;
+}
+
+/**
+ * Agent-scope predicate shared by the read-only vault search tools. A file is in
+ * scope when it is not inside a protected system folder (the plugin state folder
+ * or `.obsidian`) and — when a project is active — it lives under `projectRoot`.
+ *
+ * The `projectRoot + '/'` boundary is load-bearing: without the trailing slash a
+ * `projectRoot` of `Foo` would spuriously match `Foobar/note.md`.
+ */
+export function isFileInAgentScope(file: TFile, plugin: ObsidianGemini, projectRoot: string | undefined): boolean {
+	if (shouldExcludePath(file.path, plugin)) return false;
+	if (projectRoot && !file.path.startsWith(projectRoot + '/')) return false;
+	return true;
+}
 
 /** Plain, serializable description of a vault file or folder. */
 export interface VaultFileEntry {

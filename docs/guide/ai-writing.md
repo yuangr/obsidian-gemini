@@ -84,7 +84,6 @@ Selection-Based Text Rewriting allows you to:
 2. **Context Building**: The AI receives:
    - Your selected text
    - The full document with selection markers
-   - Linked documents (based on your context settings)
    - Your rewrite instructions
 3. **AI Processing**: The AI rewrites only the selected portion while considering:
    - Document style and tone
@@ -98,9 +97,10 @@ Selection-Based Text Rewriting allows you to:
 The AI has access to:
 
 - **Full document content** to understand context and maintain consistency
-- **Linked documents** from your vault (if context sending is enabled)
 - **Selection markers** showing exactly what to rewrite
 - **Document structure** to maintain appropriate flow
+
+Rewrite does not traverse linked notes — only the current document and your selection are sent.
 
 ## Writing Effective Instructions
 
@@ -313,7 +313,7 @@ The Ask about selection feature lets you ask any question about selected text. T
 1. **Select text** in your document
 2. **Right-click** and choose "Gemini Scribe: Ask question..."
 3. **Type your question** in the modal
-4. **Press Enter** or click "Ask"
+4. **Press Ctrl/Cmd + Enter** or click "Ask"
 5. **View the response** and choose an action:
    - **Insert as callout**: Adds the Q&A as a callout block
    - **Copy**: Copies the response to clipboard

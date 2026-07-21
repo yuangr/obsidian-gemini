@@ -18,9 +18,31 @@ export interface GeminiModel {
 	supportsVision?: boolean;
 	/** Context window in tokens (used for compaction thresholds). */
 	contextWindow?: number;
+	/**
+	 * The model is only served by the Interactions API — `generateContent`
+	 * rejects it with a 400 ("This model only supports Interactions API").
+	 * The Gemini client routes these through the Interactions path regardless
+	 * of the `useInteractionsApi` setting, and generateContent-only callers
+	 * (search grounding, web fetch, RAG) must not send requests to them.
+	 */
+	interactionsOnly?: boolean;
 }
 
 export const DEFAULT_GEMINI_MODELS: GeminiModel[] = modelData.models as GeminiModel[];
+
+/**
+ * Retired Gemini model IDs mapped to their direct successors. When Google
+ * removes a model from the API (404 "no longer available") the entry is
+ * dropped from the bundled list; users who still have it configured are
+ * migrated to the successor here instead of falling back to the generic role
+ * default, so e.g. a Pro user stays on a Pro-class model. Keep each entry
+ * pointing at a model that is still in the bundled list — when a successor is
+ * itself retired, re-point the older entries at the newest live model.
+ */
+export const RETIRED_MODEL_SUCCESSORS: Record<string, string> = {
+	// Removed by Google 2026-07: both API paths return 404 "no longer available".
+	'gemini-3-pro-preview': 'gemini-3.1-pro-preview',
+};
 
 export let GEMINI_MODELS: GeminiModel[] = [...DEFAULT_GEMINI_MODELS];
 
@@ -70,6 +92,32 @@ export function getDefaultModelForRole(role: ModelRole, provider: ModelProvider 
 	// `GEMINI_MODELS[0]` could be an Ollama entry and we'd return a
 	// cross-provider model name as the Gemini default.
 	throw new Error('CRITICAL: GEMINI_MODELS array is empty. Please configure available models.');
+}
+
+/**
+ * Whether a model is served exclusively by the Interactions API (see
+ * `GeminiModel.interactionsOnly`). Checks the live model list first (which may
+ * be a newer remote list), then the bundled defaults — a stale remote cache
+ * fetched before the flag existed would otherwise hide it.
+ */
+export function isInteractionsOnlyModel(modelValue: string | null | undefined): boolean {
+	if (!modelValue) return false;
+	const flagIn = (list: GeminiModel[]) => list.find((m) => m.value === modelValue)?.interactionsOnly;
+	return flagIn(GEMINI_MODELS) ?? flagIn(DEFAULT_GEMINI_MODELS) ?? false;
+}
+
+/**
+ * Resolve a model for callers that can only use `generateContent` (search
+ * grounding, web fetch, RAG — features the plugin hasn't migrated to the
+ * Interactions API). Returns `preferred` unless it's empty or
+ * interactions-only, in which case the bundled Gemini default for the role is
+ * substituted so the request doesn't hard-fail with a 400.
+ */
+export function resolveGenerateContentModel(preferred: string | null | undefined, role: ModelRole = 'chat'): string {
+	if (preferred && !isInteractionsOnlyModel(preferred)) {
+		return preferred;
+	}
+	return getDefaultModelForRole(role, 'gemini');
 }
 
 /**
@@ -168,13 +216,23 @@ export function getUpdatedModelSettings<T extends ModelSettingsSlice>(currentSet
 		label: string
 	) => {
 		const previous = modelFields[key];
-		if (previous && geminiModelValues.has(previous)) return;
-		const next = getDefaultModelForRole(role, 'gemini');
+		// The retired-model lookup runs BEFORE the validity short-circuit: the
+		// current list may come from a stale persisted remoteModelCache that still
+		// advertises a retired model, but Google 404s these server-side, so list
+		// membership doesn't make it usable — migrate it regardless.
+		const successor = previous ? RETIRED_MODEL_SUCCESSORS[previous] : undefined;
+		if (successor === undefined && previous && geminiModelValues.has(previous)) return;
+		// A retired model migrates to its designated successor when that successor
+		// is available; anything else falls back to the role default.
+		const useSuccessor = successor !== undefined && geminiModelValues.has(successor);
+		const next = useSuccessor ? successor : getDefaultModelForRole(role, 'gemini');
 		// Image generation has no dedicated default in some model lists; leave a
 		// stale image model untouched rather than blanking it.
 		if (!next) return;
 		modelFields[key] = next;
-		changedSettingsInfo.push(`${label}: '${previous}' -> '${next}' (legacy model update)`);
+		changedSettingsInfo.push(
+			`${label}: '${previous}' -> '${next}' ${useSuccessor ? '(retired model migrated to successor)' : '(legacy model update)'}`
+		);
 		settingsChanged = true;
 	};
 

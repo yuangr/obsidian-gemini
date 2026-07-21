@@ -109,10 +109,10 @@ describe('GeminiClient', () => {
 		};
 
 		describe('should return true for models that support thinking', () => {
-			test('gemini-3-pro-preview', () => {
-				expect(testSupportsThinking('gemini-3-pro-preview')).toBe(true);
+			test('gemini-3.1-pro-preview', () => {
+				expect(testSupportsThinking('gemini-3.1-pro-preview')).toBe(true);
 				expect(mockLogger.debug).toHaveBeenCalledWith(
-					'[GeminiClient] Enabling thinking mode for model: gemini-3-pro-preview'
+					'[GeminiClient] Enabling thinking mode for model: gemini-3.1-pro-preview'
 				);
 			});
 
@@ -328,9 +328,11 @@ describe('GeminiClient', () => {
 	});
 
 	// Per-use-case thinkingLevel (#621): the client maps the ModelUseCase it was
-	// created for to a thinkingConfig.thinkingLevel, replacing the old global
-	// thinkingBudget. Reasoning persistence (#965) relies on includeThoughts, and
-	// the API rejects sending both knobs — so assert exactly one is present.
+	// created for to a thinkingConfig.thinkingLevel — but only for Gemini 3.x.
+	// Gemini 2.5 models reject thinkingLevel with a 400 ("Thinking level is not
+	// supported for this model") and take the legacy thinkingBudget instead.
+	// Reasoning persistence (#965) relies on includeThoughts, and the API
+	// rejects sending both knobs — so assert exactly one is present.
 	describe('per-use-case thinkingLevel', () => {
 		const THINKING_MODEL = 'gemini-3-pro';
 
@@ -344,9 +346,9 @@ describe('GeminiClient', () => {
 
 		// Captures the thinkingConfig the SDK is handed for a client created with
 		// the given use case against a thinking-capable model.
-		const thinkingConfigFor = async (useCase?: ModelUseCase): Promise<any> => {
+		const thinkingConfigFor = async (useCase?: ModelUseCase, model: string = THINKING_MODEL): Promise<any> => {
 			const client = new GeminiClient(
-				{ apiKey: 'test-api-key', model: THINKING_MODEL, useCase },
+				{ apiKey: 'test-api-key', model, useCase },
 				new GeminiPrompts(mockPlugin),
 				mockPlugin
 			);
@@ -374,6 +376,27 @@ describe('GeminiClient', () => {
 			expect(thinkingConfig.thinkingLevel).toBe('HIGH');
 			expect(thinkingConfig.includeThoughts).toBe(true);
 			expect(thinkingConfig.thinkingBudget).toBeUndefined();
+		});
+
+		// Regression: sending thinkingLevel to a 2.5 model is a guaranteed 400
+		// INVALID_ARGUMENT ("Thinking level is not supported for this model").
+		test.each(['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite', 'thinking-exp-1234'])(
+			'%s gets legacy thinkingBudget, never thinkingLevel',
+			async (model) => {
+				const thinkingConfig = await thinkingConfigFor(ModelUseCase.CHAT, model);
+				expect(thinkingConfig.thinkingBudget).toBe(-1);
+				expect(thinkingConfig.includeThoughts).toBe(true);
+				expect(thinkingConfig.thinkingLevel).toBeUndefined();
+			}
+		);
+
+		test('gemini-3.x variants still get thinkingLevel', async () => {
+			for (const model of ['gemini-3-flash-preview', 'gemini-3.1-pro-preview', 'gemini-3.5-flash']) {
+				generateContentMock.mockClear();
+				const thinkingConfig = await thinkingConfigFor(ModelUseCase.CHAT, model);
+				expect(thinkingConfig.thinkingLevel).toBe('HIGH');
+				expect(thinkingConfig.thinkingBudget).toBeUndefined();
+			}
 		});
 
 		test('omits thinkingConfig entirely for non-thinking models', async () => {
@@ -1345,7 +1368,9 @@ describe('GeminiClient', () => {
 					type: 'function_result',
 					call_id: 'c1',
 					name: 'read_file',
-					result: [{ type: 'text', text: JSON.stringify({ content: 'hi' }) }],
+					// Plain string, never a content array — the array form is a
+					// "multimodal function response" that Gemini 2.5 rejects with a 400.
+					result: JSON.stringify({ content: 'hi' }),
 				},
 				{ type: 'model_output', content: [{ type: 'text', text: 'foo.md says hi' }] },
 				{ type: 'user_input', content: [{ type: 'text', text: 'and now?' }] },
@@ -1566,6 +1591,155 @@ describe('GeminiClient', () => {
 				expect(chunks).toEqual([{ text: 'partial' }]);
 				expect(mockLogger.error).toHaveBeenCalledWith('[GeminiClient] Error streaming interaction:', apiError);
 			});
+		});
+	});
+
+	describe('interactions-only model routing (useInteractionsApi off)', () => {
+		// gemini-omni-flash-preview is flagged interactionsOnly in the bundled
+		// catalog: generateContent rejects it with a 400 ("This model only
+		// supports Interactions API"), so the client must route it through the
+		// Interactions path even when the transport toggle is off.
+		const makeClient = (model: string) =>
+			new GeminiClient(
+				{ apiKey: 'test-api-key', model, useInteractionsApi: false },
+				new GeminiPrompts(mockPlugin),
+				mockPlugin
+			);
+
+		beforeEach(() => {
+			interactionsCreateMock.mockReset();
+			interactionsCreateMock.mockResolvedValue({
+				id: 'int_2',
+				status: 'completed',
+				output_text: 'Hello from interactions',
+				steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Hello from interactions' }] }],
+			});
+			generateContentMock.mockReset();
+			generateContentMock.mockResolvedValue({
+				candidates: [{ content: { parts: [{ text: 'Hello from generateContent' }] } }],
+			});
+
+			// Stub the plugin surface buildExtendedSystemInstruction depends on.
+			mockPlugin.agentsMemory = { read: vi.fn().mockResolvedValue('') };
+			mockPlugin.skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
+			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false }, useInteractionsApi: false };
+		});
+
+		test('configured interactions-only model routes via interactions.create despite the toggle being off', async () => {
+			const client = makeClient('gemini-omni-flash-preview');
+			const response = await client.generateModelResponse({
+				prompt: '',
+				userMessage: 'hi',
+				kind: 'extended',
+				conversationHistory: [],
+			});
+
+			expect(interactionsCreateMock).toHaveBeenCalledTimes(1);
+			expect(generateContentMock).not.toHaveBeenCalled();
+			expect(interactionsCreateMock.mock.calls[0][0].model).toBe('gemini-omni-flash-preview');
+			expect(response.markdown).toBe('Hello from interactions');
+		});
+
+		test('per-request model override to an interactions-only model routes via interactions.create', async () => {
+			const client = makeClient('gemini-flash-latest');
+			await client.generateModelResponse({
+				prompt: '',
+				userMessage: 'hi',
+				kind: 'extended',
+				conversationHistory: [],
+				model: 'gemini-omni-flash-preview',
+			});
+
+			expect(interactionsCreateMock).toHaveBeenCalledTimes(1);
+			expect(generateContentMock).not.toHaveBeenCalled();
+			expect(interactionsCreateMock.mock.calls[0][0].model).toBe('gemini-omni-flash-preview');
+		});
+
+		test('regular model keeps using generateContent when the toggle is off', async () => {
+			const client = makeClient('gemini-flash-latest');
+			const response = await client.generateModelResponse({
+				prompt: '',
+				userMessage: 'hi',
+				kind: 'extended',
+				conversationHistory: [],
+			});
+
+			expect(generateContentMock).toHaveBeenCalledTimes(1);
+			expect(interactionsCreateMock).not.toHaveBeenCalled();
+			expect(response.markdown).toBe('Hello from generateContent');
+		});
+
+		test('generateImage routes an interactions-only image model via interactions.create', async () => {
+			interactionsCreateMock.mockReset();
+			interactionsCreateMock.mockResolvedValue({
+				id: 'int_img',
+				status: 'completed',
+				output_image: { data: 'BASE64_IMAGE', mime_type: 'image/png' },
+				steps: [{ type: 'model_output', content: [{ type: 'image', data: 'BASE64_IMAGE' }] }],
+			});
+
+			const client = makeClient('gemini-flash-latest');
+			const data = await client.generateImage('a nano banana dish', 'gemini-omni-flash-preview');
+
+			expect(interactionsCreateMock).toHaveBeenCalledTimes(1);
+			expect(generateContentMock).not.toHaveBeenCalled();
+			const params = interactionsCreateMock.mock.calls[0][0];
+			expect(params.model).toBe('gemini-omni-flash-preview');
+			expect(params.input).toBe('a nano banana dish');
+			expect(params.store).toBe(false);
+			expect(data).toBe('BASE64_IMAGE');
+		});
+
+		test('generateImage via interactions throws when the response has no image data', async () => {
+			interactionsCreateMock.mockReset();
+			interactionsCreateMock.mockResolvedValue({
+				id: 'int_img',
+				status: 'completed',
+				output_text: 'Sorry, cannot draw that.',
+				steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Sorry, cannot draw that.' }] }],
+			});
+
+			const client = makeClient('gemini-flash-latest');
+			await expect(client.generateImage('a nano banana dish', 'gemini-omni-flash-preview')).rejects.toThrow(
+				'No image data in response'
+			);
+		});
+
+		test('generateImage keeps using generateContent for regular image models', async () => {
+			generateContentMock.mockReset();
+			generateContentMock.mockResolvedValue({
+				candidates: [{ content: { parts: [{ inlineData: { data: 'GC_IMAGE' } }] } }],
+			});
+
+			const client = makeClient('gemini-flash-latest');
+			const data = await client.generateImage('a nano banana dish', 'gemini-2.5-flash-image');
+
+			expect(generateContentMock).toHaveBeenCalledTimes(1);
+			expect(interactionsCreateMock).not.toHaveBeenCalled();
+			expect(data).toBe('GC_IMAGE');
+		});
+
+		test('streaming an interactions-only model routes via the interactions stream despite the toggle being off', async () => {
+			interactionsCreateMock.mockReset();
+			interactionsCreateMock.mockImplementation(async () => {
+				return (async function* () {
+					yield { event_type: 'step.start', index: 0, step: { type: 'model_output' } };
+					yield { event_type: 'step.delta', index: 0, delta: { type: 'text', text: 'streamed' } };
+				})();
+			});
+
+			const client = makeClient('gemini-omni-flash-preview');
+			const chunks: Array<{ text: string }> = [];
+			const stream = client.generateStreamingResponse(
+				{ prompt: '', userMessage: 'hi', kind: 'extended', conversationHistory: [] },
+				(chunk) => chunks.push(chunk)
+			);
+
+			const response = await stream.complete;
+			expect(interactionsCreateMock).toHaveBeenCalledTimes(1);
+			expect(interactionsCreateMock.mock.calls[0][0].stream).toBe(true);
+			expect(chunks).toEqual([{ text: 'streamed' }]);
+			expect(response.markdown).toBe('streamed');
 		});
 	});
 });

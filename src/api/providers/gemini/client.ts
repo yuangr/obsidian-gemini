@@ -30,13 +30,15 @@ import {
 } from '../../interfaces/model-api';
 import { GeminiPrompts } from '../../../prompts';
 import type { ObsidianGemini } from '../../../types/plugin';
-import { getDefaultModelForRole } from '../../../models';
+import { getDefaultModelForRole, isInteractionsOnlyModel } from '../../../models';
 import { decodeHtmlEntities } from '../../../utils/html-entities';
+import { normalizeToContent } from '../../../utils/history-normalize';
 import type { GeminiClientConfig } from './config';
 import { ModelUseCase } from '../../model-use-case';
 import {
 	buildUserInputStep,
 	contentToSteps,
+	extractImageDataFromInteraction,
 	extractModelResponseFromInteraction,
 	toolsToInteractionTools,
 	InteractionStreamAccumulator,
@@ -47,7 +49,9 @@ import { renderGroundingSources } from './grounding-render';
 
 /**
  * Per-use-case reasoning depth for Gemini 3.x `thinkingConfig.thinkingLevel`,
- * replacing the legacy global `thinkingBudget: -1`. These are starting points
+ * replacing the legacy global `thinkingBudget: -1` (which Gemini 2.5 models
+ * still require on `generateContent` — see `supportsThinkingLevel`). These are
+ * starting points
  * (see #621; tune against the eval suite in #619): latency-sensitive paths
  * think the least, while CHAT — which is the agent loop — thinks the most.
  *
@@ -117,11 +121,27 @@ export class GeminiClient implements ModelApi {
 	}
 
 	/**
-	 * Whether this client routes through the GA Interactions API. Reads the
-	 * per-client config first (set by the factory), falling back to live plugin
-	 * settings for `createCustom` callers that don't thread the flag through.
+	 * Resolve the effective model for a request: per-request override, then the
+	 * client's configured model, then the bundled chat default. Single source of
+	 * truth for the routing decision and both param builders.
 	 */
-	private get useInteractions(): boolean {
+	private resolveModel(request: BaseModelRequest | ExtendedModelRequest): string {
+		return request.model || this.config.model || getDefaultModelForRole('chat');
+	}
+
+	/**
+	 * Whether a request for `model` routes through the GA Interactions API.
+	 * Interactions-only models (e.g. gemini-omni-flash-preview) always do —
+	 * `generateContent` rejects them with a 400 ("This model only supports
+	 * Interactions API") — regardless of the user's transport toggle. Otherwise
+	 * the per-client config decides (set by the factory), falling back to live
+	 * plugin settings for `createCustom` callers that don't thread the flag
+	 * through.
+	 */
+	private usesInteractions(model: string): boolean {
+		if (isInteractionsOnlyModel(model)) {
+			return true;
+		}
 		return this.config.useInteractionsApi ?? this.plugin?.settings?.useInteractionsApi ?? false;
 	}
 
@@ -129,7 +149,7 @@ export class GeminiClient implements ModelApi {
 	 * Generate a non-streaming response
 	 */
 	async generateModelResponse(request: BaseModelRequest | ExtendedModelRequest): Promise<ModelResponse> {
-		if (this.useInteractions) {
+		if (this.usesInteractions(this.resolveModel(request))) {
 			return this.generateViaInteractions(request);
 		}
 
@@ -272,7 +292,7 @@ export class GeminiClient implements ModelApi {
 		request: BaseModelRequest | ExtendedModelRequest
 	): Promise<Record<string, unknown>> {
 		const isExtended = isExtendedRequest(request);
-		const model = request.model || this.config.model || getDefaultModelForRole('chat');
+		const model = this.resolveModel(request);
 
 		const generationConfig: Record<string, unknown> = {
 			temperature: request.temperature ?? this.config.temperature,
@@ -316,15 +336,7 @@ export class GeminiClient implements ModelApi {
 	 * canonical `{ role, parts }`. Returns null for unrecognized entries.
 	 */
 	private normalizeHistoryEntry(entry: Content): Content | null {
-		if ('role' in entry && 'parts' in entry) {
-			return entry;
-		}
-		if ('role' in entry && ('text' in entry || 'message' in entry)) {
-			const legacy = entry as Content & { role?: string; text?: string; message?: string };
-			const text = legacy.text ?? legacy.message ?? '';
-			return { role: this.coerceHistoryRole(legacy.role), parts: [{ text }] };
-		}
-		return null;
+		return normalizeToContent(entry, (role) => this.coerceHistoryRole(role));
 	}
 
 	/**
@@ -371,7 +383,7 @@ export class GeminiClient implements ModelApi {
 		request: BaseModelRequest | ExtendedModelRequest,
 		onChunk: StreamCallback
 	): StreamingModelResponse {
-		if (this.useInteractions) {
+		if (this.usesInteractions(this.resolveModel(request))) {
 			return this.streamViaInteractions(request, onChunk);
 		}
 
@@ -384,6 +396,17 @@ export class GeminiClient implements ModelApi {
 
 		const complete = (async (): Promise<ModelResponse> => {
 			const params = await this.buildGenerateContentParams(request);
+
+			// Assemble the response from the current accumulator state. Called from
+			// both the success return and the cancelled-in-catch return, which must
+			// produce the identical shape.
+			const buildResponse = (): ModelResponse => ({
+				markdown: accumulatedText,
+				rendered: accumulatedRendered,
+				...(accumulatedThoughts && { thoughts: accumulatedThoughts }),
+				...(toolCalls && { toolCalls }),
+				...(lastUsageMetadata && { usageMetadata: lastUsageMetadata }),
+			});
 
 			try {
 				const stream = await this.ai.models.generateContentStream(params);
@@ -459,22 +482,10 @@ export class GeminiClient implements ModelApi {
 					this.plugin?.logger.debug('[GeminiClient] No usageMetadata received from any streaming chunk');
 				}
 
-				return {
-					markdown: accumulatedText,
-					rendered: accumulatedRendered,
-					...(accumulatedThoughts && { thoughts: accumulatedThoughts }),
-					...(toolCalls && { toolCalls }),
-					...(lastUsageMetadata && { usageMetadata: lastUsageMetadata }),
-				};
+				return buildResponse();
 			} catch (error) {
 				if (cancelled) {
-					return {
-						markdown: accumulatedText,
-						rendered: accumulatedRendered,
-						...(accumulatedThoughts && { thoughts: accumulatedThoughts }),
-						...(toolCalls && { toolCalls }),
-						...(lastUsageMetadata && { usageMetadata: lastUsageMetadata }),
-					};
+					return buildResponse();
 				}
 				this.plugin?.logger.error('[GeminiClient] Streaming error:', error);
 				throw error;
@@ -496,7 +507,7 @@ export class GeminiClient implements ModelApi {
 		request: BaseModelRequest | ExtendedModelRequest
 	): Promise<GenerateContentParameters> {
 		const isExtended = isExtendedRequest(request);
-		const model = request.model || this.config.model || getDefaultModelForRole('chat');
+		const model = this.resolveModel(request);
 
 		// Build system instruction
 		let systemInstruction = '';
@@ -517,15 +528,19 @@ export class GeminiClient implements ModelApi {
 			...(systemInstruction && { systemInstruction }),
 		};
 
-		// Add thinking config if model supports it. We steer reasoning depth with
-		// `thinkingLevel` (Gemini 3.x) per use case — never the legacy
-		// `thinkingBudget`, and never both knobs in one request. `includeThoughts`
-		// stays true so reasoning persistence (#965) keeps receiving thought parts.
+		// Add thinking config if model supports it. Gemini 3.x models take a
+		// per-use-case `thinkingLevel`; older thinking models (Gemini 2.5,
+		// thinking-exp) reject that knob with a 400 ("Thinking level is not
+		// supported for this model") and take the legacy `thinkingBudget` instead
+		// — send exactly one knob, never both. `includeThoughts` stays true so
+		// reasoning persistence (#965) keeps receiving thought parts.
 		if (this.supportsThinking(model)) {
-			config.thinkingConfig = {
-				includeThoughts: true,
-				thinkingLevel: THINKING_LEVEL_BY_USE_CASE[this.config.useCase ?? ModelUseCase.CHAT],
-			};
+			config.thinkingConfig = this.supportsThinkingLevel(model)
+				? {
+						includeThoughts: true,
+						thinkingLevel: THINKING_LEVEL_BY_USE_CASE[this.config.useCase ?? ModelUseCase.CHAT],
+					}
+				: { includeThoughts: true, thinkingBudget: -1 };
 		}
 
 		// Add function calling tools
@@ -934,6 +949,19 @@ export class GeminiClient implements ModelApi {
 	/**
 	 * Check if a model supports thinking/reasoning mode
 	 */
+	/**
+	 * Whether the model takes the Gemini 3.x `thinkingConfig.thinkingLevel` knob
+	 * on `generateContent`. Older thinking-capable models (Gemini 2.5,
+	 * thinking-exp) reject it with a 400 INVALID_ARGUMENT ("Thinking level is
+	 * not supported for this model") and use the legacy `thinkingBudget`
+	 * instead. The Interactions path is unaffected — that API accepts
+	 * `thinking_level` for 2.5 models and normalizes it server-side (while
+	 * rejecting `thinking_budget` outright), so it always sends the level.
+	 */
+	private supportsThinkingLevel(model: string): boolean {
+		return model.toLowerCase().includes('gemini-3');
+	}
+
 	private supportsThinking(model: string | undefined): boolean {
 		if (!model) {
 			this.plugin?.logger.debug('[GeminiClient] No model specified for thinking check');
@@ -1022,14 +1050,19 @@ export class GeminiClient implements ModelApi {
 	 * on (see #1016): image generation is a distinct one-shot capability on a
 	 * dedicated image model — not the conversational transport the flag governs —
 	 * and the existing path is proven across image-tools and scheduled tasks.
-	 * Migrating it to the Interactions image-output surface is deferred until
-	 * there's a concrete reason to (no user-facing benefit today).
+	 * The exception is interactions-only image models (e.g.
+	 * gemini-omni-flash-preview), which `generateContent` rejects with a 400 —
+	 * those route through the Interactions image-output surface.
 	 *
 	 * @param prompt - Text description of the image to generate
 	 * @param model - Image generation model (defaults to gemini-2.5-flash-image-preview)
 	 * @returns Base64 encoded image data
 	 */
 	async generateImage(prompt: string, model: string): Promise<string> {
+		if (isInteractionsOnlyModel(model)) {
+			return this.generateImageViaInteractions(prompt, model);
+		}
+
 		try {
 			const params: GenerateContentParameters = {
 				model,
@@ -1061,6 +1094,34 @@ export class GeminiClient implements ModelApi {
 			throw new Error('No image data in response. The model may have returned only text.');
 		} catch (error) {
 			this.plugin?.logger.error('[GeminiClient] Error generating image:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Image generation via the Interactions API, for models `generateContent`
+	 * refuses to serve. One-shot and stateless like the generateContent path:
+	 * the prompt is the whole input, and the base64 image is pulled from the
+	 * response's `model_output` steps (via the `output_image` convenience when
+	 * the SDK provides it).
+	 */
+	private async generateImageViaInteractions(prompt: string, model: string): Promise<string> {
+		this.ensureInteractionsFetch();
+
+		try {
+			const interaction = await this.interactionsClient.create({
+				model,
+				store: false,
+				input: prompt,
+			});
+
+			const imageData = extractImageDataFromInteraction(interaction);
+			if (!imageData) {
+				throw new Error('No image data in response. The model may have returned only text.');
+			}
+			return imageData;
+		} catch (error) {
+			this.plugin?.logger.error('[GeminiClient] Error generating image via interactions:', error);
 			throw error;
 		}
 	}

@@ -46,7 +46,7 @@ Custom prompts are stored in: `[state-folder]/Prompts/`
 
 For example, if your plugin state folder is `gemini-scribe`, prompts will be in `gemini-scribe/Prompts/`.
 
-The plugin automatically creates this folder structure and adds an example prompt when you first enable the feature:
+The plugin automatically creates this folder structure and adds an example prompt the first time it loads (there's no separate toggle to turn the feature on):
 
 - `gemini-scribe/` - Main plugin state folder
 - `gemini-scribe/Prompts/` - Custom prompt templates
@@ -88,9 +88,9 @@ tags: ['category', 'use-case'] # Optional: For organization
 
 #### Special Tags
 
-| Tag                              | Purpose                                                                                                                                                                                                                        |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `gemini-scribe/selection-prompt` | Makes the prompt available in the right-click "Explain Selection" / "Ask about selection" menu. See [Selection Prompts](/guide/selection-prompts) and the [AI Writing Guide](/guide/ai-writing#explain-selection) for details. |
+| Tag                              | Purpose                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gemini-scribe/selection-prompt` | Makes the prompt available in the right-click "Apply prompt..." menu (the Explain Selection feature). It has no effect on the separate "Ask question..." menu item, which always asks a free-form question rather than picking from tagged prompts. See [Selection Prompts](/guide/selection-prompts) and the [AI Writing Guide](/guide/ai-writing#explain-selection) for details. |
 
 ### Example: Technical Documentation Assistant
 
@@ -163,7 +163,7 @@ When a custom prompt is active, you'll see a badge in the session header showing
 For advanced users who want complete control:
 
 1. Set `override_system_prompt: true` in your prompt file
-2. Enable "Allow System Prompt Override" in plugin settings
+2. Enable "Allow system prompt override" in plugin settings
 3. Your prompt will completely replace the default system instructions
 
 **Warning:** Use with caution as this removes built-in safety features and Obsidian-specific knowledge.

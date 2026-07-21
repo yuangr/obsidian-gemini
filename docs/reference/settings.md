@@ -145,6 +145,7 @@ The active model list depends on the [`provider`](#provider) setting:
 - **Default**: `gemini-2.5-flash-image`
 - **Only available when**: Provider is `gemini`
 - **Description**: Model used for image generation via the `generate_image` tool and the **Generate image** command. Only models with image-generation capability appear in this dropdown.
+- **Note**: Interactions-only image models (e.g. `gemini-omni-flash-preview`) generate through the Interactions API instead of `generateContent`, regardless of the [Use Interactions API](#use-interactions-api) toggle.
 
 ### Ollama model
 
@@ -247,8 +248,8 @@ Compaction isn't only checked before the initial request — `AgentLoop` re-chec
 - **Type**: Boolean
 - **Default**: `false`
 - **Description**: Display estimated token count in the agent input area
-- **Display format**: `Tokens: ~N (Y new) / M (X%)` showing total prompt tokens, uncached (new) tokens, model limit, and percentage used
-- **How it works**: Token counts update live after each API response, including during tool call chains. Gemini's implicit caching means repeated content (system prompt, tool definitions) is served from cache — the "new" count shows tokens that aren't cached
+- **Display format**: `Tokens: ~N / M (X%)` showing total prompt tokens, model limit, and percentage used. When part of the prompt was served from Gemini's cache, an additional `· Y% cached` suffix appears
+- **How it works**: Token counts update live after each API response, including during tool call chains. Gemini's implicit caching means repeated content (system prompt, tool definitions) is often served from cache — the cached percentage rewards stable prefixes (system prompt, pinned history)
 - **Visual indicators**:
   - Normal (muted text) — well under threshold
   - Yellow — approaching compaction threshold (≥80% of threshold)
@@ -261,7 +262,7 @@ Compaction isn't only checked before the initial request — `AgentLoop` re-chec
 - **Default**: `true`
 - **Description**: Append a summary of each tool execution to the session history file for auditing
 - **Format**: Collapsible callout blocks showing tool name, key parameters, status, and duration
-- **Note**: Requires plugin reload to take effect when toggled
+- **Note**: Takes effect immediately when toggled — no plugin reload needed
 
 ### Always Show Diff view for File Writes
 
@@ -310,7 +311,8 @@ Advanced settings for developers and power users. Access by clicking "Show advan
 - **Description**: Routes Gemini requests through Google's GA [Interactions API](https://ai.google.dev/gemini-api/docs/interactions) (`interactions.create`) instead of the legacy `generateContent` API. This is now the default transport; existing installs are migrated to it automatically (a one-time flip you can reverse by turning the toggle off).
 - **Privacy**: Runs statelessly (`store: false`) — conversation history is replayed with each request, and the plugin does not persist Interactions state on Google's side between turns. (Requests are still sent to Google to generate each response, subject to Google's standard API data-handling terms.)
 - **Status**: Default-on. Responses stream incrementally (text, reasoning, and tool calls); turn it off to fall back to the legacy `generateContent` path if you hit issues.
-- **Scope**: Governs the conversational chat transport only. Image generation (the `generate_image` tool and **Generate image** command) always uses `generateContent` regardless of this setting.
+- **Scope**: Governs the conversational chat transport only. Image generation (the `generate_image` tool and **Generate image** command) always uses `generateContent` regardless of this setting — unless the selected image model is interactions-only (see below), in which case it uses the Interactions API.
+- **Interactions-only models**: Models flagged `interactionsOnly` in the model catalog (e.g. `gemini-omni-flash-preview`, an image-generation model) are only served by the Interactions API, so requests to them always route through it even when this toggle is off. Features that still run on `generateContent` (Google Search grounding, web fetch, RAG semantic search) substitute the default chat model if an interactions-only model ever ends up configured as the chat model.
 
 #### Custom API Endpoint
 
@@ -368,6 +370,8 @@ Advanced settings for developers and power users. Access by clicking "Show advan
 Model discovery is automatic — no user-configurable settings are required. On startup, the plugin fetches the latest available Gemini models from GitHub and falls back to the bundled list if the fetch fails. The remote list is cached in `data.json` under `remoteModelCache` for 24 hours; subsequent reloads within that window are no-ops.
 
 To pick up a newly-published model without waiting for the cache to expire, click **Refresh model list** in Settings → General, or run the **Gemini Scribe: Refresh model list** command (`gemini-scribe:refresh-model-list`). Both honor the same skip conditions as the auto-fetch — they no-op when the provider is Ollama or the host reports offline, and surface the outcome via a `Notice`. When the Ollama provider is active, the same row appears but re-queries the Ollama daemon for newly pulled models instead.
+
+When Google retires a model (the API starts returning 404 "no longer available" — e.g. `gemini-3-pro-preview` in July 2026), it is removed from the catalog and any settings still pointing at it are migrated automatically on the next reload: to the retired model's designated successor when one exists (`gemini-3-pro-preview` → `gemini-3.1-pro-preview`), otherwise to the default model for that role.
 
 ### Tool Execution
 

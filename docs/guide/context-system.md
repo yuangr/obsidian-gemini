@@ -94,7 +94,7 @@ The fastest way to add context files:
 5. File appears in the shelf above the input
 6. The file is now persistent context for the session
 
-To type a literal `@` symbol without triggering the picker, press `@` twice or continue typing without selecting from the list.
+Typing `@` always opens the picker (focus moves to its search box). To keep a literal `@` in your message instead of picking a file, press **Esc** to dismiss the picker — the `@` you already typed stays in the input.
 
 **Example:**
 
@@ -116,7 +116,7 @@ For adding, reviewing, or removing multiple files at once:
 
 **Folder support:**
 
-Folders appear alongside files in the list (identified by a folder icon and a trailing `/`). Selecting a folder toggles all the markdown files inside it at once. The check icon reflects the folder's state:
+Folders appear alongside files in the list (identified by a folder icon and a trailing `/`). Selecting a folder toggles all the text files inside it at once (markdown plus other text formats like `.canvas`, `.base`, `.json`). The check icon reflects the folder's state:
 
 - **☑ Filled** — all files in the folder are selected
 - **☐ Partial** (minus) — some files selected
@@ -190,7 +190,7 @@ To remove a file from context:
 Context files persist:
 
 - ✅ Throughout the current session
-- ✅ Across Obsidian restarts
+- ✅ Across Obsidian restarts, when the "Session History" setting is enabled (off by default — see [Settings Reference](/reference/settings))
 - ✅ When loading saved sessions
 - ❌ When creating a new session
 

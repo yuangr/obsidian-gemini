@@ -55,7 +55,7 @@ This is usually caused by an invalid/expired API key or an unavailable model.
 
 ### Requests fail after several retry attempts
 
-The plugin has built-in retry logic with exponential backoff (3 attempts by default). If requests keep failing, it's usually a rate limit or transient API issue. Check your API key validity and rate limit dashboard. You can adjust retry settings under Advanced Settings. ([#131](https://github.com/allenhutchison/obsidian-gemini/issues/131))
+The plugin has built-in retry logic with exponential backoff (3 retries by default, so up to 4 attempts total). If requests keep failing, it's usually a rate limit or transient API issue. Check your API key validity and rate limit dashboard. You can adjust retry settings under Advanced Settings. ([#131](https://github.com/allenhutchison/obsidian-gemini/issues/131))
 
 ## Models
 
@@ -92,6 +92,7 @@ A few Gemini-specific features are unavailable on Ollama — these all depend on
 - **Deep Research** (requires Google Search grounding)
 - **Semantic vault search / RAG** (requires the Gemini File Search API)
 - **Google Search grounding** in agent mode
+- **Google Maps grounding** in agent mode
 - **URL Context** web-fetch tool
 - **Image generation** (Imagen API)
 
@@ -185,7 +186,7 @@ Make sure you're on v4.0 or later — earlier versions had a bug where context f
 
 ### "Summarize active file" isn't working
 
-This command requires: (1) a markdown file actively open in the editor, and (2) context sending to be enabled. If no file is open, you'll see "Failed to get file content for summary." ([#134](https://github.com/allenhutchison/obsidian-gemini/issues/134))
+This command requires a markdown file actively open in the editor. If no file is open, you'll see "No active file to summarize. Please open a markdown file first." ([#134](https://github.com/allenhutchison/obsidian-gemini/issues/134))
 
 ## Semantic Vault Search
 

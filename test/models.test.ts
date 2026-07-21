@@ -1,10 +1,14 @@
 import {
+	DEFAULT_GEMINI_MODELS,
 	GEMINI_MODELS,
 	getActiveChatModel,
 	getDefaultModelForRole,
 	GeminiModel,
 	getUpdatedModelSettings,
+	isInteractionsOnlyModel,
 	migrateOllamaModelSetting,
+	resolveGenerateContentModel,
+	RETIRED_MODEL_SUCCESSORS,
 	setGeminiModels,
 } from '../src/models';
 
@@ -237,6 +241,70 @@ describe('getUpdatedModelSettings', () => {
 		]);
 	});
 
+	it('migrates a retired model to its designated successor instead of the role default', () => {
+		setTestModels([
+			{ value: 'gemini-chat-default', label: 'Chat Default', defaultForRoles: ['chat'] },
+			{ value: 'gemini-summary-default', label: 'Summary Default', defaultForRoles: ['summary'] },
+			{ value: 'gemini-completions-default', label: 'Completions Default', defaultForRoles: ['completions'] },
+			{ value: 'gemini-image-default', label: 'Image Default', defaultForRoles: ['image'] },
+			{ value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
+		]);
+		const currentSettings = {
+			chatModelName: 'gemini-3-pro-preview', // retired by Google (404 "no longer available")
+			summaryModelName: 'gemini-summary-default',
+			completionsModelName: 'gemini-completions-default',
+			imageModelName: 'gemini-image-default',
+		};
+		const result = getUpdatedModelSettings(currentSettings);
+		expect(result.settingsChanged).toBe(true);
+		expect(result.updatedSettings.chatModelName).toBe('gemini-3.1-pro-preview');
+		expect(result.changedSettingsInfo).toEqual([
+			"Chat model: 'gemini-3-pro-preview' -> 'gemini-3.1-pro-preview' (retired model migrated to successor)",
+		]);
+	});
+
+	it('migrates a retired model even when a stale model list still advertises it', () => {
+		// GEMINI_MODELS can be populated from a persisted remoteModelCache that
+		// predates the retirement, so the retired id may still pass the validity
+		// check — it must migrate anyway, since Google 404s it server-side.
+		setTestModels([
+			{ value: 'gemini-chat-default', label: 'Chat Default', defaultForRoles: ['chat'] },
+			{ value: 'gemini-summary-default', label: 'Summary Default', defaultForRoles: ['summary'] },
+			{ value: 'gemini-completions-default', label: 'Completions Default', defaultForRoles: ['completions'] },
+			{ value: 'gemini-image-default', label: 'Image Default', defaultForRoles: ['image'] },
+			{ value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' }, // stale cache entry
+			{ value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
+		]);
+		const currentSettings = {
+			chatModelName: 'gemini-3-pro-preview',
+			summaryModelName: 'gemini-summary-default',
+			completionsModelName: 'gemini-completions-default',
+			imageModelName: 'gemini-image-default',
+		};
+		const result = getUpdatedModelSettings(currentSettings);
+		expect(result.settingsChanged).toBe(true);
+		expect(result.updatedSettings.chatModelName).toBe('gemini-3.1-pro-preview');
+		expect(result.changedSettingsInfo).toEqual([
+			"Chat model: 'gemini-3-pro-preview' -> 'gemini-3.1-pro-preview' (retired model migrated to successor)",
+		]);
+	});
+
+	it('falls back to the role default when a retired model’s successor is not in the list', () => {
+		// Default test models from beforeEach do NOT include gemini-3.1-pro-preview.
+		const currentSettings = {
+			chatModelName: 'gemini-3-pro-preview',
+			summaryModelName: 'gemini-summary-default',
+			completionsModelName: 'gemini-completions-default',
+			imageModelName: 'gemini-image-default',
+		};
+		const result = getUpdatedModelSettings(currentSettings);
+		expect(result.settingsChanged).toBe(true);
+		expect(result.updatedSettings.chatModelName).toBe('gemini-chat-default');
+		expect(result.changedSettingsInfo).toEqual([
+			"Chat model: 'gemini-3-pro-preview' -> 'gemini-chat-default' (legacy model update)",
+		]);
+	});
+
 	it('tolerates an empty Ollama model while the daemon list has not loaded yet', () => {
 		// Only Gemini models are registered here — the Ollama list loads later via
 		// /api/tags. The Gemini fields stay valid and the empty ollamaModelName is
@@ -317,6 +385,18 @@ describe('getUpdatedModelSettings', () => {
 		expect(() => getUpdatedModelSettings(currentSettings)).toThrow(
 			'CRITICAL: GEMINI_MODELS array is empty. Please configure available models.'
 		);
+	});
+});
+
+describe('bundled model catalog', () => {
+	it('no longer ships retired models, and every retired model’s successor is bundled', () => {
+		const bundledIds = new Set(DEFAULT_GEMINI_MODELS.map((m) => m.value));
+		for (const [retired, successor] of Object.entries(RETIRED_MODEL_SUCCESSORS)) {
+			// Retired models must be out of the catalog (the API 404s on them)...
+			expect(bundledIds.has(retired)).toBe(false);
+			// ...and their successor must still be live, or the migration is a no-op.
+			expect(bundledIds.has(successor)).toBe(true);
+		}
 	});
 });
 
@@ -427,5 +507,79 @@ describe('migrateOllamaModelSetting', () => {
 		expect(migrated).toBe(true);
 		expect(settings.ollamaModelName).toBe('');
 		expect(settings.chatModelName).toBe('gemini-chat-default');
+	});
+});
+
+describe('isInteractionsOnlyModel', () => {
+	let originalModels: GeminiModel[];
+
+	beforeEach(() => {
+		originalModels = [...GEMINI_MODELS];
+	});
+
+	afterEach(() => {
+		setGeminiModels(originalModels);
+	});
+
+	it('flags the bundled gemini-omni-flash-preview as interactions-only', () => {
+		expect(isInteractionsOnlyModel('gemini-omni-flash-preview')).toBe(true);
+	});
+
+	it('returns false for regular bundled models', () => {
+		expect(isInteractionsOnlyModel('gemini-flash-latest')).toBe(false);
+		expect(isInteractionsOnlyModel('gemini-2.5-flash')).toBe(false);
+	});
+
+	it('returns false for unknown models and empty values', () => {
+		expect(isInteractionsOnlyModel('some-unknown-model')).toBe(false);
+		expect(isInteractionsOnlyModel('')).toBe(false);
+		expect(isInteractionsOnlyModel(undefined)).toBe(false);
+		expect(isInteractionsOnlyModel(null)).toBe(false);
+	});
+
+	it('reads the flag from the live model list (remote updates)', () => {
+		setGeminiModels([{ value: 'future-interactions-model', label: 'Future', interactionsOnly: true }]);
+		expect(isInteractionsOnlyModel('future-interactions-model')).toBe(true);
+	});
+
+	it('falls back to the bundled defaults when the live list lacks the entry (stale remote cache)', () => {
+		// Simulate a remote cache fetched before the flag existed: the live list
+		// carries the model without the flag... actually without the entry at all.
+		setGeminiModels([{ value: 'gemini-flash-latest', label: 'Gemini Flash Latest' }]);
+		expect(isInteractionsOnlyModel('gemini-omni-flash-preview')).toBe(true);
+	});
+
+	it('honors an explicit false in the live list over the bundled flag', () => {
+		setGeminiModels([{ value: 'gemini-omni-flash-preview', label: 'Omni', interactionsOnly: false }]);
+		expect(isInteractionsOnlyModel('gemini-omni-flash-preview')).toBe(false);
+	});
+});
+
+describe('resolveGenerateContentModel', () => {
+	let originalModels: GeminiModel[];
+
+	beforeEach(() => {
+		originalModels = [...GEMINI_MODELS];
+	});
+
+	afterEach(() => {
+		setGeminiModels(originalModels);
+	});
+
+	it('returns the preferred model when it can use generateContent', () => {
+		expect(resolveGenerateContentModel('gemini-2.5-flash')).toBe('gemini-2.5-flash');
+	});
+
+	it('substitutes the bundled chat default for an interactions-only model', () => {
+		expect(resolveGenerateContentModel('gemini-omni-flash-preview')).toBe('gemini-flash-latest');
+	});
+
+	it('substitutes the bundled default for empty values', () => {
+		expect(resolveGenerateContentModel('')).toBe('gemini-flash-latest');
+		expect(resolveGenerateContentModel(undefined)).toBe('gemini-flash-latest');
+	});
+
+	it('resolves against the requested role', () => {
+		expect(resolveGenerateContentModel('gemini-omni-flash-preview', 'completions')).toBe('gemini-flash-lite-latest');
 	});
 });

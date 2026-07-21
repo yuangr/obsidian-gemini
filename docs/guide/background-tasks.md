@@ -6,12 +6,16 @@ Long-running operations — deep research and image generation — run in the ba
 
 The status bar shows a single indicator for all background work. It reflects both active background tasks and the RAG indexing state in one place.
 
-| Appearance                     | Meaning                                          |
-| ------------------------------ | ------------------------------------------------ |
-| Hidden                         | No background work running, RAG idle or disabled |
-| Spinning loader icon + count   | One or more background tasks running             |
-| Upload-cloud icon + percentage | RAG indexing in progress                         |
-| Pause-circle icon              | RAG indexing paused                              |
+| Appearance                     | Meaning                                                                             |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| Hidden                         | No background work running, RAG disabled, and no pending catch-up runs              |
+| Spinning loader icon + count   | One or more background tasks running (takes visual priority over RAG)               |
+| Database icon + file count     | No tasks running; RAG enabled and idle                                              |
+| Upload-cloud icon + percentage | RAG indexing in progress                                                            |
+| Pause-circle icon              | RAG indexing paused                                                                 |
+| Clock icon                     | No tasks running, RAG disabled, but missed scheduled-task runs are pending approval |
+
+RAG `error` and `rate_limited` states don't change the icon (they fall back to the database icon) but surface a status message in the indicator's tooltip.
 
 Click the indicator at any time to open the **Background tasks** panel.
 
@@ -28,7 +32,7 @@ Completed tasks with output files show an **Open result** link that opens the fi
 
 Background tasks are created automatically when you trigger long-running operations:
 
-- **Deep Research** — starts a research task; result saved to `[state-folder]/Background-Tasks/YYYY-MM-DD <topic>.md` by default (you can specify a custom path via the `outputFile` parameter)
+- **Deep Research** — the agent is steered to run research in the background by default (via its system prompt), and when it does, the result is saved to `[state-folder]/Background-Tasks/YYYY-MM-DD <topic>.md` (you can specify a custom path via the `outputFile` parameter). This is a prompted default, not enforced by the tool itself — if the agent runs research in the foreground instead, no file is saved unless `outputFile` is set.
 - **Image Generation** — generates and saves an image; result path shown in the completion notice. The **Generate image** command palette entry also routes through the background system: it returns control immediately and inserts the wikilink at your captured cursor position when the task completes (or shows a Notice with the wikilink to copy if you've moved on from the source note).
 
 Both operations fire a completion notice with a clickable vault link when done. If a task fails, a notice explains the error.
@@ -54,4 +58,4 @@ Check the error shown in the Background tasks panel. Common causes:
 - Vault path conflict for image output
 
 **Status bar indicator not visible**
-The indicator is hidden when there is nothing to show (no tasks running, RAG disabled or idle). Trigger a background task or enable RAG indexing in Settings.
+The indicator is hidden only when there is nothing to show at all: no tasks running, RAG disabled, and no pending catch-up approvals. If RAG is enabled, the indicator stays visible (database icon) even when indexing is idle. Trigger a background task or enable RAG indexing in Settings.
