@@ -15,6 +15,7 @@ import {
 	GenerateContentResponseUsageMetadata,
 	FunctionDeclaration,
 	Schema,
+	Tool,
 } from '@google/genai';
 import type { ThinkingLevel } from '@google/genai';
 import {
@@ -609,7 +610,7 @@ export class GeminiClient implements ModelApi {
 								config: {
 									contents: contentsToCache,
 									systemInstruction: systemInstruction || '',
-									...(config.tools?.length && { tools: config.tools }),
+									...(config.tools?.length && { tools: config.tools as unknown as Tool[] }),
 									ttl: '300s', // 5 minutes
 								},
 							});
@@ -695,30 +696,34 @@ export class GeminiClient implements ModelApi {
 			for (const entry of extReq.conversationHistory) {
 				const content = this.normalizeHistoryEntry(entry);
 				if (content) {
-					// Map parts to use Files API if enabled
-					const parts = await Promise.all(
-						content.parts.map(async (part) => {
-							if (part.inlineData && part.inlineData.data && part.inlineData.mimeType) {
-								const uploaded = await this.uploadAttachmentIfEnabled({
-									base64: part.inlineData.data,
-									mimeType: part.inlineData.mimeType,
-								});
-								if (uploaded) {
-									return {
-										fileData: {
-											fileUri: uploaded.fileUri,
-											mimeType: uploaded.mimeType,
-										},
-									};
+					if (content.parts?.length) {
+						// Map parts to use Files API if enabled
+						const parts = await Promise.all(
+							content.parts.map(async (part) => {
+								if (part.inlineData && part.inlineData.data && part.inlineData.mimeType) {
+									const uploaded = await this.uploadAttachmentIfEnabled({
+										base64: part.inlineData.data,
+										mimeType: part.inlineData.mimeType,
+									});
+									if (uploaded) {
+										return {
+											fileData: {
+												fileUri: uploaded.fileUri,
+												mimeType: uploaded.mimeType,
+											},
+										};
+									}
 								}
-							}
-							return part;
-						})
-					);
-					contents.push({
-						role: content.role,
-						parts,
-					});
+								return part;
+							})
+						);
+						contents.push({
+							role: content.role,
+							parts,
+						});
+					} else {
+						contents.push(content);
+					}
 				}
 			}
 		}
