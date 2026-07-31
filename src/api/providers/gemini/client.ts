@@ -44,7 +44,6 @@ import {
 	InteractionStreamAccumulator,
 	type InteractionStep,
 } from './interactions-mapper';
-import { installObsidianFetch } from './obsidian-fetch';
 import { renderGroundingSources } from './grounding-render';
 
 /**
@@ -165,23 +164,10 @@ export class GeminiClient implements ModelApi {
 	}
 
 	/**
-	 * Route the Interactions (Next-Gen) client through Obsidian's requestUrl so its
-	 * requests bypass renderer CORS — the SDK otherwise uses the global fetch,
-	 * whose preflight to the Interactions endpoint fails in Obsidian (see #1023).
-	 */
-	private ensureInteractionsFetch(): void {
-		if (!installObsidianFetch(this.ai)) {
-			this.plugin?.logger.warn(
-				'[GeminiClient] Could not route Interactions client through Obsidian requestUrl; requests may fail due to CORS.'
-			);
-		}
-	}
-
-	/**
 	 * Typed accessor for the SDK's experimental Interactions surface. `interactions`
 	 * is marked experimental and omitted from `GoogleGenAI`'s public types, so we
-	 * narrow the `create` boundary here in one place instead of scattering `as any`
-	 * (mirrors the structural casts in obsidian-fetch.ts). The return type advertises
+	 * narrow the `create` boundary here in one place instead of scattering `as any`.
+	 * The return type advertises
 	 * both the non-streaming interaction record and the streaming async-iterable
 	 * shape; which the SDK actually returns depends on `params.stream`.
 	 */
@@ -208,7 +194,6 @@ export class GeminiClient implements ModelApi {
 	 */
 	private async generateViaInteractions(request: BaseModelRequest | ExtendedModelRequest): Promise<ModelResponse> {
 		const params = await this.buildInteractionParams(request);
-		this.ensureInteractionsFetch();
 
 		try {
 			const interaction = await this.interactionsClient.create(params);
@@ -249,7 +234,6 @@ export class GeminiClient implements ModelApi {
 		const complete = (async (): Promise<ModelResponse> => {
 			const params = await this.buildInteractionParams(request);
 			params.stream = true;
-			this.ensureInteractionsFetch();
 
 			try {
 				const stream = await this.interactionsClient.create(params);
@@ -365,11 +349,7 @@ export class GeminiClient implements ModelApi {
 			if (content) steps.push(...contentToSteps(content));
 		}
 
-		// `imageAttachments` is the deprecated alias for `inlineAttachments`; still read here so
-		// callers passing the legacy field keep working (backward-compat merge). Remove once no
-		// caller populates it. See ExtendedModelRequest.imageAttachments (#1040).
-		// eslint-disable-next-line @typescript-eslint/no-deprecated -- deprecated imageAttachments alias merged for backward-compat (#1040)
-		const attachments = [...(request.inlineAttachments || []), ...(request.imageAttachments || [])];
+		const attachments = request.inlineAttachments ?? [];
 		const userStep = buildUserInputStep(request.userMessage, request.perTurnContext, attachments);
 		if (userStep) steps.push(userStep);
 
@@ -757,10 +737,7 @@ export class GeminiClient implements ModelApi {
 		}
 
 		// Add inline data attachments (images, audio, video, PDF)
-		// `imageAttachments` is the deprecated alias for `inlineAttachments`; still merged here for
-		// backward-compat with callers passing the legacy field (#1040).
-		// eslint-disable-next-line @typescript-eslint/no-deprecated -- deprecated imageAttachments alias merged for backward-compat (#1040)
-		const allAttachments = [...(extReq.inlineAttachments || []), ...(extReq.imageAttachments || [])];
+		const allAttachments = extReq.inlineAttachments ?? [];
 		for (const attachment of allAttachments) {
 			const uploaded = await this.uploadAttachmentIfEnabled(attachment);
 			if (uploaded) {
@@ -1106,8 +1083,6 @@ export class GeminiClient implements ModelApi {
 	 * the SDK provides it).
 	 */
 	private async generateImageViaInteractions(prompt: string, model: string): Promise<string> {
-		this.ensureInteractionsFetch();
-
 		try {
 			const interaction = await this.interactionsClient.create({
 				model,

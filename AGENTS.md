@@ -7,7 +7,7 @@ Obsidian Gemini Scribe is an Obsidian plugin that integrates Google's Gemini AI 
 ## Project Structure & Module Organization
 
 - `src/` contains TypeScript plugin code; `src/main.ts` is the entry point with domain folders such as `agent/`, `api/`, `tools/`, `ui/`, and `services/`, plus shared utilities in `utils/`.
-- `docs/` hosts user and operator guides; `prompts/` ships default agent prompts; `test-scripts/` holds manual integration runners.
+- `docs/` hosts user and operator guides; `prompts/` ships default agent prompts; `evals/` holds the agent eval harness (task fixtures, runner, baselines).
 - Unit tests live in the `test/` directory mirroring `src/` structure as `*.test.ts`; generated artifacts (`main.js`, `manifest.json`, `styles.css`) stay in the repo root for Obsidian.
 
 ## Commands
@@ -35,7 +35,7 @@ npm run translate    # Regenerate AI translations in src/i18n/ (needs GOOGLE_API
 ### Testing
 
 - Run single test: `npm test -- path/to/test.ts`
-- Manual integration: `node test-scripts/test-sdk-tools.mjs` (and siblings) validate agent toolchains before shipping
+- Manual integration: `npm run eval` drives the eval harness against a real Obsidian instance to validate agent toolchains before shipping (see `evals/README.md` and the **eval-harness** skill)
 - **Typecheck test files before pushing test changes**: the CI lint job runs `npm run typecheck:test` (`tsc --project tsconfig.test.json`), which type-checks the `test/` tree and catches errors the production build misses — `npm run build` uses `tsc -skipLibCheck` and excludes tests. A green local `npm run build` does **not** guarantee CI passes; run `npm run typecheck:test` too. (Classic trap: an expression-bodied arrow like `(t) => arr.push(t)` returns `number`, not `void`, and only the test typecheck flags it.)
 
 ### Versioning & Releases
@@ -51,7 +51,7 @@ repo-specific release gates live in `.claude/guidelines/release.md`).
 src/main.ts → ModelClientFactory.createFromPlugin() → GeminiClient | OllamaClient → RetryDecorator → ModelApi
 ```
 
-The plugin uses a factory pattern (`ModelClientFactory` in `src/api/factory.ts`) to create model API clients, wrapped with a retry decorator (`RetryDecorator`) for resilience. The factory branches on `settings.provider` to instantiate either a `GeminiClient` or an `OllamaClient`. All API implementations follow the `ModelApi` interface. The factory supports different use cases (chat, summary, completions, rewrite) and provides retry logic with exponential backoff for handling transient API failures. Each provider lives in its own package under `src/api/providers/{gemini,ollama}/`.
+The plugin uses a factory pattern (`ModelClientFactory` in `src/api/factory.ts`) to create model API clients, wrapped with a retry decorator (`RetryDecorator`) for resilience. Since per-use-case provider selection (#704), the factory resolves each call's provider independently — via `resolveProviderOrDefault(settings, useCase)` in `src/api/provider-routing.ts`, which checks `settings.providerOverrides[useCase]` before falling back to the primary `settings.provider` — then instantiates the matching `GeminiClient` or `OllamaClient`. All API implementations follow the `ModelApi` interface. The factory supports different use cases (chat, summary, completions, rewrite) and provides retry logic with exponential backoff for handling transient API failures. Each provider lives in its own package under `src/api/providers/{gemini,ollama}/`; the capability matrix and routing helpers live in the leaf modules `src/api/providers/registry.ts` and `src/api/provider-routing.ts`.
 
 ### Key Components
 
@@ -232,7 +232,7 @@ if (this.plugin.settings.debugMode) {
 - Keep unit tests next to implementations and name them after the unit (`models.test.ts`, `main.test.ts`)
 - Assert observable behavior of prompts, services, and tool orchestration; add regression coverage for bugs
 - Extend shared fixtures under `__mocks__/` when mocking new APIs
-- Run `npm test` before each PR and execute relevant `test-scripts/*.mjs` after touching agent or tool code
+- Run `npm test` before each PR and run the relevant `evals/` eval harness tasks (see `npm run eval` and the **eval-harness** skill) after touching agent or tool code
 
 For manual testing procedures (desktop symlink setup, mobile testing, smoke test checklists), see [docs/contributing/testing.md](docs/contributing/testing.md). For runtime debugging and plugin inspection, use the **obsidian-cli** skill.
 

@@ -4,6 +4,7 @@ import {
 	CompactionResult,
 	TokenUsageInfo,
 } from '../../src/services/context-manager';
+import { ModelClientFactory, ModelUseCase } from '../../src/api';
 
 // Mock @google/genai
 const mockCountTokens = vi.fn();
@@ -211,6 +212,125 @@ describe('ContextManager', () => {
 		});
 	});
 
+	// A flat per-provider limit is wrong for Ollama by up to three orders of
+	// magnitude: local windows run 4k–1M. The old 32k constant showed a 262k model
+	// as 43% full at 13.9k tokens and compacted history at 2.4% of real capacity.
+	describe('getTokenUsage: Ollama context window resolution', () => {
+		const OLLAMA_MODEL = 'kimi-k2.7-code:cloud';
+
+		/** ContextManager wired to an Ollama daemon with the given probe results. */
+		function buildOllamaContext(opts: { runtime?: number | null; contextWindow?: number }) {
+			const getRuntimeContextLength = vi.fn().mockResolvedValue(opts.runtime ?? null);
+			const getModels = vi
+				.fn()
+				.mockResolvedValue([
+					{ value: OLLAMA_MODEL, label: OLLAMA_MODEL, provider: 'ollama', contextWindow: opts.contextWindow },
+				]);
+			const plugin = {
+				...mockPlugin,
+				settings: { ...mockPlugin.settings, provider: 'ollama' },
+				getModelManager: vi.fn().mockReturnValue({
+					getOllamaModelsService: () => ({ getRuntimeContextLength, getModels }),
+				}),
+			};
+			return { ctx: new ContextManager(plugin, mockLogger), getRuntimeContextLength, getModels };
+		}
+
+		async function withOllamaModelRegistered(run: () => Promise<void>) {
+			const { setGeminiModels, GEMINI_MODELS } = await import('../../src/models');
+			const original = [...GEMINI_MODELS];
+			setGeminiModels([{ value: OLLAMA_MODEL, label: OLLAMA_MODEL, provider: 'ollama' as const }]);
+			try {
+				await run();
+			} finally {
+				setGeminiModels(original);
+			}
+		}
+
+		test('prefers the runtime allocation reported by /api/ps', async () => {
+			await withOllamaModelRegistered(async () => {
+				const { ctx } = buildOllamaContext({ runtime: 262_144, contextWindow: 262_144 });
+				ctx.updateUsageMetadata({ promptTokenCount: 13_898, totalTokenCount: 14_000 });
+
+				const usage = await ctx.getTokenUsage(OLLAMA_MODEL);
+
+				expect(usage.inputTokenLimit).toBe(262_144);
+				// Was reported as 43.4% against the flat 32k limit.
+				expect(usage.percentUsed).toBe(5.3);
+			});
+		});
+
+		// #1252: the daemon defaults to a 4k window under 24 GiB of VRAM. Trusting
+		// the model's trained ceiling there would mean never compacting while
+		// Ollama silently truncated the prompt.
+		test('uses the small runtime allocation over the much larger trained ceiling', async () => {
+			await withOllamaModelRegistered(async () => {
+				const { ctx, getModels } = buildOllamaContext({ runtime: 4_096, contextWindow: 262_144 });
+				ctx.updateUsageMetadata({ promptTokenCount: 2_048, totalTokenCount: 2_100 });
+
+				const usage = await ctx.getTokenUsage(OLLAMA_MODEL);
+
+				expect(usage.inputTokenLimit).toBe(4_096);
+				expect(usage.percentUsed).toBe(50);
+				// The authoritative probe answered, so the ceiling is never consulted.
+				expect(getModels).not.toHaveBeenCalled();
+			});
+		});
+
+		test('falls back to the trained ceiling when the model is not yet loaded', async () => {
+			await withOllamaModelRegistered(async () => {
+				const { ctx } = buildOllamaContext({ runtime: null, contextWindow: 131_072 });
+				ctx.updateUsageMetadata({ promptTokenCount: 13_107, totalTokenCount: 14_000 });
+
+				const usage = await ctx.getTokenUsage(OLLAMA_MODEL);
+
+				expect(usage.inputTokenLimit).toBe(131_072);
+			});
+		});
+
+		test('falls back to the provider default when the daemon is unreachable', async () => {
+			await withOllamaModelRegistered(async () => {
+				const { ctx } = buildOllamaContext({ runtime: null, contextWindow: undefined });
+				ctx.updateUsageMetadata({ promptTokenCount: 8_000, totalTokenCount: 9_000 });
+
+				const usage = await ctx.getTokenUsage(OLLAMA_MODEL);
+
+				expect(usage.inputTokenLimit).toBe(32_000);
+			});
+		});
+
+		test('a probe failure degrades to the provider default rather than throwing', async () => {
+			await withOllamaModelRegistered(async () => {
+				const plugin = {
+					...mockPlugin,
+					settings: { ...mockPlugin.settings, provider: 'ollama' },
+					getModelManager: vi.fn().mockReturnValue({
+						getOllamaModelsService: () => ({
+							getRuntimeContextLength: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+							getModels: vi.fn(),
+						}),
+					}),
+				};
+				const ctx = new ContextManager(plugin, mockLogger);
+				ctx.updateUsageMetadata({ promptTokenCount: 8_000, totalTokenCount: 9_000 });
+
+				const usage = await ctx.getTokenUsage(OLLAMA_MODEL);
+
+				expect(usage.inputTokenLimit).toBe(32_000);
+			});
+		});
+
+		test('leaves Gemini models on the provider limit', async () => {
+			const { ctx, getRuntimeContextLength } = buildOllamaContext({ runtime: 4_096 });
+			ctx.updateUsageMetadata({ promptTokenCount: 100_000, totalTokenCount: 120_000 });
+
+			const usage = await ctx.getTokenUsage('gemini-2.5-flash');
+
+			expect(usage.inputTokenLimit).toBe(1_000_000);
+			expect(getRuntimeContextLength).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('countTokens', () => {
 		test('should call ai.models.countTokens with correct params', async () => {
 			mockCountTokens.mockResolvedValue({ totalTokens: 5000 });
@@ -281,7 +401,63 @@ describe('ContextManager', () => {
 			expect(result).toBeGreaterThan(0);
 			expect(Number.isInteger(result)).toBe(true);
 			expect(mockCountTokens).not.toHaveBeenCalled();
-			expect(mockLogger.log).toHaveBeenCalledWith(expect.stringContaining('countTokens (Ollama estimate)'));
+			expect(mockLogger.log).toHaveBeenCalledWith(expect.stringContaining('countTokens (estimate)'));
+		});
+
+		// #704: a session can span providers, so the counting strategy follows the
+		// *model*, not a global setting.
+		test('mixed routing: counts a Gemini model natively even when chat runs on Ollama', async () => {
+			const { setGeminiModels, GEMINI_MODELS } = await import('../../src/models');
+			const original = [...GEMINI_MODELS];
+			setGeminiModels([
+				{ value: 'gemini-2.5-flash', label: 'Flash' },
+				{ value: 'llama3.2', label: 'Llama', provider: 'ollama' as const },
+			]);
+
+			try {
+				const mixedPlugin = {
+					...mockPlugin,
+					settings: { ...mockPlugin.settings, provider: 'ollama', providerOverrides: { summary: 'gemini' } },
+				};
+				const ctx = new ContextManager(mixedPlugin, mockLogger);
+				const contents = [{ role: 'user', parts: [{ text: 'hello world' }] }];
+
+				// The Gemini-served model goes through the SDK...
+				await ctx.countTokens('gemini-2.5-flash', contents);
+				expect(mockCountTokens).toHaveBeenCalled();
+
+				// ...while the Ollama-served one is still estimated locally.
+				mockCountTokens.mockClear();
+				await ctx.countTokens('llama3.2', contents);
+				expect(mockCountTokens).not.toHaveBeenCalled();
+			} finally {
+				setGeminiModels(original);
+			}
+		});
+
+		// Ollama tags only reach the model list once the daemon answers. Treating an
+		// unrecognized model as Gemini would mean a doomed countTokens call and a
+		// 1M-token context limit on a model that may only hold 8k.
+		test('falls back to the chat provider for a model missing from the list', async () => {
+			const { setGeminiModels, GEMINI_MODELS } = await import('../../src/models');
+			const original = [...GEMINI_MODELS];
+			// Daemon was down: no Ollama entries were ever registered.
+			setGeminiModels([{ value: 'gemini-2.5-flash', label: 'Flash' }]);
+
+			try {
+				const ollamaPlugin = {
+					...mockPlugin,
+					apiKey: 'test-api-key',
+					settings: { ...mockPlugin.settings, provider: 'ollama' },
+				};
+				const ctx = new ContextManager(ollamaPlugin, mockLogger);
+
+				await ctx.countTokens('mistral-nemo', [{ role: 'user', parts: [{ text: 'hello world' }] }]);
+
+				expect(mockCountTokens).not.toHaveBeenCalled();
+			} finally {
+				setGeminiModels(original);
+			}
 		});
 
 		test('Ollama provider: calibrates the chars-per-token ratio from real usage metadata', async () => {
@@ -575,6 +751,72 @@ describe('ContextManager', () => {
 			expect(result.summaryText).toBeTruthy();
 			// Phase 2 ran (countTokens fired post-summarization to size the result).
 			expect(mockCountTokens).toHaveBeenCalled();
+		});
+
+		// Compaction must follow the *summary* routing, never the chat model's
+		// provider. The original code short-circuited to a direct
+		// `this.ai.models.generateContent` call whenever the chat model was a
+		// Gemini one — so with chat on Gemini and summary deliberately routed to a
+		// local provider, conversation content was still sent to Google (#1266
+		// review). Under that code the factory was never reached, so asserting it
+		// *is* reached with ModelUseCase.SUMMARY is a real regression guard.
+		test('routes compaction through the summary provider, not the chat model', async () => {
+			const factorySpy = vi.spyOn(ModelClientFactory, 'createFromPlugin').mockReturnValue({
+				generateModelResponse: vi.fn().mockResolvedValue({ markdown: 'local summary' }),
+			});
+
+			try {
+				const mixedPlugin = {
+					...mockPlugin,
+					settings: { ...mockPlugin.settings, provider: 'gemini', providerOverrides: { summary: 'ollama' } },
+				};
+				const ctx = new ContextManager(mixedPlugin, mockLogger);
+				ctx.updateUsageMetadata({ promptTokenCount: 250_000, totalTokenCount: 300_000 });
+				mockCountTokens.mockResolvedValue({ totalTokens: 50_000 });
+				mockGenerateContent.mockClear();
+
+				const history = Array.from({ length: 20 }, (_, i) => ({
+					role: i % 2 === 0 ? 'user' : 'model',
+					parts: [{ text: `Message ${i}` }],
+				}));
+
+				const result = await ctx.prepareHistory(history, 'gemini-2.5-flash');
+
+				expect(result.wasCompacted).toBe(true);
+				expect(result.summaryText).toBe('local summary');
+				expect(factorySpy).toHaveBeenCalledWith(mixedPlugin, ModelUseCase.SUMMARY);
+				// The Gemini SDK must not have been asked to summarize.
+				expect(mockGenerateContent).not.toHaveBeenCalled();
+			} finally {
+				factorySpy.mockRestore();
+			}
+		});
+
+		// The direct-SDK shortcut is gone for every configuration, not just the
+		// overridden one, so summaryModelName governs compaction as documented.
+		test('routes compaction through the factory on an all-Gemini setup too', async () => {
+			const factorySpy = vi.spyOn(ModelClientFactory, 'createFromPlugin').mockReturnValue({
+				generateModelResponse: vi.fn().mockResolvedValue({ markdown: 'cloud summary' }),
+			});
+
+			try {
+				contextManager.updateUsageMetadata({ promptTokenCount: 250_000, totalTokenCount: 300_000 });
+				mockCountTokens.mockResolvedValue({ totalTokens: 50_000 });
+				mockGenerateContent.mockClear();
+
+				const history = Array.from({ length: 20 }, (_, i) => ({
+					role: i % 2 === 0 ? 'user' : 'model',
+					parts: [{ text: `Message ${i}` }],
+				}));
+
+				const result = await contextManager.prepareHistory(history, 'gemini-2.5-flash');
+
+				expect(result.summaryText).toBe('cloud summary');
+				expect(factorySpy).toHaveBeenCalledWith(mockPlugin, ModelUseCase.SUMMARY);
+				expect(mockGenerateContent).not.toHaveBeenCalled();
+			} finally {
+				factorySpy.mockRestore();
+			}
 		});
 
 		test('handles empty Gemini summary result with fallback message', async () => {

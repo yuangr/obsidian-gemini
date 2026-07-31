@@ -5,13 +5,16 @@ import { FeatureToolPolicy, parseToolPolicyFrontmatter } from '../types/tool-pol
 import { migrateLegacyToolCategoryArray } from './feature-policy-yaml';
 
 /**
- * Shared scaffolding for the markdown-defined feature managers — HookManager
- * and ScheduledTaskManager. Both discover `<slug>.md` definition files under a
- * folder in the plugin state directory, parse YAML frontmatter into a typed
- * definition, and persist volatile per-entry runtime state to a JSON sidecar.
- * The helpers below are the parts of that pattern that are identical between
- * the two managers; the feature-specific frontmatter-field mapping stays in
- * each manager's own `parseHookFile` / `parseTaskFile`.
+ * Shared field-level scaffolding for the markdown-defined feature managers —
+ * HookManager and ScheduledTaskManager. Both discover `<slug>.md` definition
+ * files under a folder in the plugin state directory, parse YAML frontmatter
+ * into a typed definition, and persist volatile per-entry runtime state to a
+ * JSON sidecar. The helpers below are the field-mapping parts of that pattern
+ * that are identical between the two managers; the outer manager skeleton
+ * (folder getters, discover-and-purge loop, sidecar load/save, delete) lives in
+ * the `FileBackedFeatureManager` base (`./file-backed-feature-manager.ts`),
+ * which consumes these helpers. The feature-specific frontmatter-field mapping
+ * stays in each manager's own `parseDefinitionFile`.
  */
 
 /**
@@ -95,11 +98,20 @@ export function parseMaxIterations(raw: unknown): number | undefined {
 
 /**
  * Resolve the tool policy for a feature definition from its frontmatter:
- * prefer the canonical `toolPolicy:` block, falling back to the legacy
- * `enabledTools:` category array. `undefined` means "inherit the global policy".
+ * prefer the canonical policy block, falling back to the legacy category
+ * array. `undefined` means "inherit the global policy".
+ *
+ * The frontmatter key names are parameterized so callers with a different
+ * on-disk dialect can reach this one implementation instead of forking the
+ * whole resolver: hooks and scheduled tasks use the camelCase defaults
+ * (`toolPolicy` / `enabledTools`), while agent sessions pass their snake_case
+ * keys (`tool_policy` / `enabled_tools`).
  */
-export function resolveFeatureToolPolicy(frontmatter: Record<string, unknown>): FeatureToolPolicy | undefined {
-	return parseToolPolicyFrontmatter(frontmatter.toolPolicy) ?? migrateLegacyToolCategoryArray(frontmatter.enabledTools);
+export function resolveFeatureToolPolicy(
+	frontmatter: Record<string, unknown>,
+	{ policyKey = 'toolPolicy', legacyKey = 'enabledTools' }: { policyKey?: string; legacyKey?: string } = {}
+): FeatureToolPolicy | undefined {
+	return parseToolPolicyFrontmatter(frontmatter[policyKey]) ?? migrateLegacyToolCategoryArray(frontmatter[legacyKey]);
 }
 
 /**
