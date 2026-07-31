@@ -113,6 +113,8 @@ const DEFAULT_SETTINGS: ObsidianGeminiSettings = {
 	// Context Caching & Files API
 	contextCachingEnabled: true,
 	filesApiEnabled: true,
+	// Image Fetching
+	fetchExternalImages: true,
 	// All settings sections start collapsed
 	expandedSettingsSections: [],
 };

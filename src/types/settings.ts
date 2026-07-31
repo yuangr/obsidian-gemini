@@ -85,6 +85,8 @@ export interface ObsidianGeminiSettings {
 	// Context Caching & Files API
 	contextCachingEnabled: boolean;
 	filesApiEnabled: boolean;
+	// Image Fetching
+	fetchExternalImages: boolean;
 	// IDs of collapsible settings sections currently expanded; persists across reloads.
 	expandedSettingsSections: string[];
 	// Cached remote model list (managed by ModelListProvider)

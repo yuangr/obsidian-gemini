@@ -13,6 +13,7 @@ import {
 } from '../../utils/file-classification';
 import { rasterizeSvg } from '../../utils/svg-rasterizer';
 import { resolvePathToFileOrFolder, toFileEntry } from './utils';
+import { extractAndFetchExternalImages, FetchedInlineData } from '../../utils/image-fetcher';
 
 /**
  * Read file content or list folder contents
@@ -173,7 +174,7 @@ export class ReadFileTool implements Tool {
 			// Use empty source path to get the shortest/canonical form
 			const canonicalWikilink = scribeFile.getLinkText(file, '');
 
-			return {
+			const result: ToolResult = {
 				success: true,
 				data: {
 					path: file.path, // Return the actual path that was found
@@ -186,6 +187,18 @@ export class ReadFileTool implements Tool {
 					backlinks: backlinks.sort(), // Sort for consistent output
 				},
 			};
+
+			if (plugin.settings.fetchExternalImages) {
+				const externalImages = await extractAndFetchExternalImages(content, plugin.logger);
+				if (externalImages.length > 0) {
+					result.inlineData = externalImages.map((img: FetchedInlineData) => ({
+						base64: img.base64,
+						mimeType: img.mimeType,
+					}));
+				}
+			}
+
+			return result;
 		} catch (error) {
 			return {
 				success: false,

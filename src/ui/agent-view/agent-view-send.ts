@@ -12,6 +12,7 @@ import { formatLocalTimestamp } from '../../utils/format-utils';
 import { buildTurnPreamble } from '../../utils/turn-preamble';
 import { InlineAttachment } from './inline-attachment';
 import { buildCompactionEntry } from './compaction-notice';
+import { extractAndFetchExternalImages } from '../../utils/image-fetcher';
 import planModeInstructionContent from '../../../prompts/planModeInstruction.hbs';
 import { AgentViewProgress } from './agent-view-progress';
 import { AgentViewMessages } from './agent-view-messages';
@@ -501,6 +502,18 @@ To reference an attachment in your response, use the path shown above.`;
 					sessionStartedAt: perTurn.sessionStartedAt,
 					inlineAttachments: attachments.map((a: InlineAttachment) => ({ base64: a.base64, mimeType: a.mimeType })),
 				};
+
+				// Fetch external images from text if setting is enabled
+				if (this.ctx.plugin.settings.fetchExternalImages) {
+					const allContextText = request.userMessage + '\n' + request.perTurnContext;
+					const externalImages = await extractAndFetchExternalImages(allContextText, this.ctx.plugin.logger);
+					if (externalImages.length > 0) {
+						if (!request.inlineAttachments) request.inlineAttachments = [];
+						for (const img of externalImages) {
+							request.inlineAttachments.push({ base64: img.base64, mimeType: img.mimeType });
+						}
+					}
+				}
 
 				// Create model API for this session
 				const modelApi = AgentFactory.createAgentModel(this.ctx.plugin, currentSession);

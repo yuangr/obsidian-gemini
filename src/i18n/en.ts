@@ -480,6 +480,15 @@ export const en = {
 			"Upload large binary attachments (images, video, audio, PDFs) to Gemini's secure file hosting instead of sending them inline with every message. Reduces request size and speeds up subsequent turns.",
 		context: 'Settings toggle description for the Gemini Files API.',
 	},
+	'settings.agentConfig.fetchExternalImagesName': {
+		message: 'Auto-fetch external images in context',
+		context: 'Settings toggle name for fetching external image URLs.',
+	},
+	'settings.agentConfig.fetchExternalImagesDesc': {
+		message:
+			'Automatically download and pass markdown image URLs (http/https) to the model when reading documents so the AI can analyze their content.',
+		context: 'Settings toggle description for fetching external image URLs.',
+	},
 	'settings.agentConfig.logToFileName': {
 		message: 'Log to file',
 		context: 'Settings toggle name for writing log entries to a file.',

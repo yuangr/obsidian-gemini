@@ -97,6 +97,16 @@ export async function renderAgentConfigSettings(
 			);
 
 		new Setting(sectionEl)
+			.setName(t('settings.agentConfig.fetchExternalImagesName'))
+			.setDesc(t('settings.agentConfig.fetchExternalImagesDesc'))
+			.addToggle((toggle) =>
+				toggle.setValue(plugin.settings.fetchExternalImages ?? true).onChange(async (value) => {
+					plugin.settings.fetchExternalImages = value;
+					await plugin.saveSettings();
+				})
+			);
+
+		new Setting(sectionEl)
 			.setName(t('settings.agentConfig.customEndpointName'))
 			.setDesc(t('settings.agentConfig.customEndpointDesc'))
 			.addText((text) => {
