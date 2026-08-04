@@ -714,6 +714,7 @@ export class AgentLoop {
 			const parallelPromises = parallelCalls.map(async (toolCall) => {
 				if (isCancelled()) {
 					return {
+						toolId: toolCall.id,
 						toolName: toolCall.name,
 						toolArguments: toolCall.arguments || {},
 						result: { success: false, error: 'Cancelled' },
@@ -759,6 +760,7 @@ export class AgentLoop {
 					await this.safeHook('onToolCounted', plugin, () => hooks?.onToolCounted?.());
 
 					return {
+						toolId: toolCall.id,
 						toolName: toolCall.name,
 						toolArguments: toolCall.arguments,
 						result,
@@ -767,6 +769,7 @@ export class AgentLoop {
 					plugin.logger.error(`[AgentLoop] Parallel tool execution error for ${toolCall.name}:`, error);
 					await this.safeHook('onToolCounted', plugin, () => hooks?.onToolCounted?.());
 					return {
+						toolId: toolCall.id,
 						toolName: toolCall.name,
 						toolArguments: toolCall.arguments || {},
 						result: {
@@ -823,6 +826,7 @@ export class AgentLoop {
 				await this.safeHook('onToolCounted', plugin, () => hooks?.onToolCounted?.());
 
 				results.push({
+					toolId: toolCall.id,
 					toolName: toolCall.name,
 					toolArguments: toolCall.arguments,
 					result,
@@ -831,6 +835,7 @@ export class AgentLoop {
 				plugin.logger.error(`[AgentLoop] Tool execution error for ${toolCall.name}:`, error);
 				await this.safeHook('onToolCounted', plugin, () => hooks?.onToolCounted?.());
 				results.push({
+					toolId: toolCall.id,
 					toolName: toolCall.name,
 					toolArguments: toolCall.arguments || {},
 					result: {

@@ -16,6 +16,7 @@ import type { ToolResult } from '../tools/types';
  * record instead of having to zip two arrays.
  */
 export interface ToolCallResultPair {
+	toolId?: string;
 	toolName: string;
 	toolArguments: Record<string, unknown>;
 	result: ToolResult;
@@ -125,6 +126,7 @@ export function buildFunctionResponseParts(toolResults: ToolCallResultPair[]): P
 			{
 				functionResponse: {
 					name: tr.toolName,
+					...(tr.toolId && { id: tr.toolId }),
 					response: resultWithoutInlineData,
 				},
 			},
