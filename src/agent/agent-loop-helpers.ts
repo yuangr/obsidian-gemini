@@ -23,7 +23,6 @@ import type { ToolResult } from '../tools/types';
  * result to its call by `call_id`, and OpenAI by `tool_call_id` (#1398).
  */
 export interface ToolCallResultPair {
-	toolId?: string;
 	toolName: string;
 	toolArguments: Record<string, unknown>;
 	result: ToolResult;
@@ -153,7 +152,6 @@ export function buildFunctionResponseParts(toolResults: ToolCallResultPair[]): P
 			{
 				functionResponse: {
 					name: tr.toolName,
-					...(tr.toolId && { id: tr.toolId }),
 					response: resultWithoutInlineData,
 					// Reference the id the functionCall part emitted, so
 					// Interactions `call_id` and OpenAI `tool_call_id` pair the

@@ -3,7 +3,7 @@ import { getActiveChatModel } from '../models';
 import type { ObsidianGemini } from '../types/plugin';
 import type { ChatSession, PerTurnContext } from '../types/agent';
 import type { AgentEventMap, AgentEventName } from '../types/agent-events';
-import { ToolClassification, type FeatureToolPolicy } from '../types/tool-policy';
+import type { FeatureToolPolicy } from '../types/tool-policy';
 import type { ToolCall, ModelResponse, ModelApi, StreamChunk } from '../api/interfaces/model-api';
 import type { CustomPrompt } from '../prompts/types';
 import type { IConfirmationProvider, IToolHostView, ToolExecutionContext, ToolResult } from '../tools/types';
@@ -885,127 +885,9 @@ export class AgentLoop {
 		const { plugin, session, isCancelled, hooks, confirmationProvider } = options;
 		const results: ToolCallResultPair[] = [];
 
-		if (isCancelled()) {
-			plugin.logger.debug('[AgentLoop] Cancellation detected before tool batch execution');
-			return results;
-		}
-
-		// Split tool calls into parallelizable and serial (confirmation-requiring or write/destructive)
-		const parallelCalls: IndexedToolCall[] = [];
-		const serialCalls: IndexedToolCall[] = [];
-
-		for (const indexedCall of sortedToolCalls) {
-			const tool = plugin.toolRegistry.getTool(indexedCall.name);
-			if (!tool) {
-				// Let the execution engine handle the missing tool error serially
-				serialCalls.push(indexedCall);
-				continue;
-			}
-
-			const needsConfirmation =
-				(typeof plugin.toolRegistry?.requiresConfirmation === 'function'
-					? plugin.toolRegistry.requiresConfirmation(indexedCall.name, toolContext.featureToolPolicy)
-					: false) && !confirmationProvider.isToolAllowedWithoutConfirmation(indexedCall.name);
-
-			const isReadOrExternal =
-				tool.classification === ToolClassification.READ || tool.classification === ToolClassification.EXTERNAL;
-
-			if (isReadOrExternal && !needsConfirmation) {
-				parallelCalls.push(indexedCall);
-			} else {
-				serialCalls.push(indexedCall);
-			}
-		}
-
-		// Execute parallel calls concurrently
-		if (parallelCalls.length > 0) {
-			plugin.logger.log(
-				`[AgentLoop] Executing ${parallelCalls.length} tools in parallel: ${parallelCalls.map((c) => c.name).join(', ')}`
-			);
-			const parallelPromises = parallelCalls.map(async ({ call: toolCall, sourceIndex }) => {
-				if (isCancelled()) {
-					return {
-						toolId: toolCall.id,
-						toolName: toolCall.name,
-						toolArguments: toolCall.arguments || {},
-						result: { success: false, error: 'Cancelled' },
-						sourceIndex,
-						...(toolCall.id && { id: toolCall.id }),
-					};
-				}
-
-				const executionId = `${toolCall.name}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-				const tool = plugin.toolRegistry.getTool(toolCall.name);
-				const displayName = tool?.displayName || toolCall.name;
-				const description = tool?.getProgressDescription
-					? tool.getProgressDescription(toolCall.arguments)
-					: generateToolDescription(plugin, toolCall.name, toolCall.arguments, displayName);
-
-				await this.safeHook('onToolCallStart', plugin, () =>
-					hooks?.onToolCallStart?.(toolCall, executionId, description)
-				);
-
-				const startedAt = Date.now();
-				try {
-					const result = await plugin.toolExecutionEngine.executeTool(toolCall, toolContext, confirmationProvider);
-					const durationMs = Date.now() - startedAt;
-
-					if (!result.success) {
-						plugin.logger.warn(
-							`[AgentLoop] Parallel tool ${toolCall.name} failed:`,
-							result.error,
-							'args:',
-							toolCall.arguments
-						);
-					}
-
-					await this.safeHook('onToolCallComplete', plugin, () =>
-						hooks?.onToolCallComplete?.(toolCall, result, executionId)
-					);
-
-					await this.safeEmit(plugin, 'toolExecutionComplete', {
-						session,
-						toolName: toolCall.name,
-						args: toolCall.arguments || {},
-						result,
-						durationMs,
-					});
-
-					await this.safeHook('onToolCounted', plugin, () => hooks?.onToolCounted?.());
-
-					return {
-						toolId: toolCall.id,
-						toolName: toolCall.name,
-						toolArguments: toolCall.arguments,
-						result,
-						sourceIndex,
-						...(toolCall.id && { id: toolCall.id }),
-					};
-				} catch (error) {
-					plugin.logger.error(`[AgentLoop] Parallel tool execution error for ${toolCall.name}:`, error);
-					await this.safeHook('onToolCounted', plugin, () => hooks?.onToolCounted?.());
-					return {
-						toolId: toolCall.id,
-						toolName: toolCall.name,
-						toolArguments: toolCall.arguments || {},
-						result: {
-							success: false,
-							error: error instanceof Error ? error.message : 'Unknown error',
-						},
-						sourceIndex,
-						...(toolCall.id && { id: toolCall.id }),
-					};
-				}
-			});
-
-			const parallelResults = await Promise.all(parallelPromises);
-			results.push(...parallelResults);
-		}
-
-		// Execute serial calls sequentially
-		for (const { call: toolCall, sourceIndex } of serialCalls) {
+		for (const { call: toolCall, sourceIndex } of sortedToolCalls) {
 			if (isCancelled()) {
-				plugin.logger.debug('[AgentLoop] Cancellation detected, stopping serial tool execution');
+				plugin.logger.debug('[AgentLoop] Cancellation detected, stopping tool execution');
 				break;
 			}
 
@@ -1026,6 +908,8 @@ export class AgentLoop {
 				const result = await plugin.toolExecutionEngine.executeTool(toolCall, toolContext, confirmationProvider);
 				const durationMs = Date.now() - startedAt;
 
+				// Log failed tool results so root causes aren't silent — the engine's
+				// early-return paths return {success: false} without logging themselves.
 				if (!result.success) {
 					plugin.logger.warn(`[AgentLoop] Tool ${toolCall.name} failed:`, result.error, 'args:', toolCall.arguments);
 				}
@@ -1045,7 +929,6 @@ export class AgentLoop {
 				await this.safeHook('onToolCounted', plugin, () => hooks?.onToolCounted?.());
 
 				results.push({
-					toolId: toolCall.id,
 					toolName: toolCall.name,
 					toolArguments: toolCall.arguments,
 					result,
@@ -1073,7 +956,6 @@ export class AgentLoop {
 				plugin.logger.error(`[AgentLoop] Tool execution error for ${toolCall.name}:`, error);
 				await this.safeHook('onToolCounted', plugin, () => hooks?.onToolCounted?.());
 				results.push({
-					toolId: toolCall.id,
 					toolName: toolCall.name,
 					toolArguments: toolCall.arguments || {},
 					result: {
