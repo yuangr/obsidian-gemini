@@ -2,7 +2,8 @@ import { Tool, ToolResult, ToolExecutionContext, ToolParams, DiffContext, Confir
 import { ToolCategory } from '../../types/agent';
 import { ToolClassification } from '../../types/tool-policy';
 import { TFile, normalizePath } from 'obsidian';
-import { ensureFolderExists, shouldExcludePathForPlugin } from '../../utils/file-utils';
+import { truncateForPreview } from '../../utils/format-utils';
+import { ensureParentFolderExists, shouldExcludePathForPlugin } from '../../utils/file-utils';
 import { guardExcludedPath, safeReadFileForDiff } from './utils';
 import { t } from '../../i18n';
 import { getRawErrorMessageOr } from '../../utils/error-utils';
@@ -42,7 +43,7 @@ export class WriteFileTool implements Tool {
 		if (params.summary) {
 			return t('tool.confirm.writeFileSummary', { path: params.path, summary: params.summary });
 		}
-		const preview = `${params.content.substring(0, 200)}${params.content.length > 200 ? '...' : ''}`;
+		const preview = truncateForPreview(params.content);
 		return t('tool.confirm.writeFile', { path: params.path, preview });
 	};
 
@@ -105,18 +106,8 @@ export class WriteFileTool implements Tool {
 				// File exists, modify it
 				await plugin.app.vault.modify(file, params.content);
 			} else {
-				// File doesn't exist, create it
-				// First ensure parent directory exists
-				const lastSlashIndex = normalizedPath.lastIndexOf('/');
-				if (lastSlashIndex > 0) {
-					const parentDir = normalizedPath.substring(0, lastSlashIndex);
-					const parentExists = await plugin.app.vault.adapter.exists(parentDir);
-					if (!parentExists) {
-						// Create parent directory (this will create all intermediate directories)
-						plugin.logger.debug(`Creating parent directory: ${parentDir}`);
-						await ensureFolderExists(plugin.app.vault, parentDir, 'parent directory', plugin.logger);
-					}
-				}
+				// File doesn't exist, create it — first ensure parent directory exists
+				await ensureParentFolderExists(plugin.app.vault, normalizedPath, 'parent directory', plugin.logger);
 
 				await plugin.app.vault.create(normalizedPath, params.content);
 				// Get the newly created file

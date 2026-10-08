@@ -7,12 +7,11 @@ import {
 	PERMISSION_LABELS,
 	CLASSIFICATION_LABELS,
 	DEFAULT_TOOL_POLICY,
-	resolvePermission,
 	resolveEffectivePermission,
-	buildPermissionsForPreset,
 	parseToolPolicyFrontmatter,
 	serializeToolPolicy,
 	clonePolicy,
+	policiesEqual,
 	FeatureToolPolicy,
 	ToolPolicySettings,
 } from '../../src/types/tool-policy';
@@ -103,14 +102,20 @@ describe('tool-policy types', () => {
 		});
 	});
 
-	describe('resolvePermission', () => {
+	// The two-level path (global override, then global preset) reached through
+	// `resolveEffectivePermission` with no feature policy. These assertions were
+	// ported from the deleted `resolvePermission` (#1493), which resolved the same
+	// two levels; production only ever calls the four-level function.
+	describe('resolveEffectivePermission without a feature policy', () => {
 		it('should return preset default when no override exists', () => {
 			const settings: ToolPolicySettings = {
 				activePreset: PolicyPreset.CAUTIOUS,
 				toolPermissions: {},
 			};
-			expect(resolvePermission('read_file', ToolClassification.READ, settings)).toBe(ToolPermission.APPROVE);
-			expect(resolvePermission('write_file', ToolClassification.WRITE, settings)).toBe(ToolPermission.ASK_USER);
+			expect(resolveEffectivePermission('read_file', ToolClassification.READ, settings)).toBe(ToolPermission.APPROVE);
+			expect(resolveEffectivePermission('write_file', ToolClassification.WRITE, settings)).toBe(
+				ToolPermission.ASK_USER
+			);
 		});
 
 		it('should return per-tool override when it exists', () => {
@@ -121,9 +126,11 @@ describe('tool-policy types', () => {
 				},
 			};
 			// Override takes precedence
-			expect(resolvePermission('write_file', ToolClassification.WRITE, settings)).toBe(ToolPermission.APPROVE);
+			expect(resolveEffectivePermission('write_file', ToolClassification.WRITE, settings)).toBe(ToolPermission.APPROVE);
 			// Non-overridden tool still uses preset
-			expect(resolvePermission('delete_file', ToolClassification.DESTRUCTIVE, settings)).toBe(ToolPermission.ASK_USER);
+			expect(resolveEffectivePermission('delete_file', ToolClassification.DESTRUCTIVE, settings)).toBe(
+				ToolPermission.ASK_USER
+			);
 		});
 
 		it('should use DENY override even if preset would approve', () => {
@@ -133,7 +140,9 @@ describe('tool-policy types', () => {
 					delete_file: ToolPermission.DENY,
 				},
 			};
-			expect(resolvePermission('delete_file', ToolClassification.DESTRUCTIVE, settings)).toBe(ToolPermission.DENY);
+			expect(resolveEffectivePermission('delete_file', ToolClassification.DESTRUCTIVE, settings)).toBe(
+				ToolPermission.DENY
+			);
 		});
 
 		it('should respect different presets', () => {
@@ -141,52 +150,13 @@ describe('tool-policy types', () => {
 				activePreset: PolicyPreset.READ_ONLY,
 				toolPermissions: {},
 			};
-			expect(resolvePermission('write_file', ToolClassification.WRITE, readOnly)).toBe(ToolPermission.DENY);
+			expect(resolveEffectivePermission('write_file', ToolClassification.WRITE, readOnly)).toBe(ToolPermission.DENY);
 
 			const editMode: ToolPolicySettings = {
 				activePreset: PolicyPreset.EDIT_MODE,
 				toolPermissions: {},
 			};
-			expect(resolvePermission('write_file', ToolClassification.WRITE, editMode)).toBe(ToolPermission.APPROVE);
-		});
-	});
-
-	describe('buildPermissionsForPreset', () => {
-		const tools = [
-			{ name: 'read_file', classification: ToolClassification.READ },
-			{ name: 'write_file', classification: ToolClassification.WRITE },
-			{ name: 'delete_file', classification: ToolClassification.DESTRUCTIVE },
-			{ name: 'google_search', classification: ToolClassification.EXTERNAL },
-		];
-
-		it('should map all tools to their preset permissions', () => {
-			const result = buildPermissionsForPreset(PolicyPreset.CAUTIOUS, tools);
-			expect(result).toEqual({
-				read_file: ToolPermission.APPROVE,
-				write_file: ToolPermission.ASK_USER,
-				delete_file: ToolPermission.ASK_USER,
-				google_search: ToolPermission.ASK_USER,
-			});
-		});
-
-		it('should produce all APPROVE for YOLO preset', () => {
-			const result = buildPermissionsForPreset(PolicyPreset.YOLO, tools);
-			for (const perm of Object.values(result)) {
-				expect(perm).toBe(ToolPermission.APPROVE);
-			}
-		});
-
-		it('should produce DENY for write/destructive/external in READ_ONLY', () => {
-			const result = buildPermissionsForPreset(PolicyPreset.READ_ONLY, tools);
-			expect(result.read_file).toBe(ToolPermission.APPROVE);
-			expect(result.write_file).toBe(ToolPermission.DENY);
-			expect(result.delete_file).toBe(ToolPermission.DENY);
-			expect(result.google_search).toBe(ToolPermission.DENY);
-		});
-
-		it('should return empty object for empty tool list', () => {
-			const result = buildPermissionsForPreset(PolicyPreset.CAUTIOUS, []);
-			expect(result).toEqual({});
+			expect(resolveEffectivePermission('write_file', ToolClassification.WRITE, editMode)).toBe(ToolPermission.APPROVE);
 		});
 	});
 
@@ -312,6 +282,44 @@ describe('tool-policy types', () => {
 
 		it('returns undefined for undefined input', () => {
 			expect(clonePolicy(undefined)).toBeUndefined();
+		});
+	});
+
+	describe('policiesEqual', () => {
+		it('treats undefined as equal only to undefined', () => {
+			expect(policiesEqual(undefined, undefined)).toBe(true);
+			expect(policiesEqual(undefined, {})).toBe(false);
+			expect(policiesEqual({}, undefined)).toBe(false);
+		});
+
+		it('compares presets', () => {
+			expect(policiesEqual({ preset: PolicyPreset.YOLO }, { preset: PolicyPreset.YOLO })).toBe(true);
+			expect(policiesEqual({ preset: PolicyPreset.YOLO }, { preset: PolicyPreset.CAUTIOUS })).toBe(false);
+			expect(policiesEqual({ preset: PolicyPreset.YOLO }, {})).toBe(false);
+		});
+
+		it('treats absent and empty overrides as equal', () => {
+			expect(policiesEqual({}, { overrides: {} })).toBe(true);
+			expect(policiesEqual({ overrides: {} }, {})).toBe(true);
+		});
+
+		it('compares overrides key-by-key, order-insensitive', () => {
+			const a: FeatureToolPolicy = {
+				overrides: { read_file: ToolPermission.APPROVE, delete_file: ToolPermission.DENY },
+			};
+			const b: FeatureToolPolicy = {
+				overrides: { delete_file: ToolPermission.DENY, read_file: ToolPermission.APPROVE },
+			};
+			expect(policiesEqual(a, b)).toBe(true);
+		});
+
+		it('detects added, removed, and changed override entries', () => {
+			const base: FeatureToolPolicy = { overrides: { read_file: ToolPermission.APPROVE } };
+			expect(policiesEqual(base, { overrides: { read_file: ToolPermission.DENY } })).toBe(false);
+			expect(policiesEqual(base, { overrides: {} })).toBe(false);
+			expect(
+				policiesEqual(base, { overrides: { read_file: ToolPermission.APPROVE, web_fetch: ToolPermission.DENY } })
+			).toBe(false);
 		});
 	});
 });

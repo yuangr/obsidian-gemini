@@ -8,19 +8,10 @@ export interface GeminiClientConfig {
 	model?: string;
 	/**
 	 * The use case this client was created for. Drives per-use-case request
-	 * tuning (e.g. `thinkingLevel`). Optional — `createCustom` callers leave it
-	 * unset and fall back to the CHAT defaults.
+	 * tuning (e.g. `thinkingLevel`). Optional — direct construction without
+	 * the factory (e.g. `ImageGeneration`) leaves it unset and falls back to
+	 * the CHAT defaults.
 	 */
 	useCase?: ModelUseCase;
-	temperature?: number;
-	topP?: number;
 	maxOutputTokens?: number;
-	streamingEnabled?: boolean;
-	sessionId?: string;
-	/**
-	 * Route requests through the GA Interactions API (`interactions.create`)
-	 * instead of the legacy `generateContent`. Stateless (`store: false`) — the
-	 * plugin still owns and replays conversation history. Opt-in; see epic #1013.
-	 */
-	useInteractionsApi?: boolean;
 }

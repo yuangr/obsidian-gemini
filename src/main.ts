@@ -8,9 +8,14 @@ import { ScribeFile } from './files';
 import { GeminiHistory } from './history/history';
 import { GeminiCompletions } from './completions';
 import { Notice } from 'obsidian';
-import { getDefaultModelForRole, migrateOllamaModelSetting } from './models';
-import { migrateInteractionsApiDefault } from './utils/settings-migrations';
-import { isProviderActive, routingKey, sanitizeProviderOverrides } from './api/provider-routing';
+import { migrateToFeatureRouting, normalizeStateFolderPath } from './utils/settings-migrations';
+import {
+	featureProvider,
+	isProviderActive,
+	routingKey,
+	sanitizeFeatureRoutes,
+	sanitizeProviderModelMemory,
+} from './api/feature-routing';
 import { getCapabilities } from './api/providers/registry';
 import { ModelManager } from './services/model-manager';
 import { PromptManager, GeminiPrompts } from './prompts';
@@ -46,6 +51,9 @@ import { ScheduledTaskManager } from './services/scheduled-task-manager';
 import { HookManager } from './services/hook-manager';
 import { asRecord, getRawErrorMessage } from './utils/error-utils';
 import { t } from './i18n';
+import { apiKeySecretNameFor } from './api/provider-credentials';
+import { DEFAULT_OPENAI_BASE_URL } from './api/providers/openai/config';
+
 // Settings interfaces live in a leaf module so the rest of the codebase can
 // reference them without importing this hub file (see #1155).
 import type { ObsidianGeminiSettings } from './types/settings';
@@ -56,41 +64,43 @@ export type { ObsidianGeminiSettings, RagIndexingSettings } from './types/settin
 import type { ObsidianGemini as ObsidianGeminiApi } from './types/plugin';
 
 const DEFAULT_SETTINGS: ObsidianGeminiSettings = {
-	provider: 'gemini',
-	providerOverrides: {},
+	// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+	defaultProvider: 'gemini',
+	// Every feature defaults to Gemini with '' ("use the provider's default
+	// model for this feature's role"), resolved at request time against the
+	// *live* model list rather than frozen here at module-load time.
+	features: {
+		// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+		chat: { provider: 'gemini', model: '' },
+		// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+		summary: { provider: 'gemini', model: '' },
+		// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+		completions: { provider: 'gemini', model: '' },
+		// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+		rewrite: { provider: 'gemini', model: '' },
+		// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+		webSearch: { provider: 'gemini', model: '' },
+		// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+		deepResearch: { provider: 'gemini', model: '' },
+		// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+		rag: { provider: 'gemini', model: '' },
+		// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+		imageGen: { provider: 'gemini', model: '' },
+	},
+	providerModelMemory: {},
 	ollamaBaseUrl: 'http://localhost:11434',
 	customBaseUrl: '',
 	apiKeySecretName: '',
-	chatModelName: getDefaultModelForRole('chat'),
-	summaryModelName: getDefaultModelForRole('summary'),
-	completionsModelName: getDefaultModelForRole('completions'),
-	imageModelName: getDefaultModelForRole('image'),
-	ollamaModelName: getDefaultModelForRole('chat', 'ollama'),
-	// Empty = inherit ollamaModelName, so Ollama keeps one resident model (#1077)
-	// unless the user deliberately splits them.
-	ollamaSummaryModelName: '',
-	ollamaCompletionsModelName: '',
+	openaiBaseUrl: DEFAULT_OPENAI_BASE_URL,
+	openaiApiKeySecretName: '',
+	anthropicApiKeySecretName: '',
 	summaryFrontmatterKey: 'summary',
 	userName: 'User',
 	chatHistory: false,
 	historyFolder: 'gemini-scribe',
 	debugMode: false,
 	fileLogging: false,
-	maxRetries: 3,
-	initialBackoffDelay: 1000,
-	streamingEnabled: true,
-	useInteractionsApi: true,
-	useInteractionsApiMigrated: true,
-	allowSystemPromptOverride: false,
-	temperature: 0.7,
-	topP: 1,
 	stopOnToolError: true,
-	// Tool loop detection settings
-	loopDetectionEnabled: true,
-	loopDetectionThreshold: 3,
-	loopDetectionTimeWindowSeconds: 30,
-	// Trusted Mode (legacy — migrated to toolPolicy)
-	alwaysAllowReadWrite: false,
 	// Tool policy settings
 	toolPolicy: { ...DEFAULT_TOOL_POLICY },
 	// Version tracking for update notifications
@@ -103,8 +113,6 @@ const DEFAULT_SETTINGS: ObsidianGeminiSettings = {
 		autoSync: true,
 		includeAttachments: false,
 	},
-	// MCP server settings
-	mcpEnabled: false,
 	mcpServers: [],
 	// Context management
 	contextCompactionThreshold: 20,
@@ -117,13 +125,8 @@ const DEFAULT_SETTINGS: ObsidianGeminiSettings = {
 	autoRunCatchUp: false,
 	// Lifecycle hooks default off (opt-in)
 	hooksEnabled: false,
-	// Context Caching & Files API
-	contextCachingEnabled: true,
-	filesApiEnabled: true,
-	// Image Fetching
-	fetchExternalImages: true,
-	// All settings sections start collapsed
-	expandedSettingsSections: [],
+	// Settings-field shape version; keyed off by migrateToFeatureRouting.
+	settingsSchemaVersion: 2,
 };
 
 const MIGRATION_SECRET_NAME = 'gemini-scribe-api-key';
@@ -145,9 +148,36 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 		return this.app.secretStorage.getSecret(secretName) ?? '';
 	}
 
+	/** The configured OpenAI API key, mirroring `apiKey` above. */
+	get openaiApiKey(): string {
+		const secretName = this.settings?.openaiApiKeySecretName;
+		if (!secretName) return '';
+		return this.app.secretStorage.getSecret(secretName) ?? '';
+	}
+
+	/** The configured Anthropic API key, mirroring `apiKey` above. */
+	get anthropicApiKey(): string {
+		const secretName = this.settings?.anthropicApiKeySecretName;
+		if (!secretName) return '';
+		return this.app.secretStorage.getSecret(secretName) ?? '';
+	}
+
+	/**
+	 * The open agent view, looked up from the workspace on each read rather than
+	 * held on the plugin (Obsidian's guidance: plugins must not keep references to
+	 * their views, which outlive neither the leaf nor a plugin reload).
+	 */
+	get agentView(): AgentView | null {
+		const { workspace } = this.app;
+		const leaves = workspace.getLeavesOfType(VIEW_TYPE_AGENT);
+		// Match activateAgentView(): on mobile the main-area leaf is the one shown.
+		const leaf = (Platform.isMobile && leaves.find((l) => l.getRoot() === workspace.rootSplit)) || leaves[0];
+		const view = leaf?.view;
+		return view instanceof AgentView ? view : null;
+	}
+
 	// Public service properties — assigned by LifecycleService
 	public gfile!: ScribeFile;
-	public agentView!: AgentView;
 	public history!: GeminiHistory;
 	public sessionHistory!: SessionHistory;
 	public promptManager!: PromptManager;
@@ -169,6 +199,7 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 	public contextManager!: ContextManager;
 	public folderInitializer: FolderInitializer | null = null;
 	public modelManager!: ModelManager;
+	private settingTab!: ObsidianGeminiSettingTab;
 	public completions: GeminiCompletions | null = null;
 	public summarizer: GeminiSummary | null = null;
 	public projectManager!: ProjectManager;
@@ -189,22 +220,45 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 	private ribbonIcon!: HTMLElement;
 	public isGeminiInitialized: boolean = false;
 	private previousApiKey: string = '';
+	private previousOpenaiApiKey: string = '';
+	private previousAnthropicApiKey: string = '';
 	private previousRagEnabled: boolean = false;
 	/**
-	 * Serialized provider routing (primary + every use case's resolved provider).
-	 * Compared rather than `settings.provider` alone so that changing which
-	 * provider serves a single use case also triggers a re-init — tool
-	 * registration, RAG, and image generation all key off the resolved providers.
+	 * Serialized provider routing (default provider + every feature's resolved
+	 * provider). Compared rather than `settings.defaultProvider` alone so that
+	 * changing which provider serves a single feature also triggers a
+	 * re-init — tool registration, RAG, and image generation all key off the
+	 * resolved providers.
 	 */
 	private previousRoutingKey: string = '';
 	private previousOllamaBaseUrl: string = '';
 	private previousCustomBaseUrl: string = '';
+	private previousOpenaiBaseUrl: string = '';
 	private previousHooksEnabled: boolean = false;
+	/**
+	 * The state-folder setting as of the last successful init. Compared in
+	 * `saveSettings()` so a rename re-enters `setup()` and both file-backed
+	 * managers reload against the new location (see #1551).
+	 */
+	private previousHistoryFolder: string = '';
 	private lifecycle!: LifecycleService;
 	// Captures the last initialization failure so guarded commands can surface
 	// the actual cause (e.g. "model not pulled") instead of the ephemeral Notice
 	// the user may have missed. Cleared on a subsequent successful init.
 	private lastInitError: string | null = null;
+	// Whether the deferred onLayoutReady() callback is (or will be) registered.
+	// The registration is skipped when onload's setup() fails and re-attempted
+	// when a later settings save recovers initialization, so a double
+	// registration must not happen.
+	private layoutReadyHookRegistered = false;
+	/**
+	 * The setup-eligibility fingerprint of the most recent `setup()` attempt —
+	 * the chat provider and whether credentials allow initialization, no
+	 * secret values. `needsInit` retries only when this changes (or never
+	 * recorded), so a failed setup is not re-run on every unrelated save while
+	 * the eligibility is unchanged (#1554 / #1555 review).
+	 */
+	private lastInitAttemptFingerprint: string | null = null;
 
 	async onload() {
 		// Initialize logger early so it's available during setup
@@ -219,7 +273,8 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 		}
 
 		// Add settings tab early so users can configure API key even if plugin fails to fully initialize
-		this.addSettingTab(new ObsidianGeminiSettingTab(this.app, this));
+		this.settingTab = new ObsidianGeminiSettingTab(this.app, this);
+		this.addSettingTab(this.settingTab);
 
 		// Initialize lifecycle service
 		this.lifecycle = new LifecycleService(this);
@@ -227,25 +282,152 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 		// Try to setup the plugin, but don't fail if API key is missing
 		try {
 			await this.lifecycle.setup();
-			this.isGeminiInitialized = true;
-			this.lastInitError = null;
-			this.previousApiKey = this.apiKey;
-			this.previousRagEnabled = this.settings.ragIndexing.enabled;
-			this.previousRoutingKey = routingKey(this.settings);
-			this.previousOllamaBaseUrl = this.settings.ollamaBaseUrl;
-			this.previousCustomBaseUrl = this.settings.customBaseUrl;
-			this.previousHooksEnabled = this.settings.hooksEnabled;
+			this.markInitialized();
 		} catch (error) {
 			this.logger.error('Failed to initialize Gemini Scribe:', error);
 			this.lastInitError = getRawErrorMessage(error);
 			new Notice(this.getInitErrorMessage(error));
 			this.isGeminiInitialized = false;
+			this.recordInitAttemptFingerprint();
 		}
 
 		// Always register UI components and commands
 		this.registerUIAndCommands();
 
-		this.app.workspace.onLayoutReady(() => this.lifecycle.onLayoutReady());
+		// The declarative settings tab was evaluated before `lifecycle.setup()`
+		// created the model manager and registered tools; rebuild it so the
+		// provider cards and tool-permission rows reflect the loaded state.
+		this.settingTab.update();
+
+		// Only run the deferred initialization after a successful setup. When
+		// setup() fails (e.g. an exception mid-phase), FolderInitializer may not
+		// exist yet, so onLayoutReady()'s folder pass would no-op — and services
+		// constructed before the failure (ScheduledTaskManager) would initialize
+		// against folders that were never created. The recovery path is a
+		// settings save: saveSettings() re-runs setup() (needsInit) and re-runs
+		// this registration via registerLayoutReadyHook() on success.
+		this.registerLayoutReadyHook();
+	}
+
+	/**
+	 * Register the deferred post-layout initialization exactly once.
+	 *
+	 * `workspace.onLayoutReady` fires immediately when layout is already ready,
+	 * so re-invoking after recovery is safe; the flag only guards against
+	 * registering twice while layout is still pending. If the deferred run
+	 * rejects, the flag resets so a later settings save can retry it — the
+	 * workspace does not await the callback, so the rejection is handled here.
+	 * `isGeminiInitialized` is deliberately untouched: setup() succeeded, and
+	 * a deferred-phase failure must not flip the plugin's initialized state.
+	 */
+	private registerLayoutReadyHook(): void {
+		if (this.layoutReadyHookRegistered || !this.isGeminiInitialized) return;
+		this.layoutReadyHookRegistered = true;
+		this.app.workspace.onLayoutReady(() => {
+			this.lifecycle.onLayoutReady().catch((error) => {
+				this.logger.error('Deferred initialization failed; it will retry on the next settings save:', error);
+				this.layoutReadyHookRegistered = false;
+			});
+		});
+	}
+
+	/**
+	 * Record the current setup-eligibility fingerprint after a `setup()`
+	 * attempt, whatever its outcome. Called from both init paths so a failed
+	 * attempt is not silently retried on unrelated saves.
+	 */
+	private recordInitAttemptFingerprint(): void {
+		this.lastInitAttemptFingerprint = this.initAttemptFingerprint();
+	}
+
+	/**
+	 * Deterministic, non-invertible change-detection token for a credential
+	 * value — a 32-bit FNV-1a of the key string, hex-encoded. Two keys with
+	 * the same token are effectively identical for "did the credential
+	 * change" purposes; the value itself never appears in the fingerprint.
+	 */
+	private static credentialToken(key: string): string {
+		let hash = 0x811c9dc5;
+		for (let i = 0; i < key.length; i++) {
+			hash ^= key.charCodeAt(i);
+			hash = Math.imul(hash, 0x01000193);
+		}
+		return (hash >>> 0).toString(16);
+	}
+
+	/**
+	 * The credential situation for whichever provider serves chat: the resolved
+	 * key (`''` when unset) and whether that provider needs one at all.
+	 *
+	 * Both `initAttemptFingerprint()` and `saveSettings`'s `hasCredentials`
+	 * need the same pair, and each used to fan out over the provider ids by
+	 * hand — two copies that had to agree, and that a new provider had to be
+	 * added to twice. The fan-out lives here instead.
+	 */
+	private chatCredentialState(): { apiKey: string; requiresApiKey: boolean } {
+		const chatProvider = this.settings.features.chat.provider;
+		const apiKey =
+			// eslint-disable-next-line no-restricted-syntax -- credential plumbing predating the registry; cleared as #1308/#703 land
+			chatProvider === 'openai' ? this.openaiApiKey : chatProvider === 'anthropic' ? this.anthropicApiKey : this.apiKey;
+		return {
+			apiKey,
+			requiresApiKey: getCapabilities(chatProvider === 'none' ? null : chatProvider).requiresApiKey,
+		};
+	}
+
+	/**
+	 * The eligibility fingerprint `needsInit` compares against: the chat
+	 * provider, a non-secret token of the credential serving chat (so
+	 * replacing a rejected key is detected, not just adding/removing one),
+	 * and the chat provider's base URL (so correcting an unreachable-server
+	 * URL is detected). All three can independently unblock a failed setup.
+	 */
+	private initAttemptFingerprint(): string {
+		const chatProvider = this.settings.features.chat.provider;
+		const { apiKey: activeChatApiKey, requiresApiKey } = this.chatCredentialState();
+		const credToken = activeChatApiKey
+			? ObsidianGemini.credentialToken(activeChatApiKey)
+			: requiresApiKey
+				? 'key-required-missing'
+				: 'none-required';
+		const baseUrl =
+			// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+			chatProvider === 'openai'
+				? this.settings.openaiBaseUrl
+				: // eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+					chatProvider === 'anthropic'
+					? undefined
+					: // eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+						chatProvider === 'ollama'
+						? this.settings.ollamaBaseUrl
+						: this.settings.customBaseUrl;
+		return `${chatProvider}:${credToken}:${baseUrl ?? ''}`;
+	}
+
+	/**
+	 * Record a successful `lifecycle.setup()`: mark the plugin initialized and
+	 * snapshot every setting the re-init check in `saveSettings` compares against.
+	 *
+	 * Both the `onload` and `saveSettings` init paths must capture the *same*
+	 * baseline — a field snapshotted in one place but not the other leaves a
+	 * stale `previous*` value, so the next `saveSettings` sees a phantom change
+	 * (or misses a real one). Keeping the list in one method means adding a new
+	 * `previous*` field can't silently skip a call site.
+	 */
+	private markInitialized(): void {
+		this.isGeminiInitialized = true;
+		this.lastInitError = null;
+		this.recordInitAttemptFingerprint();
+		this.previousApiKey = this.apiKey;
+		this.previousOpenaiApiKey = this.openaiApiKey;
+		this.previousAnthropicApiKey = this.anthropicApiKey;
+		this.previousRagEnabled = this.settings.ragIndexing.enabled;
+		this.previousRoutingKey = routingKey(this.settings);
+		this.previousOllamaBaseUrl = this.settings.ollamaBaseUrl;
+		this.previousCustomBaseUrl = this.settings.customBaseUrl;
+		this.previousOpenaiBaseUrl = this.settings.openaiBaseUrl;
+		this.previousHooksEnabled = this.settings.hooksEnabled;
+		this.previousHistoryFolder = this.settings.historyFolder;
 	}
 
 	/**
@@ -265,10 +447,19 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 	 * Distinguishes between "never configured" and "storage retrieval failure".
 	 */
 	private getApiKeyErrorMessage(): string {
+		// Chat is the feature that actually blocks plugin init, so the message
+		// should describe whatever provider is routed to serve it — not the
+		// (possibly unrelated) primary/default provider. A route of 'none' has
+		// no provider to describe, so fall back to the default in that case.
+		const provider = featureProvider(this.settings, 'chat') ?? this.settings.defaultProvider;
+		// The secret-name field is provider-specific — an OpenAI-routed install
+		// checks its own key, not Gemini's, so a missing OpenAI key surfaces the
+		// same kind of actionable notice a missing Gemini key would.
+		const apiKeySecretName = apiKeySecretNameFor(this.settings, provider);
 		return buildApiKeyErrorMessage({
-			provider: this.settings.provider,
+			provider,
 			lastInitError: this.lastInitError,
-			apiKeySecretName: this.settings.apiKeySecretName,
+			apiKeySecretName,
 			ollamaBaseUrl: this.settings.ollamaBaseUrl,
 		});
 	}
@@ -298,8 +489,7 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 		});
 
 		// Register views
-		// eslint-disable-next-line obsidianmd/no-view-references-in-plugin -- TODO: replace `this.agentView` reads with `app.workspace.getLeavesOfType(VIEW_TYPE_AGENT)`
-		this.registerView(VIEW_TYPE_AGENT, (leaf) => (this.agentView = new AgentView(leaf, this)));
+		this.registerView(VIEW_TYPE_AGENT, (leaf) => new AgentView(leaf, this));
 		this.registerView(VIEW_TYPE_DIFF, (leaf) => new GeminiDiffView(leaf, this));
 
 		// Register all command-palette commands (extracted to ./commands/register-commands)
@@ -416,18 +606,31 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 		const data = asRecord(rawData);
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
 
-		// Object.assign is shallow, so an install with no persisted overrides would
-		// alias DEFAULT_SETTINGS.providerOverrides and leak every later edit into
-		// the module-level default. sanitizeProviderOverrides always returns a
-		// fresh object, and drops anything a hand-edited data.json got wrong.
-		this.settings.providerOverrides = sanitizeProviderOverrides(this.settings.providerOverrides);
-
-		// One-time migration: split the Ollama model out of the shared chatModelName
-		// field so switching providers no longer clobbers either choice. See
-		// migrateOllamaModelSetting for the full rationale.
-		if (migrateOllamaModelSetting(this.settings, data)) {
+		// One-time migration: fold the pre-settings-redesign `provider` +
+		// `providerOverrides` + per-provider model-name fields into the dense
+		// `features` / `providerModelMemory` model (settingsSchemaVersion 1 -> 2).
+		// Must run before the sanitizers below so they clean up what the
+		// migration produced rather than the (possibly aliased) default.
+		if (migrateToFeatureRouting(this.settings, data, this.logger)) {
 			await this.saveData(this.settings);
-			this.logger?.log('Migrated Ollama model into its own setting (ollamaModelName)');
+			this.logger?.log('Migrated provider routing to the feature-routing model (settingsSchemaVersion 2)');
+		}
+
+		// Object.assign is shallow, so an install with no persisted features would
+		// alias DEFAULT_SETTINGS.features and leak every later edit into the
+		// module-level default. The sanitizers always return a fresh object, and
+		// drop anything a hand-edited data.json got wrong — never substituting a
+		// different provider for one that can't serve a feature.
+		this.settings.features = sanitizeFeatureRoutes(this.settings.features, this.settings.defaultProvider);
+		this.settings.providerModelMemory = sanitizeProviderModelMemory(this.settings.providerModelMemory);
+
+		// The state folder comes from a free-text field, so a hand-typed trailing
+		// (or duplicate/leading) slash can persist to data.json — and it silently
+		// defeats every exclusion and subfolder path built on historyFolder
+		// (#1374). Repair it once on load so the stored value is always clean.
+		if (normalizeStateFolderPath(this.settings)) {
+			await this.saveData(this.settings);
+			this.logger?.log('Normalized the state folder setting (historyFolder)');
 		}
 
 		// One-time migration: move API key from data.json to secret storage
@@ -466,64 +669,113 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 			this.logger?.log('Removed deprecated model discovery settings');
 		}
 
-		// One-time migration: default-on rollout for the Interactions API transport (#1017).
-		if (migrateInteractionsApiDefault(this.settings, data)) {
-			await this.saveData(this.settings);
-			this.logger?.log('Migrated useInteractionsApi to on (default-on rollout, #1017)');
-		}
-
 		// Note: Stale model reconciliation happens later in LifecycleService.syncModels(),
 		// after ModelListProvider has loaded the cached remote model list. Running it here
 		// against DEFAULT_GEMINI_MODELS would use a stale list.
 
-		// Migrate legacy alwaysAllowReadWrite → toolPolicy
+		// Migrate legacy alwaysAllowReadWrite → toolPolicy, then drop the key.
+		// The removal is deliberately outside the `!data.toolPolicy` guard: a
+		// migrated install that still carries the key (written back before the key
+		// was dropped from DEFAULT_SETTINGS) must be cleaned up too, or it lingers
+		// and can re-drive the preset if `toolPolicy` ever goes missing.
 		const legacyAllowReadWrite = data.alwaysAllowReadWrite;
-		if (legacyAllowReadWrite !== undefined && !data.toolPolicy) {
-			this.settings.toolPolicy = {
-				activePreset: legacyAllowReadWrite ? PolicyPreset.EDIT_MODE : PolicyPreset.CAUTIOUS,
-				toolPermissions: {},
-			};
+		if (legacyAllowReadWrite !== undefined) {
+			if (!data.toolPolicy) {
+				this.settings.toolPolicy = {
+					activePreset: legacyAllowReadWrite ? PolicyPreset.EDIT_MODE : PolicyPreset.CAUTIOUS,
+					toolPermissions: {},
+				};
+				this.logger?.log(
+					`Migrated alwaysAllowReadWrite=${legacyAllowReadWrite ? 'true' : 'false'} → toolPolicy.activePreset=${this.settings.toolPolicy.activePreset}`
+				);
+			}
 			// Clear the legacy setting
 			delete (this.settings as { alwaysAllowReadWrite?: unknown }).alwaysAllowReadWrite;
 			await this.saveData(this.settings);
-			this.logger?.log(
-				`Migrated alwaysAllowReadWrite=${legacyAllowReadWrite ? 'true' : 'false'} → toolPolicy.activePreset=${this.settings.toolPolicy.activePreset}`
-			);
 		}
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 
-		// Check if we need to re-initialize
-		const apiKeyChanged = this.previousApiKey !== this.apiKey;
+		// Check if we need to re-initialize. Every change condition below is
+		// gated on `isGeminiInitialized`: the `previous*` baselines are only
+		// populated by a successful `markInitialized()`, so on a vault that has
+		// never initialized (e.g. credentials still missing) each comparison
+		// would fire on every save — re-running a setup that keeps failing for
+		// the same unrelated reason (#1554). Recovery from that state is
+		// `needsInit`'s job: it fires exactly when the credential situation
+		// starts allowing initialization, which is the only change that can
+		// actually succeed.
+		const apiKeyChanged =
+			this.isGeminiInitialized &&
+			(this.previousApiKey !== this.apiKey ||
+				this.previousOpenaiApiKey !== this.openaiApiKey ||
+				this.previousAnthropicApiKey !== this.anthropicApiKey);
 		// Any change to *which provider serves which use case* re-inits: tool
 		// registration, RAG, and image generation are all keyed off the resolved
 		// providers, not just the primary.
-		const providerChanged = this.previousRoutingKey !== routingKey(this.settings);
+		const providerChanged = this.isGeminiInitialized && this.previousRoutingKey !== routingKey(this.settings);
 		// A base URL only matters when its provider is used somewhere — an Ollama
 		// URL edit is a no-op for an all-Gemini install and vice versa.
 		const ollamaUrlChanged =
-			isProviderActive(this.settings, 'ollama') && this.previousOllamaBaseUrl !== this.settings.ollamaBaseUrl;
+			this.isGeminiInitialized &&
+			// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+			isProviderActive(this.settings, 'ollama') &&
+			this.previousOllamaBaseUrl !== this.settings.ollamaBaseUrl;
 		const customBaseUrlChanged =
-			isProviderActive(this.settings, 'gemini') && this.previousCustomBaseUrl !== this.settings.customBaseUrl;
-		// A primary that needs no key (Ollama) can initialize on the provider
-		// switch alone; overrides pointing at a cloud provider degrade gracefully
-		// without one rather than blocking init.
-		const hasCredentials = !getCapabilities(this.settings.provider).requiresApiKey || !!this.apiKey;
-		const needsInit = !this.isGeminiInitialized && hasCredentials;
+			this.isGeminiInitialized &&
+			// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+			isProviderActive(this.settings, 'gemini') &&
+			this.previousCustomBaseUrl !== this.settings.customBaseUrl;
+		const openaiBaseUrlChanged =
+			this.isGeminiInitialized &&
+			// eslint-disable-next-line no-restricted-syntax -- default-settings seed / credential plumbing predating the registry; cleared as #1308/#703 land
+			isProviderActive(this.settings, 'openai') &&
+			this.previousOpenaiBaseUrl !== this.settings.openaiBaseUrl;
+		// A chat provider that needs no key (Ollama) can initialize on the
+		// provider switch alone; other features routed to a cloud provider
+		// degrade gracefully without one rather than blocking init. The
+		// credential that must exist for init is the one serving chat.
+		const { apiKey: activeChatApiKey, requiresApiKey } = this.chatCredentialState();
+		const hasCredentials = !requiresApiKey || !!activeChatApiKey;
+		// needsInit additionally compares the eligibility fingerprint recorded
+		// after the last setup attempt: without it, a failed attempt on a
+		// keyless provider (hasCredentials stays true) would retry setup on
+		// every unrelated save, defeating #1554's no-repeat contract. A retry
+		// fires only when eligibility actually changed — the chat provider
+		// moved, or the credential situation flipped (#1555 review).
+		const needsInit =
+			!this.isGeminiInitialized && hasCredentials && this.lastInitAttemptFingerprint !== this.initAttemptFingerprint();
+		// A state-folder rename must re-run the full setup: both file-backed
+		// managers reload their definitions, sidecar state, and vault listeners
+		// against the new location inside their initialize({ refresh: true })
+		// blocks, and the deferred folder pass recreates the eager subfolders
+		// there (initializePluginFolders() below also runs on every save).
+		// Gated on a successful init: before that, previousHistoryFolder is
+		// still '' and the comparison would be true on every save, re-running a
+		// setup that already failed for unrelated reasons (e.g. no credentials)
+		// each time any setting was saved. Credentialled recovery of an
+		// uninitialized vault is needsInit's job.
+		const historyFolderChanged = this.isGeminiInitialized && this.previousHistoryFolder !== this.settings.historyFolder;
 
-		if (apiKeyChanged || providerChanged || ollamaUrlChanged || customBaseUrlChanged || needsInit) {
+		if (
+			apiKeyChanged ||
+			providerChanged ||
+			ollamaUrlChanged ||
+			customBaseUrlChanged ||
+			openaiBaseUrlChanged ||
+			historyFolderChanged ||
+			needsInit
+		) {
 			try {
 				await this.lifecycle.setup();
-				this.isGeminiInitialized = true;
-				this.lastInitError = null;
-				this.previousApiKey = this.apiKey;
-				this.previousRagEnabled = this.settings.ragIndexing.enabled;
-				this.previousRoutingKey = routingKey(this.settings);
-				this.previousOllamaBaseUrl = this.settings.ollamaBaseUrl;
-				this.previousCustomBaseUrl = this.settings.customBaseUrl;
-				this.previousHooksEnabled = this.settings.hooksEnabled;
+				this.markInitialized();
+				// Recovered initialization: the onload registration was skipped
+				// when setup() first failed, so run the deferred post-layout init
+				// now (no-op if layout is already ready — onLayoutReady fires
+				// immediately — and registered for later otherwise).
+				this.registerLayoutReadyHook();
 
 				// If this is the first successful initialization, we may need to
 				// re-register UI components to make them functional
@@ -534,10 +786,17 @@ export default class ObsidianGemini extends Plugin implements ObsidianGeminiApi 
 				this.logger.error('Failed to re-initialize after settings change:', error);
 				this.lastInitError = getRawErrorMessage(error);
 				this.isGeminiInitialized = false;
+				// A failed attempt records the eligibility it tried with, so the
+				// same eligibility is not retried on the next unrelated save.
+				this.recordInitAttemptFingerprint();
 			}
 		}
 
-		// Re-create plugin state folders if historyFolder changed (idempotent)
+		// Re-create plugin state folders (idempotent): runs on every save, and on
+		// a historyFolder rename it materializes the eager subfolders at the new
+		// location. setup()'s entry condition above also covers renames, so the
+		// managers refresh against folders that already exist by the time their
+		// initialize({ refresh: true }) blocks run (#1543 ordering guarantee).
 		if (this.isGeminiInitialized && this.app.workspace.layoutReady) {
 			await this.lifecycle.initializePluginFolders();
 		}

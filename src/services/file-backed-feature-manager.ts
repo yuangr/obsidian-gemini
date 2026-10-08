@@ -1,6 +1,8 @@
 import { normalizePath, type TFile } from 'obsidian';
 import type { ObsidianGemini } from '../types/plugin';
 import { JsonSidecarStateStore, purgeOrphanState } from './feature-definition';
+import { isPathInFolder } from '../utils/file-utils';
+import { RUNS_SUBFOLDER, stateFolderPath } from './state-folder';
 
 /**
  * Minimal shape every file-backed feature definition shares: a `slug` (its
@@ -28,7 +30,6 @@ export interface FileBackedFeatureManagerConfig {
 }
 
 /** Subfolder (inside the feature folder) that holds per-run output. */
-const RUNS_SUBFOLDER = 'Runs';
 
 /**
  * Shared scaffold for the markdown-defined feature managers — `HookManager`
@@ -75,7 +76,7 @@ export abstract class FileBackedFeatureManager<TDef extends FileBackedDefinition
 
 	/** Absolute path of the feature folder inside the plugin state folder. */
 	get featureFolderPath(): string {
-		return normalizePath(`${this.plugin.settings.historyFolder}/${this.featureConfig.featureFolder}`);
+		return stateFolderPath(this.plugin.settings, this.featureConfig.featureFolder);
 	}
 
 	/** Absolute path of the per-run output subfolder. */
@@ -120,24 +121,30 @@ export abstract class FileBackedFeatureManager<TDef extends FileBackedDefinition
 	 * feature folder (excluding the `Runs/` subtree), seed state for newly-seen
 	 * definitions, drop orphan state entries, and persist. Replaces the
 	 * copy-pasted `discoverHooks` / `discoverTasks` loops.
+	 *
+	 * When provided, `isCurrent` is checked before applying results from each
+	 * asynchronous parse so a superseded lifecycle cannot repopulate the maps.
 	 */
-	protected async discoverDefinitions(): Promise<void> {
+	protected async discoverDefinitions(isCurrent?: () => boolean): Promise<void> {
+		if (isCurrent && !isCurrent()) return;
 		this.definitions.clear();
 
-		const prefix = this.featureFolderPath + '/';
-		const runsPrefix = this.runsFolder + '/';
+		const featureFolder = this.featureFolderPath;
+		const runsFolder = this.runsFolder;
 
 		const files = this.plugin.app.vault
 			.getMarkdownFiles()
-			.filter((f) => f.path.startsWith(prefix) && !f.path.startsWith(runsPrefix));
+			.filter((f) => isPathInFolder(f.path, featureFolder) && !isPathInFolder(f.path, runsFolder));
 
 		for (const file of files) {
 			try {
 				const def = await this.parseDefinitionFile(file);
+				if (isCurrent && !isCurrent()) return;
 				if (!def) continue;
 				this.definitions.set(def.slug, def);
 				this.seedDiscoveredState(def);
 			} catch (err) {
+				if (isCurrent && !isCurrent()) return;
 				this.plugin.logger.warn(
 					`${this.featureConfig.logPrefix} Failed to parse ${this.featureConfig.featureNoun} file ${file.path}:`,
 					err
@@ -176,8 +183,11 @@ export abstract class FileBackedFeatureManager<TDef extends FileBackedDefinition
 
 	// ── State persistence ────────────────────────────────────────────────────
 
-	protected async loadState(): Promise<void> {
-		this.state = await this.stateStore.load();
+	protected async loadState(isCurrent?: () => boolean): Promise<void> {
+		const state = await this.stateStore.load();
+		if (!isCurrent || isCurrent()) {
+			this.state = state;
+		}
 	}
 
 	protected async saveState(): Promise<void> {

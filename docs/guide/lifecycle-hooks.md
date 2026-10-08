@@ -6,6 +6,8 @@ Lifecycle Hooks let you trigger an AI agent run in response to Obsidian vault ev
 Hooks are disabled by default. Set **Enable lifecycle hooks** in plugin settings before any hook will fire. The default is off because vault events fire continuously and an unintentionally-broad hook can drain API quota quickly.
 :::
 
+Agent-task hooks release their temporary session and tool-loop tracking when the turn ends, including cancellation or failure. Interactive chat sessions remain available in the session browser.
+
 ## Overview
 
 A hook is a markdown file stored in `[state-folder]/Hooks/`. The file's frontmatter controls the trigger, filter, and action; the body is the prompt template.
@@ -21,21 +23,23 @@ gemini-scribe/Hooks/
 
 ## Enabling Hooks
 
-1. Open Settings → Gemini Scribe → Automation
-2. Toggle **Enable lifecycle hooks**
+1. Open Settings → Gemini Scribe → **Lifecycle hooks**
+2. Toggle **Enable lifecycle hooks** (the page's first row)
 
-When the toggle is on the plugin creates the `Hooks/` folder, subscribes to vault events, and starts dispatching matching events to your hook definitions.
+When the toggle is on the plugin creates the `Hooks/` folder, subscribes to vault events, and starts dispatching matching events to your hook definitions. The "Open hook manager" / "New hook" rows below it only appear once the toggle is on.
 
 ## Creating a Hook
 
 The fastest path is the **Hook Manager** modal. Two ways to open it:
 
-- Settings → Gemini Scribe → Automation → **Open hook manager**
+- Settings → Gemini Scribe → **Lifecycle hooks** → **Open hook manager**
 - Command palette → **Gemini Scribe: Open hook manager** (or **New lifecycle hook** to skip straight to the create form)
 
 The modal has a list view (toggle / edit / delete / reset on each row) and a create/edit form covering trigger, path glob, tool access, prompt, plus an Advanced section for debounce, cooldown, rate limit, model override, output path, and the desktop-only flag.
 
-You can also create hooks by hand-editing markdown files inside `[state-folder]/Hooks/`. The filename (without `.md`) becomes the hook's **slug**.
+Clearing an optional field in the edit form removes it from the hook: empty the **Path glob**, **Model**, **Output path**, **Command id**, or **Max runs per hour** input (or untick **Focus file**) and the field is dropped from the definition file on save, restoring that field's default.
+
+You can also create hooks by hand-editing markdown files inside `[state-folder]/Hooks/`. The filename (without `.md`) becomes the hook's **slug**. The slug must be 1–64 characters of lowercase ASCII letters, digits, and single hyphens (no leading, trailing, or consecutive hyphens).
 
 **Minimal example** — `gemini-scribe/Hooks/summarize-on-save.md`:
 
@@ -56,24 +60,24 @@ The user just saved {{filePath}}. Read it and write a one-paragraph summary high
 
 ### Frontmatter Fields
 
-| Field               | Required               | Default                        | Description                                                                                                                                                                      |
-| ------------------- | ---------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `trigger`           | Yes                    | —                              | Vault event. One of: `file-created`, `file-modified`, `file-deleted`, `file-renamed`.                                                                                            |
-| `action`            | Yes                    | —                              | What to do on each fire. One of: `agent-task`, `summarize`, `rewrite`, `command`. See [Actions](#actions) below.                                                                 |
-| `commandId`         | When `action: command` | —                              | Command palette id to dispatch (e.g. `editor:save-file`).                                                                                                                        |
-| `focusFile`         | No                     | `false`                        | When `action: command`, focus the triggering file in the workspace before dispatching so editor-scoped commands target it. Off by default — see [Actions → `command`](#command). |
-| `pathGlob`          | No                     | (matches all paths)            | Glob pattern matched against the triggering file's vault path. Supports `*` and `**`.                                                                                            |
-| `frontmatterFilter` | No                     | —                              | Object of key/value pairs the note's frontmatter must match for the hook to fire.                                                                                                |
-| `debounceMs`        | No                     | `5000`                         | Per-(hook, file) debounce window in milliseconds. Coalesces rapid saves into one fire.                                                                                           |
-| `maxRunsPerHour`    | No                     | unlimited                      | Sliding-window rate limit per hook (across all files).                                                                                                                           |
-| `cooldownMs`        | No                     | `30000`                        | After a fire completes, suppress further events on the same (hook, file) for this window. Prevents self-retrigger.                                                               |
-| `toolPolicy`        | No                     | _inherit global plugin policy_ | Per-fire tool policy (preset + per-tool overrides). Same shape used by projects and scheduled tasks — see [Tool Access](#tool-access) below.                                     |
-| `enabledSkills`     | No                     | `[]`                           | Skill slugs to pre-activate in the headless session.                                                                                                                             |
-| `model`             | No                     | Plugin chat model              | Override the model for this hook (e.g. `gemini-2.5-flash-lite`).                                                                                                                 |
-| `maxIterations`     | No                     | `20`                           | Cap on agent tool-call batches per fire (`agent-task` only). Raise it for long multi-step hooks that exhaust the default. See [Tool Iteration Limit](#tool-iteration-limit).     |
-| `outputPath`        | No                     | (no file written)              | Where to write the agent's final response. Supports `{slug}`, `{date}`, and `{fileName}` placeholders.                                                                           |
-| `enabled`           | No                     | `true`                         | Set to `false` to disable the hook without deleting it.                                                                                                                          |
-| `desktopOnly`       | No                     | `true`                         | When `true` the hook is skipped on mobile. Headless agent runs can be heavyweight on phones.                                                                                     |
+| Field               | Required               | Default                        | Description                                                                                                                                                                                                                                                                                                                                      |
+| ------------------- | ---------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `trigger`           | Yes                    | —                              | Vault event. One of: `file-created`, `file-modified`, `file-deleted`, `file-renamed`.                                                                                                                                                                                                                                                            |
+| `action`            | Yes                    | —                              | What to do on each fire. One of: `agent-task`, `summarize`, `rewrite`, `command`. See [Actions](#actions) below.                                                                                                                                                                                                                                 |
+| `commandId`         | When `action: command` | —                              | Command palette id to dispatch (e.g. `editor:save-file`).                                                                                                                                                                                                                                                                                        |
+| `focusFile`         | No                     | `false`                        | When `action: command`, focus the triggering file in the workspace before dispatching so editor-scoped commands target it. Off by default — see [Actions → `command`](#command).                                                                                                                                                                 |
+| `pathGlob`          | No                     | (matches all paths)            | Glob pattern matched against the triggering file's vault path. Supports `*` and `**`.                                                                                                                                                                                                                                                            |
+| `frontmatterFilter` | No                     | —                              | Object of key/value pairs the note's frontmatter must match for the hook to fire.                                                                                                                                                                                                                                                                |
+| `debounceMs`        | No                     | `5000`                         | Per-(hook, file) debounce window in milliseconds. Coalesces rapid saves into one fire.                                                                                                                                                                                                                                                           |
+| `maxRunsPerHour`    | No                     | unlimited                      | Sliding-window rate limit per hook (across all files).                                                                                                                                                                                                                                                                                           |
+| `cooldownMs`        | No                     | `30000`                        | After a fire completes, suppress further events on the same (hook, file) for this window. Prevents self-retrigger.                                                                                                                                                                                                                               |
+| `toolPolicy`        | No                     | _inherit global plugin policy_ | Per-fire tool policy (preset + per-tool overrides). Same shape used by projects and scheduled tasks — see [Tool Access](#tool-access) below.                                                                                                                                                                                                     |
+| `enabledSkills`     | No                     | `[]`                           | Skill slugs to pre-activate in the headless session.                                                                                                                                                                                                                                                                                             |
+| `model`             | No                     | Plugin chat model              | Override the model for this hook (e.g. `gemini-flash-latest`).                                                                                                                                                                                                                                                                                   |
+| `maxIterations`     | No                     | `20`                           | Cap on agent tool-call batches per fire (`agent-task` only). Raise it for long multi-step hooks that exhaust the default. See [Tool Iteration Limit](#tool-iteration-limit).                                                                                                                                                                     |
+| `outputPath`        | No                     | (no file written)              | Where to write the agent's final response. Supports `{slug}`, `{date}`, and `{fileName}` placeholders. A run that ends abnormally (model empty twice, or the tool-loop detector aborted) still writes the file but marks it `incomplete: true` with a warning callout — see [scheduled task output files](./scheduled-tasks.md#incomplete-runs). |
+| `enabled`           | No                     | `true`                         | Set to `false` to disable the hook without deleting it.                                                                                                                                                                                                                                                                                          |
+| `desktopOnly`       | No                     | `true`                         | When `true` the hook is skipped on mobile. Headless agent runs can be heavyweight on phones.                                                                                                                                                                                                                                                     |
 
 ### Prompt template Variables
 
@@ -177,7 +181,7 @@ Each `(hook, file)` pair has its own debounce timer. Rapid saves while typing ar
 
 ### Per-Hour Rate Limit
 
-`maxRunsPerHour` enforces a sliding-window cap on how many times a single hook can fire per hour. Reached the cap? Further events are dropped with a log entry until the window slides forward.
+`maxRunsPerHour` enforces a sliding-window cap on how many times a single hook can fire per hour. Reached the cap? Further events are dropped with a log entry until the window slides forward. Omitting the field — or setting it to `0` — means no limit.
 
 ### Cooldown After Fire
 
@@ -285,7 +289,10 @@ When a new file lands in `Inbox/`, focus it in the workspace and run the **Summa
 
 - Hooks only fire while Obsidian is running. There's no catch-up for events missed while the app was closed (vault events don't have a "missed run" concept).
 - Workspace and editor events (`file-open`, active leaf change, editor changes) are not supported — they fire too noisily and the AI features that respond to typing already exist via Completions.
-- The management UI doesn't currently include a frontmatter-filter editor — set the `frontmatterFilter:` block by hand-editing the hook's markdown file.
+- The management UI doesn't currently include a frontmatter-filter editor — set the `frontmatterFilter:` block by hand-editing the hook's markdown file. **Wrap every key you write there in single quotes**, whatever it contains: `'type': meeting-notes`. That is one rule instead of a list of dangerous characters to remember, and it is the same rule the plugin follows when it saves a hook. It matters because an unparseable frontmatter block makes the hook disappear from the manager rather than fail loudly, and plenty of ordinary-looking keys will do it — a colon followed by a space nests a map, a leading `&` or `*` is read as a YAML anchor or alias, a leading `#` comments the line out.
+  - Inside single quotes, **an apostrophe is written twice**: a key of `Allen's: notes` is `'Allen''s: notes'`.
+  - For a **line break or a control character**, use double quotes and the escape — `"line one\nline two"`. Single quotes have no escapes, so a real line break inside them is folded into a space and the value comes back changed.
+  - Re-saving a hook from the UI normalizes the quoting of every free-text field for you. (`trigger` and `action` are fixed sets of known values, so they keep their own plain quoting.)
 - A hook that triggers another hook (chained fires) is supported but not encouraged. Use one hook with a multi-step prompt instead.
 
 ## Related

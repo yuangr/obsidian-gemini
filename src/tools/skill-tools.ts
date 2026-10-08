@@ -2,9 +2,11 @@ import { Tool, ToolResult, ToolExecutionContext, ToolParams, DiffContext, Confir
 import { ToolCategory } from '../types/agent';
 import { ToolClassification } from '../types/tool-policy';
 import { getRawErrorMessage } from '../utils/error-utils';
+import { truncateForPreview } from '../utils/format-utils';
 import { t } from '../i18n';
 import { normalizePath } from 'obsidian';
 import type { ObsidianGemini } from '../types/plugin';
+import { SKILL_FILENAME, STATE_SUBFOLDERS, stateFolderPath } from '../services/state-folder';
 
 /**
  * Build the SKILL.md file path for a skill name, matching SkillManager's layout
@@ -15,7 +17,7 @@ function skillFilePath(plugin: ObsidianGemini, skillName: string): string {
 	if (plugin.skillManager) {
 		return normalizePath(`${plugin.skillManager.getSkillsFolderPath()}/${skillName}/SKILL.md`);
 	}
-	return normalizePath(`${plugin.settings.historyFolder}/Skills/${skillName}/SKILL.md`);
+	return stateFolderPath(plugin.settings, STATE_SUBFOLDERS.skills, skillName, SKILL_FILENAME);
 }
 
 /**
@@ -138,6 +140,32 @@ export class ActivateSkillTool implements Tool {
  * Creates a properly structured skill directory with SKILL.md following
  * the agentskills.io specification.
  */
+
+/**
+ * Shared execute() preamble for the skill tools (#1293): the availability
+ * check and the non-empty-string name validation, with the exact error
+ * strings the tools returned before the extraction (model-facing, so they
+ * stay English — no `t()`). Returns the failure ToolResult, or null when the
+ * caller should proceed.
+ */
+function validateSkillToolPreamble(plugin: ObsidianGemini, params: { name?: string }): ToolResult | null {
+	if (!plugin.skillManager) {
+		return {
+			success: false,
+			error: 'Skill manager service not available',
+		};
+	}
+
+	if (!params.name || typeof params.name !== 'string' || params.name.trim().length === 0) {
+		return {
+			success: false,
+			error: 'Skill name is required and must be a non-empty string',
+		};
+	}
+
+	return null;
+}
+
 export class CreateSkillTool implements Tool {
 	name = 'create_skill';
 	displayName = 'Create Skill';
@@ -171,7 +199,7 @@ export class CreateSkillTool implements Tool {
 	requiresConfirmation = true;
 
 	confirmationMessage = (params: { name: string; description: string }) => {
-		const preview = `${params.description.substring(0, 200)}${params.description.length > 200 ? '...' : ''}`;
+		const preview = truncateForPreview(params.description);
 		return t('tool.confirm.createSkill', { name: params.name, description: preview });
 	};
 
@@ -210,20 +238,8 @@ export class CreateSkillTool implements Tool {
 		const plugin = context.plugin;
 
 		try {
-			if (!plugin.skillManager) {
-				return {
-					success: false,
-					error: 'Skill manager service not available',
-				};
-			}
-
-			// Validate required params
-			if (!params.name || typeof params.name !== 'string' || params.name.trim().length === 0) {
-				return {
-					success: false,
-					error: 'Skill name is required and must be a non-empty string',
-				};
-			}
+			const preambleError = validateSkillToolPreamble(plugin, params);
+			if (preambleError) return preambleError;
 
 			if (!params.description || typeof params.description !== 'string' || params.description.trim().length === 0) {
 				return {
@@ -359,19 +375,8 @@ export class EditSkillTool implements Tool {
 		const plugin = context.plugin;
 
 		try {
-			if (!plugin.skillManager) {
-				return {
-					success: false,
-					error: 'Skill manager service not available',
-				};
-			}
-
-			if (!params.name || typeof params.name !== 'string' || params.name.trim().length === 0) {
-				return {
-					success: false,
-					error: 'Skill name is required and must be a non-empty string',
-				};
-			}
+			const preambleError = validateSkillToolPreamble(plugin, params);
+			if (preambleError) return preambleError;
 
 			// Auto-lowercase the name so the validator's lowercase-only rule doesn't
 			// reject casings the model is otherwise likely to emit.

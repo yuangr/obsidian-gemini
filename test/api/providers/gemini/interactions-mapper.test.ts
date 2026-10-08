@@ -44,6 +44,38 @@ describe('InteractionStreamAccumulator', () => {
 		expect(response.toolCalls).toBeUndefined();
 	});
 
+	test('maps thoughts_token_count into thoughtsTokenCount for thinking models (#1437)', () => {
+		const { response } = run([
+			{ event_type: 'interaction.created', interaction: { id: 'int_1' } },
+			{
+				event_type: 'interaction.completed',
+				interaction: {
+					usage: { total_input_tokens: 4, total_output_tokens: 2, total_tokens: 9, thoughts_token_count: 3 },
+				},
+			},
+		]);
+
+		expect(response.usageMetadata).toEqual({
+			promptTokenCount: 4,
+			candidatesTokenCount: 2,
+			totalTokenCount: 9,
+			cachedContentTokenCount: undefined,
+			thoughtsTokenCount: 3,
+		});
+	});
+
+	test('omits thoughtsTokenCount when the interaction reports no reasoning tokens', () => {
+		const { response } = run([
+			{ event_type: 'interaction.created', interaction: { id: 'int_1' } },
+			{
+				event_type: 'interaction.completed',
+				interaction: { usage: { total_input_tokens: 4, total_output_tokens: 2, total_tokens: 6 } },
+			},
+		]);
+
+		expect(response.usageMetadata).not.toHaveProperty('thoughtsTokenCount');
+	});
+
 	test('surfaces thought_summary deltas as thought chunks and accumulates thoughts', () => {
 		const { response, chunks } = run([
 			{ event_type: 'step.start', index: 0, step: { type: 'thought' } },
@@ -205,6 +237,73 @@ describe('InteractionStreamAccumulator', () => {
 		]);
 
 		expect(response.toolCalls?.[0].thoughtSignature).toBe('sig-abc');
+	});
+	test('streaming: a signature on the thought step.start is claimed too', () => {
+		const { response } = run([
+			{ event_type: 'step.start', index: 0, step: { type: 'thought', signature: 'sig-on-start' } },
+			{ event_type: 'step.stop', index: 0 },
+			{ event_type: 'step.start', index: 1, step: { type: 'function_call', id: 'c1', name: 'read_file' } },
+			{ event_type: 'step.stop', index: 1 },
+		]);
+
+		expect(response.toolCalls?.[0].thoughtSignature).toBe('sig-on-start');
+	});
+});
+
+// The non-streaming response has the same split as the stream: the signature is
+// a field on the `thought` step and the `function_call` step carries none. This
+// shape was captured from a live gemini-3.5-flash response. Before the fix every
+// headless tool follow-up (scheduled tasks, agent-task hooks) failed with a 400.
+describe('extractModelResponseFromInteraction thought signatures', () => {
+	test('claims the thought step signature for the following tool call', () => {
+		const response = extractModelResponseFromInteraction({
+			steps: [
+				{ type: 'thought', signature: 'sig-abc', summary: [{ type: 'text', text: 'Listing files.' }] },
+				{ type: 'function_call', id: 'c1', name: 'list_files', arguments: { path: '/' } },
+			],
+		});
+
+		expect(response.toolCalls).toEqual([
+			{ name: 'list_files', arguments: { path: '/' }, id: 'c1', thoughtSignature: 'sig-abc' },
+		]);
+		expect(response.thoughts).toBe('Listing files.');
+	});
+
+	test('only the first call of a parallel batch carries the signature', () => {
+		const response = extractModelResponseFromInteraction({
+			steps: [
+				{ type: 'thought', signature: 'sig-abc' },
+				{ type: 'function_call', id: 'a', name: 'read_file', arguments: {} },
+				{ type: 'function_call', id: 'b', name: 'list_files', arguments: {} },
+			],
+		});
+
+		expect(response.toolCalls?.map((c) => c.thoughtSignature)).toEqual(['sig-abc', undefined]);
+	});
+
+	test('a signature on the function_call step wins and still spends the buffered one', () => {
+		const response = extractModelResponseFromInteraction({
+			steps: [
+				{ type: 'thought', signature: 'buffered' },
+				{ type: 'function_call', id: 'a', name: 'read_file', arguments: {}, signature: 'on-step' },
+				{ type: 'function_call', id: 'b', name: 'list_files', arguments: {} },
+			],
+		});
+
+		expect(response.toolCalls?.map((c) => c.thoughtSignature)).toEqual(['on-step', undefined]);
+	});
+
+	test('each thought step signs the call that follows it', () => {
+		const response = extractModelResponseFromInteraction({
+			steps: [
+				{ type: 'thought', signature: 'sig-1' },
+				{ type: 'function_call', id: 'a', name: 'read_file', arguments: {} },
+				{ type: 'thought', signature: 'sig-2' },
+				{ type: 'function_call', id: 'b', name: 'list_files', arguments: {} },
+			],
+		});
+
+		expect(response.toolCalls?.map((c) => c.thoughtSignature)).toEqual(['sig-1', 'sig-2']);
 	});
 });
 

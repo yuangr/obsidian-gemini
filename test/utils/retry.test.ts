@@ -409,5 +409,136 @@ describe('retry utilities', () => {
 			expect(result).toBe('ok');
 			expect(op).toHaveBeenCalledTimes(2);
 		});
+
+		describe('shouldAbort', () => {
+			test('aborts before the first attempt without invoking the operation', async () => {
+				const op = vi.fn().mockResolvedValue('ok');
+
+				await expect(
+					executeWithRetry(
+						op,
+						{ maxRetries: 3, initialDelayMs: 100, jitter: false },
+						{ operationName: 'cancellable', shouldAbort: () => true }
+					)
+				).rejects.toThrow('cancellable was cancelled');
+				expect(op).not.toHaveBeenCalled();
+			});
+
+			test('aborts at catch time without retrying or logging a retry warning', async () => {
+				const mockLogger = { log: vi.fn(), debug: vi.fn(), error: vi.fn(), warn: vi.fn() };
+				let cancelled = false;
+				const op = vi.fn().mockImplementation(() => {
+					// The caller cancels while the attempt is in flight
+					cancelled = true;
+					return Promise.reject(new Error('transient failure'));
+				});
+
+				const promise = executeWithRetry(
+					op,
+					{ maxRetries: 3, initialDelayMs: 100, jitter: false },
+					{
+						operationName: 'cancellable',
+						logger: mockLogger as any,
+						shouldAbort: () => cancelled,
+					}
+				);
+				const assertion = expect(promise).rejects.toThrow('cancellable was cancelled');
+				await vi.runAllTimersAsync();
+				await assertion;
+
+				expect(op).toHaveBeenCalledTimes(1);
+				expect(mockLogger.warn).not.toHaveBeenCalled();
+				expect(mockLogger.error).not.toHaveBeenCalled();
+			});
+
+			test('uses the caller-supplied abortError', async () => {
+				const op = vi.fn().mockResolvedValue('ok');
+
+				await expect(
+					executeWithRetry(
+						op,
+						{ maxRetries: 3, initialDelayMs: 100, jitter: false },
+						{
+							operationName: 'cancellable',
+							shouldAbort: () => true,
+							abortError: () => new Error('Stream was cancelled'),
+						}
+					)
+				).rejects.toThrow('Stream was cancelled');
+			});
+
+			test('a shouldAbort that never fires leaves retry behavior unchanged', async () => {
+				const op = vi.fn().mockRejectedValueOnce(new Error('fail')).mockResolvedValue('ok');
+
+				const promise = executeWithRetry(
+					op,
+					{ maxRetries: 3, initialDelayMs: 100, jitter: false },
+					{ operationName: 'cancellable', shouldAbort: () => false }
+				);
+				await vi.runAllTimersAsync();
+
+				expect(await promise).toBe('ok');
+				expect(op).toHaveBeenCalledTimes(2);
+			});
+
+			test('aborts during the backoff sleep, cutting the wait short (#1448)', async () => {
+				const op = vi.fn().mockRejectedValueOnce(new Error('fail')).mockResolvedValue('ok');
+				let cancelled = false;
+
+				const promise = executeWithRetry(
+					op,
+					{ maxRetries: 3, initialDelayMs: 5000, jitter: false },
+					{
+						operationName: 'cancellable',
+						shouldAbort: () => cancelled,
+					}
+				);
+				const assertion = expect(promise).rejects.toThrow('cancellable was cancelled');
+				// First attempt fails; the 5000ms backoff is scheduled.
+				await vi.advanceTimersByTimeAsync(0);
+				cancelled = true;
+				// One poll interval observes the cancellation — the sleep must NOT
+				// need to run its full 5000ms before the abort throws.
+				await vi.advanceTimersByTimeAsync(100);
+				await assertion;
+				expect(op).toHaveBeenCalledTimes(1);
+			});
+
+			test('a backoff that elapses without cancellation still retries normally', async () => {
+				const op = vi.fn().mockRejectedValueOnce(new Error('fail')).mockResolvedValue('ok');
+				let polls = 0;
+				const promise = executeWithRetry(
+					op,
+					{ maxRetries: 3, initialDelayMs: 300, jitter: false },
+					{
+						operationName: 'cancellable',
+						shouldAbort: () => {
+							polls++;
+							return false;
+						},
+					}
+				);
+				await vi.runAllTimersAsync();
+
+				expect(await promise).toBe('ok');
+				// The sleep was sliced into poll-interval checks, and none aborted.
+				expect(polls).toBeGreaterThanOrEqual(1);
+				expect(op).toHaveBeenCalledTimes(2);
+			});
+
+			test('a delay shorter than the poll interval sleeps uninterruptibly and unchanged', async () => {
+				const op = vi.fn().mockRejectedValueOnce(new Error('fail')).mockResolvedValue('ok');
+
+				const promise = executeWithRetry(
+					op,
+					{ maxRetries: 3, initialDelayMs: 50, jitter: false },
+					{ operationName: 'cancellable', shouldAbort: () => false }
+				);
+				await vi.runAllTimersAsync();
+
+				expect(await promise).toBe('ok');
+				expect(op).toHaveBeenCalledTimes(2);
+			});
+		});
 	});
 });

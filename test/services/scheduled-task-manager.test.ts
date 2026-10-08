@@ -3,6 +3,7 @@ import { TFile as MockTFile } from 'obsidian';
 import { ScheduledTaskManager, computeNextRunAt, ScheduledTask } from '../../src/services/scheduled-task-manager';
 import { MAX_CONSECUTIVE_FAILURES } from '../../src/services/failure-pause-tracker';
 import { PolicyPreset, ToolPermission } from '../../src/types/tool-policy';
+import { load as parseYaml } from 'js-yaml';
 
 // executeTask dynamically imports ScheduledTaskRunner; stub it with a controllable
 // run() so the wiring tests can drive resolve (success) and reject (failure) paths.
@@ -65,13 +66,10 @@ vi.mock('obsidian', () => ({
 }));
 
 // ensureFolderExists is a no-op in tests
-vi.mock('../../src/utils/file-utils', () => ({
+vi.mock('../../src/utils/file-utils', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../src/utils/file-utils')>()),
 	ensureFolderExists: vi.fn().mockResolvedValue(undefined),
-}));
-
-// findFrontmatterEndOffset — return undefined (no frontmatter in test content)
-vi.mock('../../src/services/skill-manager', () => ({
-	findFrontmatterEndOffset: vi.fn().mockReturnValue(undefined),
+	ensureParentFolderExists: vi.fn().mockResolvedValue(undefined),
 }));
 
 // ─── computeNextRunAt ─────────────────────────────────────────────────────────
@@ -750,6 +748,168 @@ describe('ScheduledTaskManager', () => {
 			// parseTaskFile (vault.read) must never have been called from the stale defer
 			expect(plugin.app.vault.read).not.toHaveBeenCalled();
 		});
+
+		it('does not admit a create event whose parse resolves after destroy()', async () => {
+			const plugin = createMockPlugin();
+			plugin.app.vault.getMarkdownFiles.mockReturnValue([]);
+			const manager = new ScheduledTaskManager(plugin);
+			await manager.initialize();
+
+			const vaultOnCalls = (plugin.app.vault.on as Mock).mock.calls;
+			const createHandler = vaultOnCalls.find(([e]: any[]) => e === 'create')?.[1] as (...a: unknown[]) => unknown;
+			const newFile = Object.assign(new MockTFile(), {
+				path: 'gemini-scribe/Scheduled-Tasks/late-task.md',
+				basename: 'late-task',
+				extension: 'md',
+			});
+			let resolveRead!: (value: string) => void;
+			plugin.app.vault.read = vi.fn().mockReturnValue(
+				new Promise<string>((resolve) => {
+					resolveRead = resolve;
+				})
+			);
+			plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { schedule: 'daily' } });
+
+			vi.useFakeTimers();
+			try {
+				createHandler(newFile);
+				await vi.advanceTimersByTimeAsync(500);
+				expect(plugin.app.vault.read).toHaveBeenCalledOnce();
+				plugin.app.vault.adapter.write.mockClear();
+
+				manager.destroy();
+				resolveRead('Late prompt.');
+				await Promise.resolve();
+				await Promise.resolve();
+
+				expect(manager.getTasks()).toEqual([]);
+				expect(manager.getState()).toEqual({});
+				expect(plugin.app.vault.adapter.write).not.toHaveBeenCalled();
+			} finally {
+				vi.useRealTimers();
+				manager.destroy();
+			}
+		});
+
+		it('does not admit a create event whose parse crosses a refresh initialize()', async () => {
+			const plugin = createMockPlugin();
+			plugin.app.vault.getMarkdownFiles.mockReturnValue([]);
+			const manager = new ScheduledTaskManager(plugin);
+			await manager.initialize();
+
+			const vaultOnCalls = (plugin.app.vault.on as Mock).mock.calls;
+			const createHandler = vaultOnCalls.find(([e]: any[]) => e === 'create')?.[1] as (...a: unknown[]) => unknown;
+			const newFile = Object.assign(new MockTFile(), {
+				path: 'gemini-scribe/Scheduled-Tasks/stale-task.md',
+				basename: 'stale-task',
+				extension: 'md',
+			});
+			let resolveRead!: (value: string) => void;
+			plugin.app.vault.read = vi.fn().mockReturnValue(
+				new Promise<string>((resolve) => {
+					resolveRead = resolve;
+				})
+			);
+			plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { schedule: 'daily' } });
+
+			vi.useFakeTimers();
+			try {
+				createHandler(newFile);
+				await vi.advanceTimersByTimeAsync(500);
+				expect(plugin.app.vault.read).toHaveBeenCalledOnce();
+
+				await manager.initialize({ refresh: true });
+				plugin.app.vault.adapter.write.mockClear();
+				resolveRead('Stale prompt.');
+				await Promise.resolve();
+				await Promise.resolve();
+
+				expect(manager.getTasks()).toEqual([]);
+				expect(manager.getState()).toEqual({});
+				expect(plugin.app.vault.adapter.write).not.toHaveBeenCalled();
+			} finally {
+				vi.useRealTimers();
+				manager.destroy();
+			}
+		});
+
+		it('does not apply a metadata re-parse that resolves after destroy()', async () => {
+			const plugin = createMockPlugin();
+			plugin.app.vault.getMarkdownFiles.mockReturnValue([]);
+			const manager = new ScheduledTaskManager(plugin);
+			await manager.initialize();
+
+			const cacheOnCalls = (plugin.app.metadataCache.on as Mock).mock.calls;
+			const changedHandler = cacheOnCalls.find(([e]: any[]) => e === 'changed')?.[1] as (...a: unknown[]) => unknown;
+			const changedFile = Object.assign(new MockTFile(), {
+				path: 'gemini-scribe/Scheduled-Tasks/changed-task.md',
+				basename: 'changed-task',
+				extension: 'md',
+			});
+			let resolveRead!: (value: string) => void;
+			plugin.app.vault.read = vi.fn().mockReturnValue(
+				new Promise<string>((resolve) => {
+					resolveRead = resolve;
+				})
+			);
+			plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { schedule: 'daily' } });
+
+			changedHandler(changedFile);
+			expect(plugin.app.vault.read).toHaveBeenCalledOnce();
+			plugin.app.vault.adapter.write.mockClear();
+			manager.destroy();
+			resolveRead('Changed prompt.');
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(manager.getTasks()).toEqual([]);
+			expect(manager.getState()).toEqual({});
+			expect(plugin.app.vault.adapter.write).not.toHaveBeenCalled();
+		});
+
+		it('does not register listeners when destroy() interrupts initialize()', async () => {
+			const plugin = createMockPlugin();
+			plugin.app.vault.getMarkdownFiles.mockReturnValue([
+				Object.assign(new MockTFile(), {
+					path: 'gemini-scribe/Scheduled-Tasks/stale-task.md',
+					basename: 'stale-task',
+					extension: 'md',
+				}),
+			]);
+			plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { schedule: 'daily' } });
+			plugin.app.vault.read = vi.fn().mockResolvedValue('Stale prompt.');
+			plugin.app.vault.adapter.exists.mockResolvedValue(true);
+			let resolveStateRead!: (value: string) => void;
+			plugin.app.vault.adapter.read.mockReturnValue(
+				new Promise<string>((resolve) => {
+					resolveStateRead = resolve;
+				})
+			);
+			const manager = new ScheduledTaskManager(plugin);
+
+			const initializePromise = manager.initialize();
+			await vi.waitFor(() => {
+				expect(plugin.app.vault.adapter.read).toHaveBeenCalledOnce();
+			});
+			manager.destroy();
+			resolveStateRead(
+				JSON.stringify({
+					'stale-task': { nextRunAt: '2026-09-04T08:00:00.000Z' },
+				})
+			);
+			await initializePromise;
+
+			expect(plugin.app.vault.on).not.toHaveBeenCalled();
+			expect(plugin.app.metadataCache.on).not.toHaveBeenCalled();
+			expect(manager.getTasks()).toEqual([]);
+			expect(manager.getState()).toEqual({});
+
+			plugin.app.vault.adapter.read.mockResolvedValue('{}');
+			await manager.initialize();
+			expect(plugin.app.vault.on).toHaveBeenCalledOnce();
+			expect(plugin.app.metadataCache.on).toHaveBeenCalledOnce();
+			manager.destroy();
+		});
 	});
 
 	// ── Tick behaviour ──────────────────────────────────────────────────────
@@ -1113,6 +1273,57 @@ describe('ScheduledTaskManager', () => {
 			);
 		});
 
+		it('rejects a separator-bearing slug before vault.create', async () => {
+			// #1485: a slug becomes a file basename. normalizePath collapses
+			// separators but does not resolve `..`, so an unchecked slug could
+			// land the definition file — and the derived Runs/<slug>/ output
+			// path — outside Scheduled-Tasks/. The modal sanitizes input before
+			// it reaches the manager, so this is defense-in-depth against a
+			// programmatic caller.
+			const plugin = createMockPlugin();
+			plugin.app.vault.create = vi.fn().mockResolvedValue(undefined);
+			const manager = new ScheduledTaskManager(plugin);
+			await manager.initialize();
+
+			for (const slug of ['sub/dir', '..', 'sub\\dir']) {
+				await expect(manager.createTask({ slug, schedule: 'daily', prompt: 'x' })).rejects.toThrow(/slug/);
+			}
+			expect(plugin.app.vault.create).not.toHaveBeenCalled();
+		});
+
+		it('rejects hyphen-rule violations before vault.create', async () => {
+			const plugin = createMockPlugin();
+			plugin.app.vault.create = vi.fn().mockResolvedValue(undefined);
+			const manager = new ScheduledTaskManager(plugin);
+			await manager.initialize();
+
+			for (const slug of ['-hidden', 'hidden-', 'a--b', 'My Slug']) {
+				await expect(manager.createTask({ slug, schedule: 'daily', prompt: 'x' })).rejects.toThrow(/slug/);
+			}
+			expect(plugin.app.vault.create).not.toHaveBeenCalled();
+		});
+
+		it('still parses a permissive on-disk task file whose slug the create path would reject', async () => {
+			// Back-compat pin for #1485: validation is create-path only.
+			// parseTaskFile stays permissive so an existing
+			// Scheduled-Tasks/My Daily Digest.md keeps loading and running
+			// instead of being silently dropped.
+			const plugin = createMockPlugin();
+			plugin.app.vault.getMarkdownFiles.mockReturnValue([
+				{ path: 'gemini-scribe/Scheduled-Tasks/My Daily Digest.md', basename: 'My Daily Digest' },
+			]);
+			plugin.app.metadataCache.getFileCache.mockReturnValue({
+				frontmatter: { schedule: 'daily' },
+			});
+			plugin.app.vault.read = vi.fn().mockResolvedValue('Prompt.');
+			const manager = new ScheduledTaskManager(plugin);
+			await manager.initialize();
+
+			const tasks = manager.getTasks();
+			expect(tasks).toHaveLength(1);
+			expect(tasks[0].slug).toBe('My Daily Digest');
+		});
+
 		it('serialized content includes toolPolicy block when policy is set', async () => {
 			const plugin = createMockPlugin();
 			plugin.app.vault.create = vi.fn().mockResolvedValue(undefined);
@@ -1132,7 +1343,7 @@ describe('ScheduledTaskManager', () => {
 			const written = (plugin.app.vault.create as Mock).mock.calls[0][1] as string;
 			expect(written).toContain('toolPolicy:');
 			expect(written).toContain('preset: edit_mode');
-			expect(written).toContain('write_file: deny');
+			expect(written).toContain("'write_file': deny");
 		});
 
 		it('omits optional fields from serialized content when not set', async () => {
@@ -1673,6 +1884,68 @@ describe('ScheduledTaskManager', () => {
 
 			const written = (plugin.app.vault.create as Mock).mock.calls[0][1] as string;
 			expect(written).toContain("outputPath: 'Custom/Output/{date}.md'");
+		});
+
+		it('escapes an apostrophe in outputPath so the frontmatter block stays parseable', async () => {
+			const plugin = createMockPlugin();
+			plugin.app.vault.create = vi.fn().mockResolvedValue(undefined);
+			const manager = new ScheduledTaskManager(plugin);
+			await manager.initialize();
+
+			await manager.createTask({
+				slug: 'apostrophe-out',
+				schedule: 'daily',
+				outputPath: "Allen's Notes/{date}.md",
+				prompt: 'Apostrophe in the path.',
+			});
+
+			const written = (plugin.app.vault.create as Mock).mock.calls[0][1] as string;
+			// A single-quoted YAML scalar escapes `'` by doubling it; interpolating
+			// the raw value would terminate the scalar early and break the block.
+			expect(written).toContain("outputPath: 'Allen''s Notes/{date}.md'");
+			expect(written).not.toContain("outputPath: 'Allen's Notes/{date}.md'");
+		});
+
+		it('escapes an apostrophe in model', async () => {
+			const plugin = createMockPlugin();
+			plugin.app.vault.create = vi.fn().mockResolvedValue(undefined);
+			const manager = new ScheduledTaskManager(plugin);
+			await manager.initialize();
+
+			await manager.createTask({
+				slug: 'apostrophe-model',
+				schedule: 'daily',
+				model: "allen's-model",
+				prompt: 'Apostrophe in the model name.',
+			});
+
+			const written = (plugin.app.vault.create as Mock).mock.calls[0][1] as string;
+			expect(written).toContain("model: 'allen''s-model'");
+		});
+
+		// The parse-back regression net #1352 asked for. The scheduler half of
+		// this change is code motion, so this is also what pins that the move
+		// changed nothing observable.
+		it('round-trips outputPath and model through a real YAML parse', async () => {
+			const plugin = createMockPlugin();
+			plugin.app.vault.create = vi.fn().mockResolvedValue(undefined);
+			const manager = new ScheduledTaskManager(plugin);
+			await manager.initialize();
+
+			const nasty = `Allen's "Notes": {date}.md`;
+			await manager.createTask({
+				slug: 'round-trip',
+				schedule: 'daily',
+				outputPath: nasty,
+				model: 'line1\nline2',
+				prompt: 'Round trip.',
+			});
+
+			const written = (plugin.app.vault.create as Mock).mock.calls[0][1] as string;
+			const parsed = parseYaml(written.split('---\n')[1]) as Record<string, any>;
+			expect(parsed.outputPath).toBe(nasty);
+			expect(parsed.model).toBe('line1\nline2');
+			expect(parsed.schedule).toBe('daily');
 		});
 	});
 

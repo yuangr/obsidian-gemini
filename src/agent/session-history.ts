@@ -1,4 +1,4 @@
-import { TFile, TFolder, normalizePath } from 'obsidian';
+import { TFile, TFolder } from 'obsidian';
 import { ChatSession } from '../types/agent';
 import { ConversationEntryMetadata, GeminiConversationEntry } from '../types/conversation';
 import type { ObsidianGemini } from '../types/plugin';
@@ -7,6 +7,7 @@ import { formatLocalTimestamp } from '../utils/format-utils';
 import { serializeToolPolicy } from '../types/tool-policy';
 import * as Handlebars from 'handlebars';
 import historyEntryTemplate from '../history/templates/historyEntry.hbs';
+import { STATE_SUBFOLDERS, stateFolderPath } from '../services/state-folder';
 
 /**
  * Handles history for agent sessions stored in Agent-Sessions/ folder
@@ -121,11 +122,7 @@ export class SessionHistory {
 			timestamp: formatLocalTimestamp(entryTimestamp),
 			pluginVersion: this.plugin.manifest.version,
 			model: entry.model,
-			temperature: entry.metadata?.temperature,
-			topP: entry.metadata?.topP,
 			customPrompt: entry.metadata?.customPrompt,
-			toolsUsed: [], // TODO: Add tool support later
-			isDefined: (value: unknown) => value !== undefined,
 		});
 
 		const newContent = existingContent + '\n' + entryContent;
@@ -401,17 +398,12 @@ export class SessionHistory {
 				delete frontmatter.model;
 			}
 
-			if (session.modelConfig?.temperature !== undefined) {
-				frontmatter.temperature = session.modelConfig.temperature;
-			} else {
-				delete frontmatter.temperature;
-			}
-
-			if (session.modelConfig?.topP !== undefined) {
-				frontmatter.top_p = session.modelConfig.topP;
-			} else {
-				delete frontmatter.top_p;
-			}
+			// The two legacy model-sampling frontmatter keys removed by the
+			// settings redesign are never written, read, or deleted here.
+			// Sessions saved before the redesign keep those keys on disk — they
+			// are inert, and a metadata update must not strip them out (see
+			// AGENTS.md's tolerance requirement and
+			// test/agent/session-history-legacy-params.test.ts).
 
 			if (session.modelConfig?.promptTemplate) {
 				frontmatter.prompt_template = session.modelConfig.promptTemplate;
@@ -432,6 +424,6 @@ export class SessionHistory {
 	 * Get the Agent-Sessions folder path
 	 */
 	private getAgentSessionsFolderPath(): string {
-		return normalizePath(`${this.plugin.settings.historyFolder}/Agent-Sessions`);
+		return stateFolderPath(this.plugin.settings, STATE_SUBFOLDERS.agentSessions);
 	}
 }

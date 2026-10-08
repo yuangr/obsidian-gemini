@@ -4,6 +4,7 @@
  */
 
 import { App } from 'obsidian';
+import { base64DecodedBytes as base64DecodedBytesImpl } from '../../utils/file-classification';
 import { ensureFolderExists } from '../../utils/file-utils';
 
 /**
@@ -27,6 +28,22 @@ export interface InlineAttachment {
  */
 export function generateAttachmentId(): string {
 	return `att-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/**
+ * Decoded byte size of a base64 payload. Implementation lives in
+ * `file-classification.ts` (the shared leaf, #1430); re-exported here so the
+ * attachment helpers and their existing importers keep one import path.
+ */
+export const base64DecodedBytes = base64DecodedBytesImpl;
+
+/**
+ * Estimate the decoded byte size of pending attachments from their base64
+ * payloads. Shared by every path that seeds the cumulative size used against
+ * GEMINI_INLINE_DATA_LIMIT (#1363).
+ */
+export function estimateAttachmentBytes(attachments: InlineAttachment[]): number {
+	return attachments.reduce((sum, a) => sum + base64DecodedBytes(a.base64), 0);
 }
 
 /**

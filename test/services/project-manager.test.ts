@@ -107,7 +107,12 @@ describe('ProjectManager', () => {
 			await manager.initialize();
 
 			expect(manager.discoverProjects()).toHaveLength(0);
-			expect(mockPlugin.logger.warn).toHaveBeenCalled();
+			// The scan path must use the same `ProjectManager:` prefix as the other
+			// parse-failure sites — it used to warn without it (#1369).
+			expect(mockPlugin.logger.warn).toHaveBeenCalledWith(
+				'ProjectManager: Failed to parse project at bad/Bad.md:',
+				expect.any(Error)
+			);
 		});
 	});
 
@@ -219,29 +224,6 @@ describe('ProjectManager', () => {
 			const project = await manager.parseProjectFile(file);
 
 			expect(project!.instructions).toContain('```javascript');
-		});
-
-		it('should resolve wikilinks to context files', async () => {
-			const file = createMockFile('project/Links.md');
-			const linkedFile = createMockFile('reference/Style Guide.md');
-
-			mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
-				frontmatter: { tags: [PROJECT_TAG], name: 'Links' },
-				frontmatterPosition: { end: { offset: 0 } },
-				links: [{ link: 'Style Guide' }],
-				embeds: [{ link: 'Magic System' }],
-			});
-			mockPlugin.app.vault.read.mockResolvedValue('Body with [[Style Guide]] and ![[Magic System]]');
-			mockPlugin.app.metadataCache.getFirstLinkpathDest.mockImplementation((link: string) => {
-				if (link === 'Style Guide') return linkedFile;
-				return null;
-			});
-
-			const project = await manager.parseProjectFile(file);
-
-			expect(project!.contextFiles).toHaveLength(1);
-			expect(project!.contextFiles[0].path).toBe('reference/Style Guide.md');
-			expect(project!.embedFiles).toHaveLength(0); // Magic System didn't resolve
 		});
 
 		it('should compute rootPath from file parent', async () => {
@@ -643,6 +625,23 @@ describe('ProjectManager – extended coverage', () => {
 			expect(capturedContent).toContain('name: "Test"');
 			expect(capturedContent).toContain('skills: []');
 			expect(capturedContent).toContain('toolPolicy: {}');
+		});
+
+		it('picks the next free file name when the name is taken, and names the project after it', async () => {
+			const taken = new Set(['folder/My Project.md', 'folder/My Project 1.md']);
+			mockPlugin.app.vault.getAbstractFileByPath.mockImplementation((path: string) =>
+				taken.has(path) ? createMockFile(path) : null
+			);
+			let capturedContent = '';
+			mockPlugin.app.vault.create = vi.fn().mockImplementation(async (path: string, content: string) => {
+				capturedContent = content;
+				return createMockFile(path);
+			});
+
+			await manager.createProject('folder', 'My Project');
+
+			expect(mockPlugin.app.vault.create).toHaveBeenCalledWith('folder/My Project 2.md', expect.any(String));
+			expect(capturedContent).toContain('name: "My Project 2"');
 		});
 
 		it('returns the created TFile', async () => {
@@ -1213,78 +1212,6 @@ describe('ProjectManager – uncovered line coverage', () => {
 
 			// overrides would be empty → returns undefined
 			expect(project!.config.toolPolicy).toBeUndefined();
-		});
-	});
-
-	// ── Lines 396-397, 405: resolveLinks – undefined links and non-TFile ──
-
-	describe('parseProjectFile – resolveLinks (lines 396-397, 405)', () => {
-		it('returns empty contextFiles and embedFiles when links and embeds are undefined', async () => {
-			const file = createMockFile('project/NoLinks.md');
-			mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
-				frontmatter: { tags: [PROJECT_TAG], name: 'Test' },
-				frontmatterPosition: { end: { offset: 0 } },
-				// no links, no embeds
-			});
-			mockPlugin.app.vault.read.mockResolvedValue('');
-
-			const project = await manager.parseProjectFile(file);
-
-			expect(project!.contextFiles).toEqual([]);
-			expect(project!.embedFiles).toEqual([]);
-		});
-
-		it('skips links that resolve to non-TFile (e.g., folders)', async () => {
-			const file = createMockFile('project/MixedLinks.md');
-			const validFile = createMockFile('notes/Valid.md');
-			// Non-TFile result: just a plain object (not instanceof TFile)
-			const folderLike = { path: 'some-folder', name: 'some-folder', children: [] };
-
-			mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
-				frontmatter: { tags: [PROJECT_TAG], name: 'Test' },
-				frontmatterPosition: { end: { offset: 0 } },
-				links: [{ link: 'Valid' }, { link: 'some-folder' }, { link: 'missing' }],
-				embeds: [{ link: 'also-folder' }],
-			});
-			mockPlugin.app.vault.read.mockResolvedValue('');
-			mockPlugin.app.metadataCache.getFirstLinkpathDest.mockImplementation((link: string) => {
-				if (link === 'Valid') return validFile;
-				if (link === 'some-folder') return folderLike; // not TFile
-				if (link === 'also-folder') return folderLike; // not TFile
-				return null; // missing
-			});
-
-			const project = await manager.parseProjectFile(file);
-
-			expect(project!.contextFiles).toHaveLength(1);
-			expect(project!.contextFiles[0].path).toBe('notes/Valid.md');
-			expect(project!.embedFiles).toHaveLength(0);
-		});
-
-		it('resolves both links and embeds to separate arrays', async () => {
-			const file = createMockFile('project/BothLinks.md');
-			const linkedFile = createMockFile('ref/Linked.md');
-			const embeddedFile = createMockFile('ref/Embedded.md');
-
-			mockPlugin.app.metadataCache.getFileCache.mockReturnValue({
-				frontmatter: { tags: [PROJECT_TAG], name: 'Test' },
-				frontmatterPosition: { end: { offset: 0 } },
-				links: [{ link: 'Linked' }],
-				embeds: [{ link: 'Embedded' }],
-			});
-			mockPlugin.app.vault.read.mockResolvedValue('');
-			mockPlugin.app.metadataCache.getFirstLinkpathDest.mockImplementation((link: string) => {
-				if (link === 'Linked') return linkedFile;
-				if (link === 'Embedded') return embeddedFile;
-				return null;
-			});
-
-			const project = await manager.parseProjectFile(file);
-
-			expect(project!.contextFiles).toHaveLength(1);
-			expect(project!.contextFiles[0].path).toBe('ref/Linked.md');
-			expect(project!.embedFiles).toHaveLength(1);
-			expect(project!.embedFiles[0].path).toBe('ref/Embedded.md');
 		});
 	});
 

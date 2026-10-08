@@ -1,6 +1,6 @@
 # Scheduled tasks
 
-Scheduled tasks let you automate recurring AI prompts — daily summaries, weekly reports, periodic vault maintenance — without any manual intervention. Each task runs as a headless agent session and writes its output to a file in your vault.
+Scheduled tasks let you automate recurring AI prompts — daily summaries, weekly reports, periodic vault maintenance — without any manual intervention. Each task runs as a headless agent session and writes its output to a file in your vault. The temporary session and its tool-loop tracking are released after each run, including cancellation or failure; recurring runs do not retain one session per execution.
 
 ## Overview
 
@@ -19,14 +19,14 @@ gemini-scribe/Scheduled-Tasks/
 
 The easiest way to create a task is through the **Scheduler** UI:
 
-1. Open the command palette and run **Open scheduler** (or go to Settings → Gemini Scribe → Automation → **Open scheduler**)
+1. Open the command palette and run **Open scheduler** (or go to Settings → Gemini Scribe → **Scheduled tasks** → **Open scheduler**)
 2. Click **New task**
 3. Fill in the slug, schedule, tool access, and prompt
 4. Click **Create task**
 
 You can also create tasks manually by writing a markdown file directly:
 
-Create a markdown file inside `[state-folder]/Scheduled-Tasks/`. The filename (without `.md`) becomes the task's **slug** — used in output paths and the task monitor.
+Create a markdown file inside `[state-folder]/Scheduled-Tasks/`. The filename (without `.md`) becomes the task's **slug** — used in output paths and the task monitor. The slug must be 1–64 characters of lowercase ASCII letters, digits, and single hyphens (no leading, trailing, or consecutive hyphens); the create form enforces this.
 
 **Minimal example** — `gemini-scribe/Scheduled-Tasks/daily-summary.md`:
 
@@ -129,7 +129,7 @@ maxIterations: 50
 The **Scheduler** modal is the primary way to manage your tasks. Open it from:
 
 - Command palette → **Open scheduler**
-- Settings → Gemini Scribe → Automation → **Open scheduler**
+- Settings → Gemini Scribe → **Scheduled tasks** → **Open scheduler**
 
 From the Scheduler you can:
 
@@ -147,9 +147,9 @@ From the Scheduler you can:
 
 You can also open the create form directly: **Command Palette → New scheduled task**.
 
-### Read-Only Status View
+### Open the Task List Directly
 
-For a lightweight read-only summary, use **Command Palette → View scheduled tasks**. This panel shows the same task list without edit controls.
+**Command Palette → View scheduled tasks** opens the same manager on its task list. It used to open a separate read-only panel; that panel was removed, and the command now opens the full manager, so any hotkey you bound to it still works and lands on the list view.
 
 ## Output Files
 
@@ -165,6 +165,25 @@ ran_at: '2026-04-18T08:00:00.000Z'
 ```
 
 The `{date}` placeholder in `outputPath` is replaced with the local date (`YYYY-MM-DD`), so each run produces a separate file by default.
+
+### Incomplete runs
+
+If a run ends abnormally — the model returned an empty response twice, or the tool-loop detector aborted the turn — the output file is still written (so the attempt is debuggable) but it is **marked** so it can never be mistaken for a real result:
+
+```markdown
+---
+scheduled_task: 'daily-summary'
+ran_at: '2026-04-18T08:00:00.000Z'
+incomplete: true
+---
+
+> [!warning] Incomplete run
+> This output was written by an automated run that did not complete normally: …
+
+<loop notice text>
+```
+
+A note without the `incomplete` key is a normal, successful run. Hook output notes (an `agent-task` hook with an `outputPath`) use the same marking.
 
 ## Error Handling and Pausing
 
@@ -190,7 +209,7 @@ Dismissing the modal (Escape or ✕) leaves the `!` badge in place so you can re
 
 ### Auto-run on startup
 
-Enable **Settings → Gemini Scribe → Automation → Auto-run missed scheduled tasks on startup** to skip the approval modal entirely and submit all missed tasks silently on every startup.
+Enable **Settings → Gemini Scribe → Scheduled tasks → Auto-run missed tasks on startup** to skip the approval modal entirely and submit all missed tasks silently on every startup.
 
 ### Notes
 

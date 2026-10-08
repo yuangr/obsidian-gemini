@@ -1,4 +1,5 @@
 import type { Mock } from 'vitest';
+import { ToolClassification } from '../../src/types/tool-policy';
 import { AgentLoop } from '../../src/agent/agent-loop';
 import type {
 	ToolCall,
@@ -21,11 +22,24 @@ const confirmationProvider: IConfirmationProvider = {
 // Build a minimal plugin stub with just enough surface for AgentLoop and the
 // followup helpers to walk through. Each test customises only what it cares about.
 function buildPlugin(overrides: any = {}) {
+	// Classifications mirror the real registry so the classification-derived
+	// tool sort (#1424) behaves identically to production in these tests.
+	const classifications: Record<string, ToolClassification> = {
+		read_file: ToolClassification.READ,
+		list_files: ToolClassification.READ,
+		get_workspace_state: ToolClassification.READ,
+		write_file: ToolClassification.WRITE,
+		create_folder: ToolClassification.WRITE,
+		delete_file: ToolClassification.DESTRUCTIVE,
+		move_file: ToolClassification.DESTRUCTIVE,
+		google_search: ToolClassification.EXTERNAL,
+	};
 	const toolRegistry = {
 		getTool: vi.fn().mockImplementation(function (name: string) {
 			return {
 				name,
 				displayName: name,
+				classification: classifications[name],
 			};
 		}),
 		getEnabledTools: vi.fn().mockReturnValue([]),
@@ -45,9 +59,16 @@ function buildPlugin(overrides: any = {}) {
 	const logger = { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(), ...overrides.logger };
 
 	const settings = {
-		chatModelName: 'gemini-test',
-		temperature: 0.5,
-		topP: 0.9,
+		features: {
+			chat: { provider: 'gemini', model: 'gemini-test' },
+			summary: { provider: 'gemini', model: '' },
+			completions: { provider: 'gemini', model: '' },
+			rewrite: { provider: 'gemini', model: '' },
+			webSearch: { provider: 'gemini', model: '' },
+			deepResearch: { provider: 'gemini', model: '' },
+			rag: { provider: 'gemini', model: '' },
+			imageGen: { provider: 'gemini', model: '' },
+		},
 		...overrides.settings,
 	};
 
@@ -281,6 +302,48 @@ describe('AgentLoop', () => {
 			const executedNames = plugin.toolExecutionEngine.executeTool.mock.calls.map((c: any[]) => c[0].name);
 			expect(executedNames).toEqual(['read_file', 'write_file', 'delete_file']);
 		});
+
+		test('the follow-up history pairs each tool result with its own call (#1499)', async () => {
+			// Each helper was individually correct before this fix; the defect
+			// only showed when the sorted execution order fed the unsorted call
+			// array's history. So assert it end-to-end, through run().
+			const plugin = buildPlugin({
+				toolExecutionEngine: {
+					executeTool: vi
+						.fn()
+						.mockImplementation((call: ToolCall) =>
+							Promise.resolve({ success: true, data: { ranFor: call.arguments.path } })
+						),
+				},
+			});
+			const session = buildSession();
+			const api = makeScriptedModelApi([textResponse('done')]);
+
+			// Emitted delete-then-read; the sort executes read first.
+			const loop = new AgentLoop();
+			await loop.run({
+				initialResponse: toolResponse([tc('delete_file', { path: 'old.md' }), tc('read_file', { path: 'src.md' })]),
+				initialUserMessage: 'q',
+				initialHistory: [],
+				options: { plugin, session, confirmationProvider, isCancelled: () => false, createModelApi: () => api },
+			});
+
+			expect(plugin.toolExecutionEngine.executeTool.mock.calls.map((c: any[]) => c[0].name)).toEqual([
+				'read_file',
+				'delete_file',
+			]);
+
+			const followUp = (api.generateModelResponse as unknown as Mock).mock.calls[0][0];
+			const history = followUp.conversationHistory;
+			const callParts = history.flatMap((c: any) => c.parts).filter((p: any) => p.functionCall);
+			const responseParts = history.flatMap((c: any) => c.parts).filter((p: any) => p.functionResponse);
+
+			// The model turn keeps the order the model emitted...
+			expect(callParts.map((p: any) => p.functionCall.name)).toEqual(['delete_file', 'read_file']);
+			// ...and each response sits opposite the call it actually answers.
+			expect(responseParts.map((p: any) => p.functionResponse.name)).toEqual(['delete_file', 'read_file']);
+			expect(responseParts.map((p: any) => p.functionResponse.response.data.ranFor)).toEqual(['old.md', 'src.md']);
+		});
 	});
 
 	describe('cancellation', () => {
@@ -360,7 +423,7 @@ describe('AgentLoop', () => {
 	});
 
 	describe('empty-response handling', () => {
-		test('retry succeeds — returns retry text and marks retried=true, fellBack=false', async () => {
+		test('retry succeeds — returns retry text and fellBack=false', async () => {
 			const plugin = buildPlugin();
 			const session = buildSession();
 			const api = makeScriptedModelApi([textResponse(''), textResponse('summary text')]);
@@ -374,7 +437,6 @@ describe('AgentLoop', () => {
 			});
 
 			expect(result.markdown).toBe('summary text');
-			expect(result.retried).toBe(true);
 			expect(result.fellBack).toBe(false);
 			expect(api.calls).toBe(2); // follow-up + retry
 		});
@@ -393,34 +455,9 @@ describe('AgentLoop', () => {
 			});
 
 			expect(result.fellBack).toBe(true);
-			expect(result.retried).toBe(true);
 			// Fallback message references the executed tool's display name
 			expect(result.markdown).toContain('read_file');
 			expect(result.markdown).toContain('completed the requested actions');
-		});
-
-		test('emits onEmptyResponseRetry hook', async () => {
-			const plugin = buildPlugin();
-			const session = buildSession();
-			const api = makeScriptedModelApi([textResponse(''), textResponse('done')]);
-			const onEmptyResponseRetry = vi.fn();
-
-			const loop = new AgentLoop();
-			await loop.run({
-				initialResponse: toolResponse([tc('read_file')]),
-				initialUserMessage: 'q',
-				initialHistory: [],
-				options: {
-					plugin,
-					session,
-					confirmationProvider,
-					isCancelled: () => false,
-					createModelApi: () => api,
-					hooks: { onEmptyResponseRetry },
-				},
-			});
-
-			expect(onEmptyResponseRetry).toHaveBeenCalledTimes(1);
 		});
 	});
 
@@ -656,6 +693,13 @@ describe('AgentLoop', () => {
 			expect(result.loopAborted).toBe(true);
 			expect(result.exhausted).toBe(false);
 			expect(result.iterations).toBe(1);
+			// The abort notice is rendered straight into the chat. Since #1391 it comes from
+			// t(), so assert the sentence a user actually sees — a missing key or a broken
+			// placeholder would show up here as a raw key or an unfilled {count}.
+			expect(result.markdown).toBe(
+				'The agent kept retrying the same tool call (loop detector fired 3 times). ' +
+					'Stopping this turn to prevent a runaway loop. Try rephrasing your request or starting a new session.'
+			);
 		});
 	});
 
@@ -845,6 +889,10 @@ describe('AgentLoop', () => {
 
 			// 2 tools => 2 toolExecutionComplete; 1 batch => 1 toolChainComplete; 1 model call with usage => 1 apiResponseReceived
 			expect(eventNames.filter((n: string) => n === 'toolExecutionComplete')).toHaveLength(2);
+			// Each tool event names its session so plugin-wide subscribers can keep sessions apart.
+			for (const [, payload] of calls.filter((c: any[]) => c[0] === 'toolExecutionComplete')) {
+				expect(payload.session).toBe(session);
+			}
 			expect(eventNames.filter((n: string) => n === 'toolChainComplete')).toHaveLength(1);
 			expect(eventNames.filter((n: string) => n === 'apiResponseReceived')).toHaveLength(1);
 		});
@@ -868,7 +916,7 @@ describe('AgentLoop', () => {
 	});
 
 	describe('error handling', () => {
-		test('tool throw is captured as a failed result and the loop continues', async () => {
+		test('a tool throw ends the chain and the turn (stopOnToolError default)', async () => {
 			const plugin = buildPlugin();
 			plugin.toolExecutionEngine.executeTool = vi
 				.fn()
@@ -885,8 +933,12 @@ describe('AgentLoop', () => {
 				options: { plugin, session, confirmationProvider, isCancelled: () => false, createModelApi: () => api },
 			});
 
-			expect(result.markdown).toBe('done despite error');
-			expect(plugin.toolExecutionEngine.executeTool).toHaveBeenCalledTimes(2);
+			// Restored #1469 finding: the setting defaults to true, so the first
+			// failed tool ends the chain — the second tool in the batch does not
+			// run, and no follow-up request is scheduled.
+			expect(plugin.toolExecutionEngine.executeTool).toHaveBeenCalledTimes(1);
+			expect(result.markdown).toContain('stopped because a tool call failed');
+			expect(result.markdown).toContain('a');
 			expect(plugin.logger.error).toHaveBeenCalledWith(
 				expect.stringContaining('[AgentLoop] Tool execution error'),
 				expect.any(Error)
@@ -1464,7 +1516,6 @@ describe('AgentLoop', () => {
 				},
 			});
 
-			expect(result.retried).toBe(true);
 			expect(api.generateModelResponse).toHaveBeenCalledTimes(2);
 			const retryRequest = (api.generateModelResponse as Mock).mock.calls[1][0];
 			expect(retryRequest.perTurnContext).toBeUndefined();
@@ -1538,17 +1589,41 @@ describe('AgentLoop', () => {
 			expect(plugin.toolExecutionEngine.executeTool).toHaveBeenCalledTimes(3);
 		});
 
-		test('does not abort when only non-loop failures occur', async () => {
+		test('loop-detector failures are not absorbed by stopOnToolError', async () => {
 			const plugin = buildPlugin();
-			// Regular failures without the loopDetected flag must not escalate.
-			plugin.toolExecutionEngine.executeTool = vi.fn().mockResolvedValue({ success: false, error: 'generic failure' });
+			// Loop-detector failures are the detector's own axis: they must not be
+			// absorbed by stopOnToolError, or the count-based abort above would
+			// degrade into a first-failure abort.
+			plugin.toolExecutionEngine.executeTool = vi
+				.fn()
+				.mockResolvedValue({ success: false, loopDetected: true, error: 'Execution loop detected' });
 
+			const session = buildSession();
+			const api = {
+				generateModelResponse: vi.fn().mockResolvedValue(toolResponse([tc('read_file', { path: 'a' })])),
+			} as any;
+
+			const loop = new AgentLoop();
+			const result = await loop.run({
+				initialResponse: toolResponse([tc('read_file', { path: 'a' })]),
+				initialUserMessage: 'q',
+				initialHistory: [],
+				options: { plugin, session, confirmationProvider, isCancelled: () => false, createModelApi: () => api },
+			});
+
+			expect(result.loopAborted).toBe(true);
+			expect(result.markdown).toMatch(/loop detector fired/i);
+		});
+
+		test('stopOnToolError: false keeps going past failures (the configurable path)', async () => {
+			const plugin = buildPlugin({ settings: { stopOnToolError: false } });
+			plugin.toolExecutionEngine.executeTool = vi.fn().mockResolvedValue({ success: false, error: 'generic failure' });
 			const session = buildSession();
 			const api = makeScriptedModelApi([textResponse('recovered')]);
 
 			const loop = new AgentLoop();
 			const result = await loop.run({
-				initialResponse: toolResponse([tc('read_file'), tc('read_file'), tc('read_file'), tc('read_file')]),
+				initialResponse: toolResponse([tc('read_file', { path: 'a' }), tc('read_file', { path: 'b' })]),
 				initialUserMessage: 'q',
 				initialHistory: [],
 				options: { plugin, session, confirmationProvider, isCancelled: () => false, createModelApi: () => api },
@@ -1556,6 +1631,7 @@ describe('AgentLoop', () => {
 
 			expect(result.loopAborted).toBe(false);
 			expect(result.markdown).toBe('recovered');
+			expect(plugin.toolExecutionEngine.executeTool).toHaveBeenCalledTimes(2);
 		});
 	});
 

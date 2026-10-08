@@ -1,8 +1,9 @@
-import { TFile, normalizePath } from 'obsidian';
+import { TFile } from 'obsidian';
 import type { ObsidianGemini } from '../types/plugin';
 import { CACHE_VERSION, CACHE_SAVE_INTERVAL } from './rag-types';
 import type { RagIndexCache } from './rag-types';
 import { asRecord, getRawErrorMessage } from '../utils/error-utils';
+import { STATE_FILES, stateFolderPath } from './state-folder';
 
 /**
  * Manages the local cache of indexed files for the RAG indexing service.
@@ -37,7 +38,21 @@ export class RagCache {
 	 * Get the path to the index cache file
 	 */
 	get cachePath(): string {
-		return normalizePath(`${this.plugin.settings.historyFolder}/rag-index-cache.json`);
+		return stateFolderPath(this.plugin.settings, STATE_FILES.ragIndexCache);
+	}
+
+	/**
+	 * Build a fresh, empty cache at the current version. `storeName` is carried over
+	 * on a version reset so an existing File Search store isn't orphaned; it defaults
+	 * to empty for the no-file and load-failure paths, which have nothing to carry.
+	 */
+	private static emptyCache(storeName = ''): RagIndexCache {
+		return {
+			version: CACHE_VERSION,
+			storeName,
+			lastSync: 0,
+			files: {},
+		};
 	}
 
 	/**
@@ -74,12 +89,7 @@ export class RagCache {
 							typeof version === 'number' ? version : 'unknown'
 						}, expected ${CACHE_VERSION}), resetting cache`
 					);
-					this._cache = {
-						version: CACHE_VERSION,
-						storeName: typeof parsed.storeName === 'string' ? parsed.storeName : '',
-						lastSync: 0,
-						files: {},
-					};
+					this._cache = RagCache.emptyCache(typeof parsed.storeName === 'string' ? parsed.storeName : '');
 				} else {
 					// Version matched the expected shape — treat as a validated RagIndexCache.
 					this._cache = parsed as unknown as RagIndexCache;
@@ -93,22 +103,12 @@ export class RagCache {
 				this.plugin.logger.log(`RAG Indexing: Loaded cache with ${this._indexedCount} files`);
 			} else {
 				// Initialize empty cache - no file exists
-				this._cache = {
-					version: CACHE_VERSION,
-					storeName: '',
-					lastSync: 0,
-					files: {},
-				};
+				this._cache = RagCache.emptyCache();
 				this._indexedCount = 0;
 			}
 		} catch (error) {
 			this.plugin.logger.error('RAG Indexing: Failed to load cache', error);
-			this._cache = {
-				version: CACHE_VERSION,
-				storeName: '',
-				lastSync: 0,
-				files: {},
-			};
+			this._cache = RagCache.emptyCache();
 			this._indexedCount = 0;
 		}
 	}

@@ -2,23 +2,41 @@
 
 Gemini Scribe is an Obsidian plugin that integrates Google's Gemini AI models, providing powerful AI-driven assistance for note-taking, writing, and knowledge management directly within Obsidian. It leverages your notes as context for AI interactions, making it a highly personalized and integrated experience.
 
-[简体中文](README_zh.md)
-
-> **Note:** Pick one of two setup paths in plugin settings → **Provider**:
+> **Note:** Connect a provider in plugin settings → **Providers**:
 >
 > - **Google Gemini (cloud)** — requires a Gemini API key (free tier available at [Google AI Studio](https://aistudio.google.com/apikey)).
-> - **Ollama (local)** — runs locally with no API key; install [Ollama](https://ollama.com), pull a model, and select it in settings. See [docs/guide/ollama-setup.md](docs/guide/ollama-setup.md) and the [provider capability matrix](docs/reference/provider-capabilities.md) for what's supported.
+> - **Ollama** — runs on your machine with no API key; install [Ollama](https://ollama.com), pull a model, and select it on the Ollama card. Ollama cloud models (marked "cloud" in the picker) are forwarded to ollama.com. See [docs/guide/ollama-setup.md](docs/guide/ollama-setup.md) for details.
+> - **OpenAI (cloud)** — requires your own OpenAI API key, or point it at an OpenAI-compatible server (LM Studio, MLX, ...) with any placeholder key. See [docs/guide/openai-setup.md](docs/guide/openai-setup.md) for details.
+> - **Anthropic (cloud)** — requires your own Anthropic API key; runs Claude models (Opus 5, Sonnet 5, Haiku 4.5, …) with adaptive thinking and image/PDF input. See [docs/guide/anthropic-setup.md](docs/guide/anthropic-setup.md) for details.
+>
+> Then route each feature to a provider on the **Features** page. See the [provider capability matrix](docs/reference/provider-capabilities.md) for what's supported on each.
 
-## What's New in v4.11.0 (Opt Edition)
+## What's New in v4.12.1
 
-**🎨 Gemini Scribe 4.11.0 - Design System, Plan Mode & Smarter Agent Runs (with Opt Edition Optimizations)**
+**🛠️ Gemini Scribe 4.12.1 - Plugin audit compliance & fixes**
 
-_A large feature release — a full visual refresh plus smarter, more responsive agent runs, combined with our signature Opt Edition optimizations:_
+_4.12.1 is a patch for the 4.12 line — a few fixes on top of the full 4.12 feature set:_
+
+- **✅ Obsidian directory audit compliance** - The 4.12.0 build was flagged by Obsidian's plugin audit; the code now passes it without suppressing any checks. Destructive buttons use Obsidian's own destructive styling, agent progress and thinking indicators render with Obsidian's DOM helpers, the OAuth callback server only loads on desktop, and the mobile layout fix no longer relies on inline or `!important` styles. (#1610, #1614)
+- **📱 Agent view on mobile** - Commands that act on the agent view now find the one you're looking at on mobile instead of a hidden sidebar copy. (#1610)
+- **🖼️ Image generation tool only when it can run** - The agent's `generate_image` tool is registered only when image generation is routed to a provider that's actually connected, so it no longer appears and then fails with a missing key. (#1611)
+- **🌍 Translation refresh** - Updated UI translations. (#1606)
+
+_The full 4.12 feature set is unchanged — the multi-provider release, with two new providers, per-feature routing, and a rebuilt settings page:_
+
+- **🌍 Anthropic (Claude) and OpenAI-compatible providers** - Two new providers join Gemini and Ollama: Anthropic Claude models (with adaptive thinking and image/PDF input) and OpenAI or any OpenAI-compatible server such as LM Studio or MLX (custom base URL + API key), each with streaming and tool calling. (#1532, #1286, #1288)
+- **🧭 Per-feature routing** - Chat, summaries, completions, rewrite, web search, deep research, RAG, and image generation each route to their own provider and model; a feature routed to a provider that isn't set up stays off instead of silently falling back to another provider. (#1266)
+- **⚙️ Settings redesign** - A rebuilt settings page with provider connection cards and a Features routing table, built on Obsidian 1.13's settings API; obsolete toggles (streaming, Interactions API, temperature/top-p, retry, loop-detection, MCP enable, and the ineffective system-prompt override) are gone and your settings migrate automatically. (#1508, #1477)
+- **🖼️ OpenAI image generation** - Image generation now works on OpenAI models too, selectable per feature. (#1583)
+- **⚡ Interactions API on for everyone** - Gemini requests use the Interactions API transport by default, and thought signatures are carried correctly through streaming and non-streaming tool calls. (#1191, #1256, #1269, #1603)
+- **🛡️ Sturdier agent runs** - Tool results always stay paired with their calls in replayed turns, tool-call ids survive into function responses, a failed tool ends the turn by default again (configurable), the loop detector shows a notice on its first fire, retry backoff yields to cancellation, Stop aborts the underlying stream, and the token readout now shows reasoning tokens. (#1561, #1443, #1591, #1537, #1453, #1349, #1441)
+- **🤖 Model catalog** - Gemma models join the weekly model update, new Gemini models were added, gemini-3-pro-preview users are migrated to its 3.1 successor, Gemini 2.5 works again on both API paths, and interactions-only models (Gemini Omni) route correctly. (#1562, #1239, #1224, #1222, #1225)
+- **🐛 Fixes** - Session delete uses an inline confirm and renames are collision-safe (#1280, #1221, #1423, #1476); history tool blocks collapse again (#1277); drop, paste, and @-mention share one attachment path with the 20 MB budget held against rasterized images (#1412, #1434); project discovery tools treat the project root as a hard scope, and Switch/Create project commands work as expected (#1520, #1607); scheduled-task and hook reliability fixes, including stale lifecycle writes, apostrophes in frontmatter, and state-folder renames (#1462, #1347, #1584, #1553, #1555, #1594); MCP tool classification follows the server's `destructiveHint` and OAuth HTML-page errors are explained (#1456, #1601); Ollama resolves the context window per model (#1281); plugin load no longer crashes on iOS < 16.4 (#1257); no model-list requests go to providers you haven't set up (#1604); RAG search retries like other calls (#1429); double-spaced code blocks fixed (#1408); /skill inserts a literal token (#1198); more error messages are translated (#1444, #1541, #1546).
+- **⚠️ Upgrade notes** - Requires Obsidian 1.13.1 or later. Known limitation: with Anthropic, if context compaction fires in the middle of a tool chain the request can fail with a 400.
+
+**Previous Updates (v4.11.0):**
 
 - **🎨 Design system overhaul** - A refreshed visual identity built on a new theme-adaptive design-token layer: a signature Gemini accent (bold user message bubbles, a gradient send button, and a brand mark), a unified elevation/shadow scale, a gradient progress bar across all states, motion polish, and consistent icon sizing — adapting cleanly to light, dark, and custom themes. (#1090, #1104, #1107, #1109, #1110, #1112)
-- **⚡ Parallel Tool Execution (Opt Edition)** - Independent, non-modifying read and search tools run concurrently in parallel, reducing latency in agent turns.
-- **💾 Context Caching (Opt Edition)** - Automatically caches conversation history prefix for sessions exceeding `32,768` tokens, dramatically reducing token costs and response latency for long chats.
-- **📂 Files API Uploads (Opt Edition)** - Uploads audio, video, PDF, and image attachments to Google's hosted Files API once per session, avoiding repeated base64 payloads across follow-up turns. Fallbacks to base64 if custom endpoints do not support it.
 - **📋 Plan Mode (opt-in)** - A new toggle in the agent view (and a command) that has the agent lay out its plan before it starts acting, shown as a "Plan" pill; leave it off for the usual direct execution. (#1046)
 - **⚙️ Background execution by default for long-running tools** - Deep research and image generation now run in the background automatically, so the agent view stays responsive and you can track them in the Background Tasks panel. (#1085)
 - **⏹️ Stop halts a streaming response immediately** - The Stop button now cancels a mid-stream follow-up right away instead of waiting for it to finish, and follow-up requests stream live as they arrive. (#1053, #1097)
@@ -27,7 +45,6 @@ _A large feature release — a full visual refresh plus smarter, more responsive
 - **📱 Cleaner startup, especially on mobile** - The plugin no longer triggers "attempted to load NodeJS package" notices when it loads, fixing startup toast spam and a latent mobile-compatibility gap. (#1154)
 - **🧠 Smarter long agent runs** - Context is now compacted during a long tool chain (not just before a turn), so extended runs stay within budget without dropping the work already in flight. (#1074)
 - **🔎 RAG polish** - "Reindex All" is renamed "Rescan Vault" to match what it does, and the "show all files" affordance is now keyboard-accessible. (#1056, #1159)
-- **🗑️ Safer file deletion (Opt Edition)** - When the agent deletes a file or folder it now follows your Obsidian "Deleted files" setting (system trash or the vault's `.trash` folder) instead of permanently removing it, so deletions are recoverable.
 - **🐛 Fixes** - Deep Research works again on `@google/genai` 2.x (#1151); agent tool logs no longer fold into the preceding reasoning block in session history (#1084); and error messages no longer mislabel non-network failures as connectivity problems (#1153).
 - **🔧 Under the hood** - The plugin's entire softened-lint backlog is now cleared and enforced at zero warnings and all 150 circular imports were eliminated, moving the Obsidian community-directory review toward clean. (#1032)
 
@@ -68,28 +85,25 @@ _A large feature release — a full visual refresh plus smarter, more responsive
 ## Features
 
 - **Agent mode with Tool Calling:** An AI agent that can actively work with your vault! It can search for files, read content, create new notes, edit existing ones, move and rename files, create folders, and even conduct deep research with proper citations. Features persistent sessions, granular permission controls, session-specific model configuration, a diff review view that lets you inspect and edit proposed file changes before they're written, and **Plan Mode** — an opt-in UI affordance that generates a step-by-step plan for your approval before the agent acts.
-- **Parallel Tool Execution**: Execute independent read-only or search tools concurrently (e.g., file reads, search queries) in parallel to significantly reduce latency during multi-step agent runs, while state-modifying tools execute sequentially to avoid write race conditions.
-- **Context Caching**: Automatically cache conversation history prefix using Google's Context Caching when session size exceeds `32,768` tokens, lowering token usage costs and improving response speed for long chat sessions.
-- **Files API Uploads**: Securely upload large binary attachments (images, audio, video, PDFs) to Gemini's hosted Files API once per session, referencing them via lightweight URIs in subsequent turns to prevent repeated base64 payload overhead. Supports graceful fallback to base64 inline mode.
 - **Semantic Vault Search:** Search your vault by meaning, not just keywords. Uses Google's File Search API to index your notes in the background. The AI can find relevant content even when you don't remember exact words. Supports PDFs and attachments, with pause/resume controls and detailed status tracking.
 - **Context-Aware Agent:** Add specific notes as persistent context for your agent sessions. The agent can access and reference these context files throughout your conversation, providing highly relevant and personalized responses.
-- **Smart Summarization:** Quickly generate concise, one-sentence summaries of your notes and automatically store them in the document's frontmatter, using a dedicated Gemini model optimized for summarization.
+- **Smart Summarization:** Quickly generate concise, one-sentence summaries of your notes and automatically store them in the document's frontmatter, using a model you choose for summarization.
 - **Selection-Based AI Features:** Work with selected text in powerful ways:
   - **Rewrite**: Transform selected text with custom instructions - right-click and choose "Gemini Scribe: Rewrite text..."
   - **Explain Selection**: Get AI explanations using customizable prompts - right-click and choose "Gemini Scribe: Apply prompt..."
   - **Ask about selection**: Ask any question about selected text - right-click and choose "Gemini Scribe: Ask question..."
-- **IDE-Style Completions:** Get real-time, context-aware text completions as you type, similar to IDEs. Accept completions with `Tab` or dismiss with any other key. This feature uses a dedicated Gemini model for optimized completion generation.
+- **IDE-Style Completions:** Get real-time, context-aware text completions as you type, similar to IDEs. Accept completions with `Tab` or dismiss with any other key. This feature uses its own model, separate from chat, so you can pick a fast one.
 - **Persistent Agent sessions:** Store your agent conversation history directly in your vault as markdown files. Each session is stored in the `gemini-scribe/Agent-Sessions/` folder, making it easy to backup, version control, and continue conversations across sessions.
-- **Configurable Models:** Choose different Gemini models for chat, summarization, and completions, allowing you to tailor the AI's behavior to each task.
+- **Configurable Models:** Choose a provider and model for each feature — chat, summarization, completions, and rewrite — allowing you to tailor the AI's behavior to each task.
 - **Custom Prompt System:** Create reusable AI instruction templates for agent sessions, allowing you to customize the AI's behavior for different workflows (e.g., technical documentation, creative writing, research). Includes command palette commands for easy creation and management.
-- **Image Paste Support:** Paste images directly into the chat input to send them to Gemini for multimodal analysis. Images are automatically saved to your Obsidian attachment folder, displayed as thumbnails before sending, and the AI receives the image path for embedding in notes.
+- **Image Paste Support:** Paste images directly into the chat input to send them to the chat model for multimodal analysis. Images are automatically saved to your Obsidian attachment folder, displayed as thumbnails before sending, and the AI receives the image path for embedding in notes.
 - **MCP Server Support:** [Experimental] Connect to [Model Context Protocol](https://modelcontextprotocol.io/) servers to extend the agent with external tools. Supports stdio (desktop) and HTTP transports (all platforms including mobile), with OAuth authentication for remote servers. Configure per-tool trust settings with seamless integration into the confirmation flow.
 - **Scheduled tasks:** Automate recurring AI prompts — daily summaries, weekly reports, periodic vault maintenance — without manual intervention. Create and manage tasks from the **Open scheduler** command or Settings → Gemini Scribe → Automation. Each task has a frontmatter schedule (`daily`, `daily@HH:MM`, `weekly`, `weekly@HH:MM:DAYS`, `interval:Xm`, etc.) and a prompt body; tasks run as headless agent sessions and write output to your vault. Supports per-task model and tool-category overrides, a configurable tool-iteration cap (`maxIterations`, default 20) for long multi-step runs, catch-up runs for tasks missed while Obsidian was closed (`runIfMissed: true`), automatic pause after repeated failures, and a task monitor via the command palette.
 - **Lifecycle Hooks:** [Opt-in] Trigger headless AI agent runs in response to vault events — file created, modified, deleted, or renamed. Create and manage hooks from the **Open hook manager** command or Settings → Gemini Scribe → Automation. Each hook specifies a trigger, an optional path glob and frontmatter filter, and a prompt template; runs include debounce, per-hour rate limits, cooldown, a configurable tool-iteration cap (`maxIterations`, default 20), and auto-pause guards to keep API costs in check. Requires enabling the `hooksEnabled` setting.
 - **Projects:** Create scoped agent profiles for different areas of your vault. A project bundles custom instructions, file scope, skill selection, and permission overrides into a single configuration. The agent auto-detects projects from your folder structure and applies project-specific behavior — including scoped file discovery, filtered skills, and per-tool permission overrides. See the [Projects guide](https://allenhutchison.github.io/obsidian-gemini/guide/projects) for details and the [blog post](https://allen.hutchison.org/2026/04/09/scoping-ai-context-with-projects-in-gemini-scribe/) for a walkthrough.
 - **Agent Skills:** Create, edit, and use extensible skill packages that give the agent specialized knowledge and workflows. Skills follow the [agentskills.io](https://agentskills.io) specification and are stored in your plugin state folder. The agent automatically discovers available skills and activates them on demand. Update existing skills via the `edit_skill` tool with diff review.
 - **Built-in Prompt templates:** The plugin uses carefully crafted Handlebars templates for system prompts, agent prompts, summarization prompts, selection rewrite prompts, and completion prompts. These ensure consistent and effective AI interaction.
-- **Data Privacy:** All interactions with the Gemini API are done directly from your machine. No data is sent to any third-party servers other than Google's. Agent session history is stored locally in your Obsidian vault as markdown files.
+- **Data Privacy:** Requests for a feature go straight to whichever provider serves it — Google for Gemini, your Ollama server (local by default, but configurable to a remote host), OpenAI (or a compatible server) for OpenAI, or Anthropic for Claude — with no intermediate server unless you configure one yourself (e.g. a custom Gemini API endpoint). See [Provider Capabilities](docs/reference/provider-capabilities.md#privacy-semantics) for the full breakdown. Agent session history is stored locally in your Obsidian vault as markdown files.
 - **Robust Session Management:**
   - Persistent agent sessions that survive restarts
   - Session-specific permissions and settings
@@ -108,9 +122,11 @@ _A large feature release — a full visual refresh plus smarter, more responsive
 5. Manage sessions directly with command palette actions: "New agent session", "Browse agent sessions", "Link project to agent session", and "Agent session settings"
 6. Start using the AI agent to work with your vault!
 
-**Prefer running models locally?** Gemini Scribe also supports [Ollama](https://ollama.com) — install Ollama, pull a model with `ollama pull llama3.2`, and switch the **Provider** in settings to "Ollama (local)". A few Gemini-built-in features (Google Search, Google Maps, URL Context, Deep Research, image generation, RAG) have no local equivalent — but you can point those individually at Gemini under **Per-feature provider** while chat stays local. Nothing is sent to the cloud unless you route it there. See [docs/guide/ollama-setup.md](docs/guide/ollama-setup.md) for details.
+**Prefer running models locally, or already have an OpenAI or Anthropic key?** Gemini Scribe also supports [Ollama](https://ollama.com) — install Ollama, pull a model with `ollama pull llama3.2`, add the Ollama card in **Settings → Providers**, and route Chat to it on the **Features** page — and **OpenAI** — add the OpenAI card with your API key to run chat or GPT Image generation, and optionally point its base URL at an OpenAI-compatible server like LM Studio or MLX — and **Anthropic** — add your Anthropic API key on the Anthropic card to run Claude. Google Search, Google Maps, URL Context, Deep Research, and RAG remain Gemini-only, but you can route those individually to Gemini while chat or image generation uses another provider. Nothing is sent to the cloud unless you route it there. See [docs/guide/ollama-setup.md](docs/guide/ollama-setup.md), [docs/guide/openai-setup.md](docs/guide/openai-setup.md), and [docs/guide/anthropic-setup.md](docs/guide/anthropic-setup.md) for details.
 
 ## Installation
+
+**Requires Obsidian 1.13.1 or later** — the settings tab is built on Obsidian's declarative settings API.
 
 1.  **Community Plugins (Recommended):**
     - Open Obsidian Settings.
@@ -121,8 +137,8 @@ _A large feature release — a full visual refresh plus smarter, more responsive
 
 2.  **Manual Installation:**
     - Download the latest release from the [GitHub Releases](https://github.com/allenhutchison/obsidian-gemini/releases) page (you'll need `main.js`, `manifest.json`, and `styles.css`).
-    - Create a folder named `obsidian-gemini` inside your vault's `.obsidian/plugins/` directory.
-    - Copy the downloaded files into the `obsidian-gemini` folder.
+    - Create a folder named `gemini-scribe` inside your vault's `.obsidian/plugins/` directory.
+    - Copy the downloaded files into the `gemini-scribe` folder.
     - In Obsidian, go to Settings → Community plugins and enable "Gemini Scribe".
 
 ## Configuration
@@ -134,29 +150,19 @@ _A large feature release — a full visual refresh plus smarter, more responsive
 2.  **Configure Plugin Settings:**
     - Open Obsidian Settings.
     - Go to "Gemini Scribe" under "Community plugins".
-    - **Provider:** Choose `Google Gemini (cloud)` (default) or `Ollama (local)`. This is the default for every feature; the Ollama option exposes a base-URL field and refreshes the model list from `GET /api/tags`.
-    - **Per-feature provider:** Route individual features (chat, summaries, completions, rewrite, web & search, vault search index, image generation) to a different provider. Each dropdown lists only the providers that support that feature. A feature your default provider can't serve stays off unless you explicitly assign it one — the plugin never falls back to the cloud on its own.
-    - **API Key:** (Gemini only) Paste your Gemini API key here. Your key is stored securely using Obsidian's SecretStorage.
-    - **Chat model:** Select the preferred Gemini model for chat interactions (default: `gemini-flash-latest`).
-    - **Summary model:** Select the preferred Gemini model for generating summaries (default: `gemini-flash-latest`).
-    - **Completion model:** Select the preferred model for IDE-style completions (default: `gemini-flash-lite-latest`).
-    - **Summary frontmatter key:** Specify the key to use when storing summaries in the frontmatter (default: `summary`).
+    - **Providers:** One connection card per account/endpoint. Add the Gemini card (paste your API key — stored securely via Obsidian's SecretStorage), the Ollama card (base URL, default `http://localhost:11434`), the OpenAI card (API key or a compatible-server base URL), and/or the Anthropic card (API key). Each card shows its available models with a Refresh button, a read-only "Used by" line, and — for Gemini — an "Includes" line for provider-bound extras (Google Maps grounding, page fetch by URL). Set a **Default provider** for any feature you haven't routed elsewhere.
+    - **Features:** Route each feature — Chat and agent, Summaries, Completions, Rewrite, Web search, Deep research, Vault search index, Image generation — to a provider and model. Each row shows "provider · model"; opening it gives exactly two controls (provider, then model filtered to that provider). A feature can be set to **Off**, and a feature routed to a provider that can't serve it (or isn't connected) shows a warning and stays off — the plugin never falls back to another provider on its own.
     - **Your name:** Enter your name, which the AI will use when addressing you.
-    - **Chat History:**
-      - **Enable session history:** Toggle whether to save agent session history.
-      - **Plugin state folder:** Choose the folder within your vault to store plugin data (agent sessions and custom prompts).
+    - **Keep session history:** Toggle whether to save agent session history.
+    - **Review a diff before files are written:** Open a diff view automatically when the agent proposes file changes.
+    - **Vault search index:** Semantic search over your vault using Google File Search — its own sub-page (index toggle, rescan/delete, sync and attachment options, excluded folders).
+    - **Plugin folder:** Choose the folder within your vault to store plugin data (agent sessions, custom prompts, and so on).
+    - **Automation:** Scheduled tasks, Lifecycle hooks, and MCP servers each get their own sub-page for managing entries, plus one persistent toggle each (auto-run missed tasks, enable hooks).
+    - **Tool permissions:** A single searchable list of every tool with filter pills (All/Read/Write/Destructive/External/MCP), fronted by a permission preset dropdown.
+    - **Advanced:** Context compaction threshold, stop-on-tool-error, summary frontmatter key, tool-call logging, and a Diagnostics group (debug mode, token usage display, log-to-file).
+    - **Documentation:** Opens this documentation site.
     - **Custom Prompts:**
-      - **Allow System Prompt Override:** Legacy toggle, currently non-functional — a prompt's own `override_system_prompt: true` frontmatter controls the replacement regardless of this setting. See the [Custom Prompts Guide](docs/guide/custom-prompts.md#system-prompt-override).
-    - **UI Settings:**
-      - **Enable streaming:** Toggle streaming responses for a more interactive chat experience.
-    - **Advanced Settings:** (Click "Show advanced settings" to reveal)
-      - **Temperature:** Control AI creativity and randomness (0-2.0, automatically adjusted based on available models).
-      - **Top P:** Control response diversity and focus (0-1.0).
-      - **Model Discovery:** Gemini models are automatically fetched on startup (cached for 24h); click **Refresh model list** in General settings or run the "Gemini Scribe: Refresh model list" command to fetch a newly-published model immediately. Ollama users get a separate **Refresh Ollama model list** button to re-query the daemon after pulling new models. Each model dropdown lists the models of the provider serving that feature.
-      - **API configuration:** Configure retry behavior, backoff delays, and the Use Interactions API transport (Gemini provider only; on by default, with `generateContent` retained as a fallback).
-      - **Tool Execution:** Control whether to stop agent execution on tool errors.
-      - **Tool loop detection:** Prevent infinite tool execution loops.
-      - **Developer Options:** Debug mode, file logging, and advanced configuration tools.
+      - **System Prompt Override:** Set `override_system_prompt: true` in a custom prompt's frontmatter to replace the built-in system instructions. There is no global toggle. See the [Custom Prompts Guide](docs/guide/custom-prompts.md#system-prompt-override).
 
 ## Usage
 
@@ -174,7 +180,7 @@ Let the AI actively work with your vault through tool calling capabilities.
 
 - **Search Files by Name:** Find any file by filename patterns (wildcards supported)
 - **Search File Contents:** Grep-style text search within note contents (supports regex and case-sensitive search)
-- **Read Files:** Access text files or analyze binary files (images, audio, video, PDF, SVG) directly through Gemini — SVGs are rasterized to PNG on-device so vector artwork and handwritten ink can be viewed and OCR'd
+- **Read Files:** Access text files or analyze binary files directly through the chat model (images and SVG on every provider, PDF on Gemini and Anthropic, audio and video on Gemini) — SVGs are rasterized to PNG on-device so vector artwork and handwritten ink can be viewed and OCR'd
 - **Create Notes:** Generate new notes with specified content
 - **Edit Notes:** Modify existing notes with precision
 - **Move/Rename Files:** Reorganize and rename notes in your vault
@@ -192,7 +198,7 @@ Let the AI actively work with your vault through tool calling capabilities.
 - **Persistent Sessions:** Continue conversations across Obsidian restarts
 - **Permission Controls:** Choose which tools require confirmation
 - **Context Files:** Add specific notes as persistent context
-- **Session Configuration:** Override model, temperature, and prompt per session
+- **Session Configuration:** Override model and prompt per session
 - **Safety Features:** System folders are protected from modifications
 - **Tool permissions**: Granular per-tool permission system with presets (Read only, Cautious, Edit mode, YOLO) and per-tool overrides. Control which tools run automatically, which require confirmation, and which are disabled entirely.
 - **Additional Tools**:
@@ -236,12 +242,14 @@ For detailed guides on all features, visit the [Documentation Site](https://alle
 - [Agent Skills Guide](docs/guide/agent-skills.md) - Create extensible AI skill packages
 - [Scheduled tasks Guide](docs/guide/scheduled-tasks.md) - Automate recurring AI prompts
 - [Lifecycle Hooks Guide](docs/guide/lifecycle-hooks.md) - Trigger AI runs from vault events
+- [Ollama Setup Guide](docs/guide/ollama-setup.md) - Run local models with Ollama
+- [OpenAI Setup Guide](docs/guide/openai-setup.md) - Use your OpenAI API key, or an OpenAI-compatible server
+- [Anthropic Setup Guide](docs/guide/anthropic-setup.md) - Use Claude models with your Anthropic API key
 
 **Configuration & Development:**
 
 - [Settings Reference](docs/reference/settings.md) - Complete settings documentation
-- [Advanced Settings Guide](docs/reference/advanced-settings.md)
-- [Provider Capabilities](docs/reference/provider-capabilities.md) - Gemini vs. Ollama feature matrix
+- [Provider Capabilities](docs/reference/provider-capabilities.md) - Gemini vs. Ollama vs. OpenAI vs. Anthropic feature matrix
 - [Tool Development Guide](docs/contributing/tool-development.md) - Create custom agent tools
 
 ### Chat Interface
@@ -299,19 +307,19 @@ Precisely rewrite any portion of your text with AI assistance. This feature prov
 
 ### IDE-Style Completions
 
-1.  **Toggle Completions:** Use the command palette (Ctrl/Cmd + P) and select "Gemini Scribe: Toggle completions". A notice will confirm whether completions are enabled or disabled.
+1.  **Toggle Completions:** Use the command palette (Ctrl/Cmd + P) and select "Gemini Scribe: Toggle completions". A notice will confirm whether completions are enabled or disabled. The toggle isn't saved — completions start off each time Obsidian starts or the plugin reloads.
 2.  **Write:** Begin typing in a Markdown file.
 3.  **Suggestions:** After a short pause in typing (500ms), Gemini will provide an inline suggestion based on your current context.
 4.  **Accept/Dismiss:**
     - Press `Tab` to accept the suggestion.
     - Press any other key to dismiss the suggestion and continue typing.
-5.  **Context-Aware:** Completions consider the surrounding text and document structure for more relevant suggestions.
+5.  **Context-Aware:** Each suggestion is based on the whole current note — the text before and after the cursor.
 
 ### Chat History
 
 - **Sessions in your vault:** Agent sessions are stored as markdown files under `[Plugin state folder]/Agent-Sessions/`, making them easy to browse, back up, and version-control.
-- **Browse and resume:** Use the session dropdown in the agent panel to load a previous session and continue the conversation.
-- **Manual management:** Sessions are plain markdown — delete the files in `Agent-Sessions/` to remove old conversations. There is no in-app "clear all" command.
+- **Browse and resume:** Open the session menu (☰) in the agent header → **Browse sessions** (or run "Browse agent sessions") to load a previous session and continue the conversation.
+- **Delete:** In **Browse sessions**, click a session's trash icon and confirm with the inline **Delete** button. Sessions are also plain markdown, so you can delete the files in `Agent-Sessions/` directly. There is no in-app "clear all" command.
 - **Automatic management:** The plugin automatically:
   - Creates a session file the first time you send a message
   - Adds a YYYY-MM-DD prefix and an AI-generated description to the session title after the first exchange
@@ -349,23 +357,23 @@ The plugin UI follows **Obsidian's interface language** (Settings → About → 
   - Try typing a few words and pausing to trigger the suggestion
   - Check that you're in a Markdown file
   - Disable other completion plugins that might conflict
-- **Sessions Not Loading:** Ensure "Enable session history" is on and the "Plugin state folder" path is correct. Sessions live under `[Plugin state folder]/Agent-Sessions/`.
+- **Sessions Not Loading:** Ensure "Keep session history" is on and the "Plugin folder" path is correct. Sessions live under `[Plugin state folder]/Agent-Sessions/`.
 - **Custom Prompts Not Working:**
   - Verify the prompt file exists in the `[Plugin state folder]/Prompts/` folder
   - Check that the prompt is selected in session settings (gear icon)
   - See the [Custom Prompts Guide](docs/guide/custom-prompts.md) for detailed troubleshooting
-- **Parameter/Advanced Settings Issues:**
-  - Check if your model supports the temperature range you're using
-  - Reset temperature and Top P to defaults if getting unexpected responses
-  - Restart Obsidian to trigger a fresh model list fetch (for Gemini), or click **Refresh Ollama model list** (for Ollama)
-  - See the [Advanced Settings Guide](docs/reference/advanced-settings.md) for detailed configuration help
+- **Model List Issues:**
+  - Open the provider's card under **Settings → Providers** and click **Refresh** to re-query its model list
+  - Restart Obsidian to trigger a fresh model list fetch (for Gemini)
+  - Check that the provider's card shows "Connected" — a missing key or unreachable Ollama/OpenAI endpoint is why a feature shows a warning on the Features page
+  - See the [Settings Reference](docs/reference/settings.md) for detailed configuration help
 - **Agent mode / Tool Issues:**
   - Verify your Gemini model supports function calling (all Gemini 2.0+ models do)
   - If tools fail, check file permissions and paths
   - System folders (plugin state folder, .obsidian) are protected from modifications
   - For session issues, try creating a new session from the chat interface
-  - Check the console (Ctrl/Cmd + Shift + I) or enable "Log to file" in settings and review `debug.log` in the plugin state folder for detailed error messages
-  - Tool loop detection may stop repeated operations - adjust settings if needed
+  - Check the console (Ctrl/Cmd + Shift + I) or enable "Log API calls to a file" under **Advanced → Diagnostics** and review `debug.log` in the plugin state folder for detailed error messages
+  - Tool loop detection (fixed at 3 identical calls within 30 seconds) may stop repeated operations — it is not configurable
 
 ## License
 

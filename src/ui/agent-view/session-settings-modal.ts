@@ -1,15 +1,14 @@
-import { App, Modal, Setting, DropdownComponent, SliderComponent, TFile, TFolder } from 'obsidian';
+import { App, Modal, Setting, DropdownComponent, TFile, TFolder } from 'obsidian';
 import { ChatSession, SessionModelConfig } from '../../types/agent';
 import { GeminiModel } from '../../models';
 import type { ObsidianGemini } from '../../types/plugin';
 import { t } from '../../i18n';
+import { STATE_SUBFOLDERS, stateFolderPath } from '../../services/state-folder';
 
 export class SessionSettingsModal extends Modal {
 	private plugin: ObsidianGemini;
 	private onSave: (config: SessionModelConfig) => Promise<void>;
 	private modelConfig: SessionModelConfig;
-	private tempSlider: SliderComponent | null = null;
-	private topPSlider: SliderComponent | null = null;
 
 	constructor(
 		app: App,
@@ -83,106 +82,6 @@ export class SessionSettingsModal extends Modal {
 					});
 			});
 
-		// Temperature slider
-		new Setting(contentEl)
-			.setName(t('agent.sessionSettings.temperature'))
-			.setDesc(t('agent.sessionSettings.temperatureDesc'))
-			.addSlider((slider: SliderComponent) => {
-				this.tempSlider = slider;
-				const defaultTemp = this.plugin.settings.temperature;
-				const currentTemp = this.modelConfig.temperature ?? defaultTemp;
-
-				slider
-					.setLimits(0, 2, 0.1)
-					.setValue(currentTemp)
-					// Dropping setDynamicTooltip() is only safe on Obsidian >= 1.13.0 (where the value shows inline); minAppVersion is 1.11.4, so keep it to preserve the slider value tooltip (#1040).
-					// eslint-disable-next-line @typescript-eslint/no-deprecated -- minAppVersion 1.11.4 needs setDynamicTooltip() (#1040)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						// Only save if different from default
-						if (value !== defaultTemp) {
-							this.modelConfig.temperature = value;
-						} else {
-							delete this.modelConfig.temperature;
-						}
-						// Save immediately
-						await this.saveConfig();
-					});
-
-				// Show current value
-				slider.sliderEl.addEventListener('input', () => {
-					const valueEl = contentEl.querySelector('.temperature-value');
-					if (valueEl) {
-						valueEl.textContent = slider.getValue().toFixed(1);
-					}
-				});
-			})
-			.addExtraButton((button) => {
-				button
-					.setIcon('reset')
-					.setTooltip(t('agent.sessionSettings.resetToDefault'))
-					.onClick(async () => {
-						if (this.tempSlider) {
-							// Set to default value - this will trigger onChange
-							this.tempSlider.setValue(this.plugin.settings.temperature);
-						}
-					});
-			});
-
-		// Add temperature value display
-		const tempValueEl = contentEl.createDiv({ cls: 'temperature-value' });
-		tempValueEl.textContent = (this.modelConfig.temperature ?? this.plugin.settings.temperature).toFixed(1);
-
-		// Top-P slider
-		new Setting(contentEl)
-			.setName(t('agent.sessionSettings.topP'))
-			.setDesc(t('agent.sessionSettings.topPDesc'))
-			.addSlider((slider: SliderComponent) => {
-				this.topPSlider = slider;
-				const defaultTopP = this.plugin.settings.topP;
-				const currentTopP = this.modelConfig.topP ?? defaultTopP;
-
-				slider
-					.setLimits(0, 1, 0.05)
-					.setValue(currentTopP)
-					// Dropping setDynamicTooltip() is only safe on Obsidian >= 1.13.0 (where the value shows inline); minAppVersion is 1.11.4, so keep it to preserve the slider value tooltip (#1040).
-					// eslint-disable-next-line @typescript-eslint/no-deprecated -- minAppVersion 1.11.4 needs setDynamicTooltip() (#1040)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						// Only save if different from default
-						if (value !== defaultTopP) {
-							this.modelConfig.topP = value;
-						} else {
-							delete this.modelConfig.topP;
-						}
-						// Save immediately
-						await this.saveConfig();
-					});
-
-				// Show current value
-				slider.sliderEl.addEventListener('input', () => {
-					const valueEl = contentEl.querySelector('.top-p-value');
-					if (valueEl) {
-						valueEl.textContent = slider.getValue().toFixed(2);
-					}
-				});
-			})
-			.addExtraButton((button) => {
-				button
-					.setIcon('reset')
-					.setTooltip(t('agent.sessionSettings.resetToDefault'))
-					.onClick(async () => {
-						if (this.topPSlider) {
-							// Set to default value - this will trigger onChange
-							this.topPSlider.setValue(this.plugin.settings.topP);
-						}
-					});
-			});
-
-		// Add top-p value display
-		const topPValueEl = contentEl.createDiv({ cls: 'top-p-value' });
-		topPValueEl.textContent = (this.modelConfig.topP ?? this.plugin.settings.topP).toFixed(2);
-
 		// Prompt template selection
 		const promptSetting = new Setting(contentEl)
 			.setName(t('agent.sessionSettings.promptTemplate'))
@@ -199,7 +98,7 @@ export class SessionSettingsModal extends Modal {
 				dropdown.addOption('__default__', t('agent.sessionSettings.useDefaultPrompt'));
 
 				// Get prompt files
-				const promptsFolder = `${this.plugin.settings.historyFolder}/Prompts`;
+				const promptsFolder = stateFolderPath(this.plugin.settings, STATE_SUBFOLDERS.prompts);
 				const folder = this.plugin.app.vault.getAbstractFileByPath(promptsFolder);
 
 				if (folder && folder instanceof TFolder) {
@@ -261,12 +160,6 @@ export class SessionSettingsModal extends Modal {
 		// The delete operations ensure these properties don't exist when set to default
 		if (this.modelConfig.model !== undefined) {
 			cleanConfig.model = this.modelConfig.model;
-		}
-		if (this.modelConfig.temperature !== undefined) {
-			cleanConfig.temperature = this.modelConfig.temperature;
-		}
-		if (this.modelConfig.topP !== undefined) {
-			cleanConfig.topP = this.modelConfig.topP;
 		}
 		if (this.modelConfig.promptTemplate !== undefined) {
 			cleanConfig.promptTemplate = this.modelConfig.promptTemplate;

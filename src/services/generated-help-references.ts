@@ -10,6 +10,7 @@
 import refAgentMode from '../../docs/guide/agent-mode.md';
 import refAgentSkills from '../../docs/guide/agent-skills.md';
 import refAiWriting from '../../docs/guide/ai-writing.md';
+import refAnthropicSetup from '../../docs/guide/anthropic-setup.md';
 import refBackgroundTasks from '../../docs/guide/background-tasks.md';
 import refCompletions from '../../docs/guide/completions.md';
 import refContextSystem from '../../docs/guide/context-system.md';
@@ -20,12 +21,12 @@ import refGettingStarted from '../../docs/guide/getting-started.md';
 import refLifecycleHooks from '../../docs/guide/lifecycle-hooks.md';
 import refMcpServers from '../../docs/guide/mcp-servers.md';
 import refOllamaSetup from '../../docs/guide/ollama-setup.md';
+import refOpenaiSetup from '../../docs/guide/openai-setup.md';
 import refProjects from '../../docs/guide/projects.md';
 import refScheduledTasks from '../../docs/guide/scheduled-tasks.md';
 import refSelectionPrompts from '../../docs/guide/selection-prompts.md';
 import refSemanticSearch from '../../docs/guide/semantic-search.md';
 import refSummarization from '../../docs/guide/summarization.md';
-import refAdvancedSettings from '../../docs/reference/advanced-settings.md';
 import refEvals from '../../docs/reference/evals.md';
 import refLoopDetection from '../../docs/reference/loop-detection.md';
 import refProviderCapabilities from '../../docs/reference/provider-capabilities.md';
@@ -35,6 +36,7 @@ export const helpResources = new Map<string, string>([
 	['references/agent-mode.md', refAgentMode],
 	['references/agent-skills.md', refAgentSkills],
 	['references/ai-writing.md', refAiWriting],
+	['references/anthropic-setup.md', refAnthropicSetup],
 	['references/background-tasks.md', refBackgroundTasks],
 	['references/completions.md', refCompletions],
 	['references/context-system.md', refContextSystem],
@@ -45,12 +47,12 @@ export const helpResources = new Map<string, string>([
 	['references/lifecycle-hooks.md', refLifecycleHooks],
 	['references/mcp-servers.md', refMcpServers],
 	['references/ollama-setup.md', refOllamaSetup],
+	['references/openai-setup.md', refOpenaiSetup],
 	['references/projects.md', refProjects],
 	['references/scheduled-tasks.md', refScheduledTasks],
 	['references/selection-prompts.md', refSelectionPrompts],
 	['references/semantic-search.md', refSemanticSearch],
 	['references/summarization.md', refSummarization],
-	['references/advanced-settings.md', refAdvancedSettings],
 	['references/evals.md', refEvals],
 	['references/loop-detection.md', refLoopDetection],
 	['references/provider-capabilities.md', refProviderCapabilities],
@@ -62,6 +64,7 @@ export const helpReferencesTable = `| Reference | Topic |
 | \`references/agent-mode.md\` | Agent mode Guide |
 | \`references/agent-skills.md\` | Agent Skills |
 | \`references/ai-writing.md\` | Selection-Based AI Features Guide |
+| \`references/anthropic-setup.md\` | Anthropic (Claude) |
 | \`references/background-tasks.md\` | Background tasks |
 | \`references/completions.md\` | IDE-Style Completions Guide |
 | \`references/context-system.md\` | Context System Guide |
@@ -72,12 +75,12 @@ export const helpReferencesTable = `| Reference | Topic |
 | \`references/lifecycle-hooks.md\` | Lifecycle Hooks |
 | \`references/mcp-servers.md\` | MCP servers |
 | \`references/ollama-setup.md\` | Ollama (Local Models) |
+| \`references/openai-setup.md\` | OpenAI |
 | \`references/projects.md\` | Projects |
 | \`references/scheduled-tasks.md\` | Scheduled tasks |
 | \`references/selection-prompts.md\` | Selection Prompts |
 | \`references/semantic-search.md\` | Semantic Vault Search |
 | \`references/summarization.md\` | Document Summarization Guide |
-| \`references/advanced-settings.md\` | Advanced Settings Guide |
 | \`references/evals.md\` | Eval Suite |
 | \`references/loop-detection.md\` | Tool loop detection |
 | \`references/provider-capabilities.md\` | Provider Capabilities |

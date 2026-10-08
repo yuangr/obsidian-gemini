@@ -159,8 +159,8 @@ describe('ListFilesTool', () => {
 		const result = await tool.execute({ path: '' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.path).toBe('');
-		expect(result.data?.count).toBe(1);
+		expect((result.data as any)?.path).toBe('');
+		expect((result.data as any)?.count).toBe(1);
 	});
 
 	it('should return error for non-existent folder', async () => {
@@ -194,8 +194,8 @@ describe('ListFilesTool', () => {
 		const result = await tool.execute({ path: '', recursive: true }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.count).toBe(1);
-		expect(result.data?.files[0].name).toBe('note.md');
+		expect((result.data as any)?.count).toBe(1);
+		expect((result.data as any)?.files[0].name).toBe('note.md');
 	});
 
 	it('should strip a trailing slash before folder lookup', async () => {
@@ -208,7 +208,7 @@ describe('ListFilesTool', () => {
 
 		expect(result.success).toBe(true);
 		expect(mockVault.getAbstractFileByPath).toHaveBeenCalledWith('Areas/People');
-		expect(result.data?.path).toBe('Areas/People');
+		expect((result.data as any)?.path).toBe('Areas/People');
 	});
 
 	it('should treat "/" as the vault root', async () => {
@@ -219,8 +219,8 @@ describe('ListFilesTool', () => {
 		const result = await tool.execute({ path: '/' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.path).toBe('');
-		expect(result.data?.count).toBe(1);
+		expect((result.data as any)?.path).toBe('');
+		expect((result.data as any)?.count).toBe(1);
 	});
 
 	it('should include non-markdown files in recursive listing', async () => {
@@ -242,8 +242,8 @@ describe('ListFilesTool', () => {
 		const result = await tool.execute({ path: '', recursive: true }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.count).toBe(2);
-		const names = result.data?.files.map((f: any) => f.name);
+		expect((result.data as any)?.count).toBe(2);
+		const names = (result.data as any)?.files.map((f: any) => f.name);
 		expect(names).toContain('photo.png');
 		expect(names).toContain('note.md');
 	});
@@ -278,8 +278,99 @@ describe('ListFilesTool', () => {
 		const result = await tool.execute({ path: '' }, contextWithProject);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.path).toBe('projects/my-project');
-		expect(result.data?.count).toBe(1);
+		expect((result.data as any)?.path).toBe('projects/my-project');
+		expect((result.data as any)?.count).toBe(1);
+	});
+
+	it('should reject an explicit out-of-project path with an error when a project is active', async () => {
+		// The old behavior: an explicit path silently overrode the project
+		// root, so `path: '/'` listed the whole vault (#1506).
+		const contextWithProject: ToolExecutionContext = {
+			...mockContext,
+			projectRootPath: 'projects/my-project',
+		};
+
+		const result = await tool.execute({ path: '/' }, contextWithProject);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('outside the active project root');
+		expect(result.error).toContain('projects/my-project');
+		// Never reached the vault.
+		expect(mockVault.getAbstractFileByPath).not.toHaveBeenCalled();
+	});
+
+	it('should reject an explicit out-of-project folder path when a project is active', async () => {
+		const contextWithProject: ToolExecutionContext = {
+			...mockContext,
+			projectRootPath: 'projects/my-project',
+		};
+
+		const result = await tool.execute({ path: 'other/folder' }, contextWithProject);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('outside the active project root');
+		expect(mockVault.getAbstractFileByPath).not.toHaveBeenCalled();
+	});
+
+	it('should list a folder inside the project root when a project is active', async () => {
+		const subFolder = new TFolder();
+		subFolder.path = 'projects/my-project/notes';
+		subFolder.name = 'notes';
+		subFolder.children = [mockFile];
+
+		mockVault.getAbstractFileByPath.mockImplementation((p: string) =>
+			p === 'projects/my-project/notes' ? subFolder : null
+		);
+
+		const contextWithProject: ToolExecutionContext = {
+			...mockContext,
+			projectRootPath: 'projects/my-project',
+		};
+
+		const result = await tool.execute({ path: 'projects/my-project/notes' }, contextWithProject);
+
+		expect(result.success).toBe(true);
+		expect((result.data as any)?.path).toBe('projects/my-project/notes');
+		expect((result.data as any)?.count).toBe(1);
+	});
+
+	it('should treat a sibling folder with a shared prefix as outside the project root', async () => {
+		// projectRoot "projects/my-project" must not match "projects/my-project-old".
+		const contextWithProject: ToolExecutionContext = {
+			...mockContext,
+			projectRootPath: 'projects/my-project',
+		};
+
+		const result = await tool.execute({ path: 'projects/my-project-old' }, contextWithProject);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('outside the active project root');
+	});
+
+	it('should not impose a project boundary when no project is active', async () => {
+		mockVault.getAbstractFileByPath.mockReturnValue(mockFolder);
+
+		const result = await tool.execute({ path: '/' }, mockContext);
+
+		// No projectRootPath: '/' resolves to the vault root as before.
+		expect(result.success).toBe(true);
+		expect((result.data as any)?.path).toBe('');
+	});
+
+	it('should reject a traversal path that string-matches the project prefix', async () => {
+		// `projects/my-project/../private` passes a naive prefix test for
+		// `projects/my-project` but resolves outside the boundary — the gate
+		// must reject it before any vault access.
+		const contextWithProject: ToolExecutionContext = {
+			...mockContext,
+			projectRootPath: 'projects/my-project',
+		};
+
+		const result = await tool.execute({ path: 'projects/my-project/../private' }, contextWithProject);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('outside the active project root');
+		expect(mockVault.getAbstractFileByPath).not.toHaveBeenCalled();
 	});
 
 	it('should apply boundary-aware folder filter for recursive listing under a subfolder', async () => {
@@ -311,8 +402,8 @@ describe('ListFilesTool', () => {
 
 		expect(result.success).toBe(true);
 		// Should include files under 'notes/' but NOT 'notes-archive/'
-		expect(result.data?.count).toBe(2);
-		const paths = result.data?.files.map((f: any) => f.path);
+		expect((result.data as any)?.count).toBe(2);
+		const paths = (result.data as any)?.files.map((f: any) => f.path);
 		expect(paths).toContain('notes/daily/2024-01-01.md');
 		expect(paths).toContain('notes/meetings/standup.md');
 		expect(paths).not.toContain('notes-archive/old.md');

@@ -1,12 +1,60 @@
 import { Editor, MarkdownView, MarkdownFileInfo, Notice } from 'obsidian';
 import { t } from '../i18n';
-import { refreshGeminiModelList } from '../ui/settings-general';
+import { refreshGeminiModelList } from '../ui/settings/provider-cards';
 import { SelectionRewriter } from '../rewrite-selection';
 import { RewriteInstructionsModal } from '../ui/rewrite-modal';
 import { UpdateNotificationModal } from '../ui/update-notification-modal';
 import { getErrorMessage } from '../utils/error-utils';
 import type { ObsidianGemini } from '../types/plugin';
-import { resolveProvider } from '../api/provider-routing';
+import type { ProjectSummary } from '../types/project';
+import { featureStatus } from '../api/provider-status';
+
+/**
+ * Shared entry gate for the RAG commands. Each of them opens with the same two
+ * checks — a provider must be routed to RAG, and the indexing service must
+ * exist — emitting the same two notices. Returns the service when both hold, or
+ * `null` when the caller should bail because the notice has already been shown.
+ */
+function resolveRagIndexing(plugin: ObsidianGemini): NonNullable<ObsidianGemini['ragIndexing']> | null {
+	if (featureStatus(plugin, 'rag') !== 'ok') {
+		new Notice(t('notice.main.ragUnavailableProvider'));
+		return null;
+	}
+	if (!plugin.ragIndexing) {
+		new Notice(t('notice.main.ragNotEnabled'));
+		return null;
+	}
+	return plugin.ragIndexing;
+}
+
+/**
+ * Register a command whose whole body is "open the agent view, then act on it".
+ * Five commands shared that five-line callback verbatim, differing only in the
+ * one method they called — the sort of parallel ladder where a change to the
+ * entry gate (an extra readiness check, a different notice) lands in one of the
+ * five and is missed in the other four.
+ *
+ * `action` is awaited whether or not it returns a promise, so the synchronous
+ * and asynchronous view methods register the same way.
+ */
+function addAgentViewCommand(
+	plugin: ObsidianGemini,
+	id: string,
+	name: string,
+	action: (view: NonNullable<ObsidianGemini['agentView']>) => void | Promise<void>
+): void {
+	plugin.addCommand({
+		id,
+		name,
+		callback: async () => {
+			if (!plugin.checkInitialized()) return;
+			await plugin.activateAgentView();
+			if (plugin.agentView) {
+				await action(plugin.agentView);
+			}
+		},
+	});
+}
 
 /**
  * Register all command-palette commands on the plugin instance.
@@ -91,45 +139,40 @@ export function registerCommands(plugin: ObsidianGemini): void {
 		},
 	});
 
-	// View scheduled tasks (read-only legacy — kept for backwards compatibility)
+	// View scheduled tasks — kept as its own command ID so existing hotkey bindings survive
 	plugin.addCommand({
 		id: 'view-scheduled-tasks',
 		name: t('command.viewScheduledTasks'),
 		callback: async () => {
-			const { ScheduledTasksModal } = await import('../ui/scheduled-tasks-modal');
-			new ScheduledTasksModal(plugin.app, plugin).open();
+			const { SchedulerManagementModal } = await import('../ui/scheduler-management-modal');
+			new SchedulerManagementModal(plugin.app, plugin, 'list').open();
 		},
 	});
 
-	// Switch project for the current agent session
-	plugin.addCommand({
-		id: 'switch-project',
-		name: t('command.switchProject'),
-		callback: () => {
-			if (!plugin.checkInitialized()) return;
-			// Fire-and-forget: opening the view is a UI action; errors surface via Obsidian.
-			void plugin.activateAgentView();
-			// The agent view's switchProject is triggered via the project badge in the header
-			// or users can click the project indicator once the view is open
-		},
-	});
+	// Switch project for the current agent session: open the project picker.
+	// Same flow as `link-project`; both IDs stay registered so existing hotkeys keep working.
+	addAgentViewCommand(plugin, 'switch-project', t('command.switchProject'), (view) => view.switchProject());
 
-	// Create a new project
+	// Create a new project, asking for its name first
 	plugin.addCommand({
 		id: 'create-project',
 		name: t('command.createProject'),
 		callback: async () => {
 			if (!plugin.checkInitialized()) return;
 			const folder = plugin.app.workspace.getActiveFile()?.parent?.path || '';
-			const name = 'New Project';
-			try {
-				const file = await plugin.projectManager.createProject(folder, name);
-				await plugin.app.workspace.openLinkText(file.path, '', true);
-				new Notice(t('notice.main.projectCreated', { path: file.path }));
-			} catch (error) {
-				plugin.logger.error('Failed to create project:', error);
-				new Notice(t('notice.main.projectCreateFailed'));
-			}
+			const { ProjectNameModal } = await import('../ui/project-name-modal');
+			new ProjectNameModal(plugin.app, (name) => {
+				void (async () => {
+					try {
+						const file = await plugin.projectManager.createProject(folder, name);
+						await plugin.app.workspace.openLinkText(file.path, '', true);
+						new Notice(t('notice.main.projectCreated', { path: file.path }));
+					} catch (error) {
+						plugin.logger.error('Failed to create project:', error);
+						new Notice(t('notice.main.projectCreateFailed'));
+					}
+				})();
+			}).open();
 		},
 	});
 
@@ -150,32 +193,47 @@ export function registerCommands(plugin: ObsidianGemini): void {
 		},
 	});
 
+	/**
+	 * Shared preamble for the project-picker commands: gate on initialization,
+	 * discover projects, bail with the no-projects notice when there are none,
+	 * then either act directly on a lone project (the single-project shortcut —
+	 * asking "which project?" with one candidate is noise) or show the picker.
+	 *
+	 * `act` receives the chosen project summary in both paths, so the two commands
+	 * differ only in what they do with it. The modal resolves `null` for unlink
+	 * selection; `act` is skipped in that case, matching the picker flow.
+	 */
+	async function pickProject(
+		plugin: ObsidianGemini,
+		act: (project: ProjectSummary) => Promise<void> | void
+	): Promise<void> {
+		if (!plugin.checkInitialized()) return;
+		const projects = plugin.projectManager?.discoverProjects() ?? [];
+		if (projects.length === 0) {
+			new Notice(t('notice.main.noProjectsFound'));
+			return;
+		}
+		if (projects.length === 1) {
+			await act(projects[0]);
+			return;
+		}
+		const { ProjectPickerModal } = await import('../ui/agent-view/project-picker-modal');
+		const modal = new ProjectPickerModal(plugin.app, plugin, {
+			onSelect: (project) => {
+				if (project) {
+					void act(project);
+				}
+			},
+		});
+		modal.open();
+	}
+
 	// Open project settings (the project file itself)
 	plugin.addCommand({
 		id: 'open-project-settings',
 		name: t('command.openProjectSettings'),
 		callback: async () => {
-			if (!plugin.checkInitialized()) return;
-			const projects = plugin.projectManager?.discoverProjects() ?? [];
-			if (projects.length === 0) {
-				new Notice(t('notice.main.noProjectsFound'));
-				return;
-			}
-			// If only one project, open it directly
-			if (projects.length === 1) {
-				await plugin.app.workspace.openLinkText(projects[0].filePath, '', true);
-				return;
-			}
-			// Show picker for multiple projects
-			const { ProjectPickerModal } = await import('../ui/agent-view/project-picker-modal');
-			const modal = new ProjectPickerModal(plugin.app, plugin, {
-				onSelect: (project) => {
-					if (project) {
-						void plugin.app.workspace.openLinkText(project.filePath, '', true);
-					}
-				},
-			});
-			modal.open();
+			await pickProject(plugin, (project) => plugin.app.workspace.openLinkText(project.filePath, '', true));
 		},
 	});
 
@@ -184,39 +242,26 @@ export function registerCommands(plugin: ObsidianGemini): void {
 		id: 'resume-project-session',
 		name: t('command.resumeProjectSession'),
 		callback: async () => {
-			if (!plugin.checkInitialized()) return;
-			const projects = plugin.projectManager?.discoverProjects() ?? [];
-			if (projects.length === 0) {
-				new Notice(t('notice.main.noProjectsFound'));
-				return;
-			}
-			const { ProjectPickerModal } = await import('../ui/agent-view/project-picker-modal');
-			const modal = new ProjectPickerModal(plugin.app, plugin, {
-				onSelect: (project) => {
-					void (async () => {
-						try {
-							if (!project) return;
-							// Find most recent session linked to this project
-							const sessions = await plugin.sessionManager.getRecentAgentSessions(50);
-							const projectSession = sessions.find((s) => s.projectPath === project.filePath);
-							if (projectSession) {
-								await plugin.activateAgentView();
-								// The agent view will load the session
-								if (plugin.agentView) {
-									await plugin.agentView.loadSession(projectSession);
-								}
-							} else {
-								new Notice(t('notice.main.noSessionsForProject', { name: project.name }));
-							}
-						} catch (error) {
-							// Mirror the try/catch the sibling project commands already have.
-							plugin.logger.error('Failed to resume project session:', error);
-							new Notice(t('notice.main.resumeProjectSessionFailed'));
+			await pickProject(plugin, async (project) => {
+				try {
+					// Find most recent session linked to this project
+					const sessions = await plugin.sessionManager.getRecentAgentSessions(50);
+					const projectSession = sessions.find((s) => s.projectPath === project.filePath);
+					if (projectSession) {
+						await plugin.activateAgentView();
+						// The agent view will load the session
+						if (plugin.agentView) {
+							await plugin.agentView.loadSession(projectSession);
 						}
-					})();
-				},
+					} else {
+						new Notice(t('notice.main.noSessionsForProject', { name: project.name }));
+					}
+				} catch (error) {
+					// Mirror the try/catch the sibling project commands already have.
+					plugin.logger.error('Failed to resume project session:', error);
+					new Notice(t('notice.main.resumeProjectSessionFailed'));
+				}
 			});
-			modal.open();
 		},
 	});
 
@@ -312,7 +357,7 @@ export function registerCommands(plugin: ObsidianGemini): void {
 		name: t('command.generateImage'),
 		callback: async () => {
 			if (!plugin.checkInitialized()) return;
-			if (resolveProvider(plugin.settings, 'imageGen') === null) {
+			if (featureStatus(plugin, 'imageGen') !== 'ok') {
 				new Notice(t('notice.main.imageGenUnavailableProvider'));
 				return;
 			}
@@ -335,23 +380,17 @@ export function registerCommands(plugin: ObsidianGemini): void {
 		id: 'rag-pause',
 		name: t('command.ragPause'),
 		callback: () => {
-			if (resolveProvider(plugin.settings, 'rag') === null) {
-				new Notice(t('notice.main.ragUnavailableProvider'));
-				return;
-			}
-			if (!plugin.ragIndexing) {
-				new Notice(t('notice.main.ragNotEnabled'));
-				return;
-			}
-			if (plugin.ragIndexing.isPaused()) {
+			const ragIndexing = resolveRagIndexing(plugin);
+			if (!ragIndexing) return;
+			if (ragIndexing.isPaused()) {
 				new Notice(t('notice.main.ragAlreadyPaused'));
 				return;
 			}
-			if (plugin.ragIndexing.isIndexing()) {
+			if (ragIndexing.isIndexing()) {
 				new Notice(t('notice.main.ragCannotPauseWhileIndexing'));
 				return;
 			}
-			plugin.ragIndexing.pause();
+			ragIndexing.pause();
 			new Notice(t('notice.main.ragPaused'));
 		},
 	});
@@ -360,19 +399,13 @@ export function registerCommands(plugin: ObsidianGemini): void {
 		id: 'rag-resume',
 		name: t('command.ragResume'),
 		callback: () => {
-			if (resolveProvider(plugin.settings, 'rag') === null) {
-				new Notice(t('notice.main.ragUnavailableProvider'));
-				return;
-			}
-			if (!plugin.ragIndexing) {
-				new Notice(t('notice.main.ragNotEnabled'));
-				return;
-			}
-			if (!plugin.ragIndexing.isPaused()) {
+			const ragIndexing = resolveRagIndexing(plugin);
+			if (!ragIndexing) return;
+			if (!ragIndexing.isPaused()) {
 				new Notice(t('notice.main.ragNotPaused'));
 				return;
 			}
-			plugin.ragIndexing.resume();
+			ragIndexing.resume();
 			new Notice(t('notice.main.ragResumed'));
 		},
 	});
@@ -381,18 +414,12 @@ export function registerCommands(plugin: ObsidianGemini): void {
 		id: 'rag-status',
 		name: t('command.ragStatus'),
 		callback: async () => {
-			if (resolveProvider(plugin.settings, 'rag') === null) {
-				new Notice(t('notice.main.ragUnavailableProvider'));
-				return;
-			}
-			if (!plugin.ragIndexing) {
-				new Notice(t('notice.main.ragNotEnabled'));
-				return;
-			}
+			const ragIndexing = resolveRagIndexing(plugin);
+			if (!ragIndexing) return;
 			// Trigger the same modal as clicking the status bar
 			try {
 				const { openRagStatusModal } = await import('../services/rag-status-bar');
-				await openRagStatusModal(plugin.app, plugin.ragIndexing, plugin.manifest.id);
+				await openRagStatusModal(plugin.app, ragIndexing, plugin.manifest.id);
 			} catch (error) {
 				plugin.logger.error('RAG Indexing: Failed to open status UI', error);
 				new Notice(t('notice.rag.uiError', { error: getErrorMessage(error) }));
@@ -418,51 +445,11 @@ export function registerCommands(plugin: ObsidianGemini): void {
 		},
 	});
 
-	plugin.addCommand({
-		id: 'browse-sessions',
-		name: t('command.browseSessions'),
-		callback: async () => {
-			if (!plugin.checkInitialized()) return;
-			await plugin.activateAgentView();
-			if (plugin.agentView) {
-				await plugin.agentView.showSessionList();
-			}
-		},
-	});
+	addAgentViewCommand(plugin, 'browse-sessions', t('command.browseSessions'), (view) => view.showSessionList());
 
-	plugin.addCommand({
-		id: 'link-project',
-		name: t('command.linkProject'),
-		callback: async () => {
-			if (!plugin.checkInitialized()) return;
-			await plugin.activateAgentView();
-			if (plugin.agentView) {
-				plugin.agentView.switchProject();
-			}
-		},
-	});
+	addAgentViewCommand(plugin, 'link-project', t('command.linkProject'), (view) => view.switchProject());
 
-	plugin.addCommand({
-		id: 'session-settings',
-		name: t('command.sessionSettings'),
-		callback: async () => {
-			if (!plugin.checkInitialized()) return;
-			await plugin.activateAgentView();
-			if (plugin.agentView) {
-				await plugin.agentView.showSessionSettings();
-			}
-		},
-	});
+	addAgentViewCommand(plugin, 'session-settings', t('command.sessionSettings'), (view) => view.showSessionSettings());
 
-	plugin.addCommand({
-		id: 'toggle-plan-mode',
-		name: t('command.togglePlanMode'),
-		callback: async () => {
-			if (!plugin.checkInitialized()) return;
-			await plugin.activateAgentView();
-			if (plugin.agentView) {
-				plugin.agentView.togglePlanMode();
-			}
-		},
-	});
+	addAgentViewCommand(plugin, 'toggle-plan-mode', t('command.togglePlanMode'), (view) => view.togglePlanMode());
 }

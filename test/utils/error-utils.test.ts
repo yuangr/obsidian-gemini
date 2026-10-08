@@ -1,11 +1,14 @@
+import { getLanguage } from 'obsidian';
+import { locales } from '../../src/i18n';
 import {
+	describeSdkApiError,
 	getErrorMessage,
 	getRawErrorMessage,
 	getRawErrorMessageOr,
-	getShortErrorMessage,
 	isNotFoundError,
 	isQuotaExhausted,
 	isRateLimitError,
+	truncateStoredError,
 } from '../../src/utils/error-utils';
 
 describe('error-utils', () => {
@@ -191,6 +194,52 @@ describe('error-utils', () => {
 			test('Status code in response object (fetch pattern)', () => {
 				const error = { response: { status: 500 } };
 				expect(getErrorMessage(error)).toContain('Server error');
+			});
+		});
+
+		describe('OpenAI SDK errors', () => {
+			// Mirrors the shape of `openai`'s APIError subclasses (status + type/code
+			// pulled from the response body) without importing the SDK — see
+			// isSdkApiError's own duck-typing rationale in error-utils.ts.
+			function fakeOpenAIError(status: number, message: string, extra: Record<string, unknown> = {}) {
+				const error = new Error(`${status} ${message}`) as Error & Record<string, unknown>;
+				Object.assign(error, { status, type: 'invalid_request_error', ...extra });
+				return error;
+			}
+
+			test('401 gets OpenAI-specific key guidance instead of the generic message', () => {
+				const error = fakeOpenAIError(401, 'Incorrect API key provided', { type: 'invalid_request_error' });
+				expect(getErrorMessage(error)).toBe(
+					'Invalid OpenAI API key. Please check the API key in Settings → Gemini Scribe.'
+				);
+			});
+
+			test('an Anthropic 401 (authentication_error) gets Anthropic-specific key guidance', () => {
+				const error = fakeOpenAIError(401, 'invalid x-api-key', { type: 'authentication_error' });
+				expect(getErrorMessage(error)).toBe(
+					'Invalid Anthropic API key. Please check the API key in Settings → Gemini Scribe.'
+				);
+			});
+
+			test('404 mentions the endpoint rather than the generic model-not-found wording', () => {
+				const error = fakeOpenAIError(404, 'The model `gpt-9` does not exist', { code: 'model_not_found' });
+				expect(getErrorMessage(error)).toBe(
+					'Model not available on this endpoint. Please check your model settings or the configured base URL.'
+				);
+			});
+
+			test('a plain 401 without the OpenAI shape keeps the generic message', () => {
+				const error = { status: 401, message: 'Unauthorized' };
+				expect(getErrorMessage(error)).toBe(
+					'Authentication failed: Invalid API key. Please check your model provider credentials in settings.'
+				);
+			});
+
+			test('APIConnectionError ("Connection error.", no status) gets local-server guidance', () => {
+				const error = new Error('Connection error.');
+				expect(getErrorMessage(error)).toBe(
+					'Could not connect to the model server. If you configured a custom base URL (LM Studio, MLX, etc.), make sure the server is running and the base URL in settings is correct.'
+				);
 			});
 		});
 
@@ -575,43 +624,162 @@ describe('error-utils', () => {
 		});
 	});
 
-	describe('getShortErrorMessage', () => {
-		test('Extract first sentence from full message', () => {
-			const error = { status: 401 };
-			const short = getShortErrorMessage(error);
-			expect(short).toBe('Authentication failed');
+	describe('describeSdkApiError', () => {
+		test('formats an OpenAI APIError with its code and the server message from the body', () => {
+			const error = Object.assign(new Error('400 status code (no body)'), {
+				status: 400,
+				code: 'unsupported_value',
+				error: { message: "Unsupported value: 'temperature' does not support 0.7 with this model." },
+			});
+			expect(describeSdkApiError(error)).toBe(
+				"HTTP 400 [unsupported_value]: Unsupported value: 'temperature' does not support 0.7 with this model."
+			);
 		});
 
-		test('Extract first clause (before colon)', () => {
-			const error = new Error('Network error: connection failed');
-			const short = getShortErrorMessage(error);
-			expect(short).toBe('Network error');
+		test('formats an Anthropic APIError with its type and falls back to the error message', () => {
+			const error = Object.assign(new Error('bad key'), { status: 401, type: 'authentication_error' });
+			expect(describeSdkApiError(error)).toBe('HTTP 401 [authentication_error]: bad key');
 		});
 
-		test('Truncate very long messages', () => {
-			// Create an error message that doesn't match any patterns
-			// so it returns "API error: <message>" where message is long
-			const longMessage =
-				'This is a very long error message that does not match any patterns and should be truncated when extracting the short version of the error message for display purposes';
-			const error = new Error(longMessage);
-			const short = getShortErrorMessage(error);
-			// The short message will be "API error" after splitting on ':'
-			// which is less than 80 chars, so this test doesn't actually test truncation
-			// Instead, test that we handle the first clause correctly
-			expect(short.length).toBeLessThanOrEqual(80);
-			expect(short).toBe('API error');
+		test('appends the request id when the SDK supplies one', () => {
+			const error = Object.assign(new Error('overloaded'), {
+				status: 529,
+				type: 'overloaded_error',
+				requestID: 'req_abc123',
+			});
+			expect(describeSdkApiError(error)).toBe('HTTP 529 [overloaded_error]: overloaded (request req_abc123)');
 		});
 
-		test('Short message returned as-is', () => {
-			const error = new Error('Short error');
-			const short = getShortErrorMessage(error);
-			expect(short).toBe('API error');
+		test('omits the tag when the error carries neither code nor type', () => {
+			expect(describeSdkApiError(Object.assign(new Error('boom'), { status: 500 }))).toBe('HTTP 500: boom');
 		});
 
-		test('Handle complex multi-sentence message', () => {
-			const error = { status: 500, message: 'Internal error. Try again later.' };
-			const short = getShortErrorMessage(error);
-			expect(short).toBe('Server error');
+		test('falls back to "unknown error" for a non-Error value carrying a status', () => {
+			expect(describeSdkApiError({ status: 503, code: 'unavailable' })).toBe('HTTP 503 [unavailable]: unknown error');
+		});
+
+		test('returns the plain message for anything without a numeric status', () => {
+			expect(describeSdkApiError(new Error('network down'))).toBe('network down');
+			expect(describeSdkApiError('just a string')).toBe('just a string');
+			expect(describeSdkApiError(null)).toBe('null');
+		});
+	});
+
+	describe('truncateStoredError', () => {
+		test('extracts the message field from a Gemini JSON error blob', () => {
+			const raw =
+				'ApiError: {"error":{"code":429,"message":"You exceeded your current quota","status":"RESOURCE_EXHAUSTED"}}';
+			expect(truncateStoredError(raw)).toBe('You exceeded your current quota');
+		});
+
+		test('decodes an escaped newline and keeps only the first line', () => {
+			// A real Gemini blob escapes its newlines, so this is the common shape.
+			const raw = '{"message":"Quota exceeded\\nRetry in 30s"}';
+			expect(truncateStoredError(raw)).toBe('Quota exceeded');
+		});
+
+		test('decodes escaped quotes instead of ending the capture early', () => {
+			const raw = '{"message":"He said \\"boom\\" then failed"}';
+			expect(truncateStoredError(raw)).toBe('He said "boom" then failed');
+		});
+
+		test('falls back to the raw capture when the JSON string body is malformed', () => {
+			// A literal newline inside the string is invalid JSON, so the decode
+			// throws; the message must still survive rather than being dropped.
+			const raw = '{"message":"Quota exceeded\nRetry in 30s"}';
+			expect(truncateStoredError(raw)).toBe('Quota exceeded');
+		});
+
+		test('caps an over-long JSON message at 120 chars with an ellipsis', () => {
+			const long = 'q'.repeat(200);
+			const result = truncateStoredError(`{"message":"${long}"}`);
+			expect(result).toHaveLength(118);
+			expect(result.endsWith('…')).toBe(true);
+		});
+
+		test('strips the ApiError and HTTP status prefixes', () => {
+			expect(truncateStoredError('ApiError: [429 Too Many Requests] Slow down')).toBe('Slow down');
+			expect(truncateStoredError('[503 Service Unavailable] Model overloaded')).toBe('Model overloaded');
+			expect(truncateStoredError('ApiError: Something broke')).toBe('Something broke');
+		});
+
+		test('returns the first sentence of a plain error string', () => {
+			expect(truncateStoredError('Tool run failed. See the log for details.')).toBe('Tool run failed');
+		});
+
+		test('caps an over-long plain message at 120 chars with an ellipsis', () => {
+			const result = truncateStoredError('e'.repeat(200));
+			expect(result).toHaveLength(118);
+			expect(result.endsWith('…')).toBe(true);
+		});
+
+		test('returns short messages unchanged', () => {
+			expect(truncateStoredError('Disk full')).toBe('Disk full');
+			expect(truncateStoredError('')).toBe('');
+		});
+	});
+
+	// Every assertion above resolves through `t()` already — `__mocks__/obsidian.js` stubs
+	// `getLanguage()` to 'en', so the English source string comes back and the exact-string
+	// expectations keep their original meaning. These cases cover what that setup cannot show:
+	// that the returns are genuinely keyed lookups rather than English literals, and that the
+	// placeholders survive the move into `en.ts`.
+	describe('localization', () => {
+		const RU_KEYS = ['error.timeout', 'error.ollamaModelNotPulled', 'error.http.serverErrorWithCode'] as const;
+
+		afterEach(() => {
+			vi.mocked(getLanguage).mockReturnValue('en');
+			for (const key of RU_KEYS) delete locales.ru[key];
+		});
+
+		test('resolves through the active locale rather than returning English literals', () => {
+			locales.ru['error.timeout'] = 'Время ожидания запроса истекло.';
+			vi.mocked(getLanguage).mockReturnValue('ru');
+
+			expect(getErrorMessage(new Error('Request timed out'))).toBe('Время ожидания запроса истекло.');
+		});
+
+		test('falls back to English for a key the active locale has not translated yet', () => {
+			// The `Update UI translations` workflow regenerates language files only after `en.ts`
+			// lands on master, so a newly added key is missing from every locale in the meantime.
+			vi.mocked(getLanguage).mockReturnValue('ru');
+
+			expect(getErrorMessage(new Error('Request timed out'))).toBe(
+				'Request timed out. The API took too long to respond. Please try again.'
+			);
+		});
+
+		test('interpolates the Ollama model name into the translated pull hint', () => {
+			locales.ru['error.ollamaModelNotPulled'] = 'Модель Ollama не загружена. Выполните: ollama pull {model}';
+			vi.mocked(getLanguage).mockReturnValue('ru');
+
+			const error = new Error("model 'llama3.2' not found, try pulling it first");
+			expect(getErrorMessage(error)).toBe('Модель Ollama не загружена. Выполните: ollama pull llama3.2');
+		});
+
+		test('interpolates the status code into the translated 5xx fallback', () => {
+			locales.ru['error.http.serverErrorWithCode'] = 'Ошибка сервера ({statusCode}). Повторите попытку позже.';
+			vi.mocked(getLanguage).mockReturnValue('ru');
+
+			expect(getErrorMessage({ status: 502 })).toBe('Ошибка сервера (502). Повторите попытку позже.');
+		});
+
+		test('interpolates the status code and provider detail into the 4xx fallback', () => {
+			expect(getErrorMessage({ status: 422, message: 'Unprocessable payload' })).toBe(
+				'Client error (422): Unprocessable payload'
+			);
+		});
+
+		test('uses the detail-free 4xx fallback when the provider supplied no message', () => {
+			expect(getErrorMessage({ status: 422 })).toBe('Client error (422): Please check your request and try again.');
+		});
+
+		test('interpolates the status code and provider detail into the non-4xx/5xx fallback', () => {
+			expect(getErrorMessage({ status: 302, message: 'Found elsewhere' })).toBe('HTTP error 302: Found elsewhere');
+		});
+
+		test('uses the detail-free fallback for a non-4xx/5xx status with no message', () => {
+			expect(getErrorMessage({ status: 302 })).toBe('HTTP error 302: An unexpected error occurred.');
 		});
 	});
 });

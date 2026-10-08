@@ -8,7 +8,7 @@ Projects let you create scoped agent profiles for different areas of your vault.
 
 A project is any Markdown file in your vault with the `gemini-scribe/project` tag in its frontmatter. The file's **parent directory becomes the project root** — the agent's discovery scope when the project is active.
 
-The file body contains instructions that are injected into the agent's system prompt, and wikilinks/embeds reference external context files.
+The file body contains instructions that are injected into the agent's system prompt. Wikilinks in the body are **not** resolved or fetched — the link text itself is passed through as part of the instructions, and the agent can follow them with its tools (e.g. `read_file`) when relevant.
 
 ## Creating a Project
 
@@ -16,8 +16,9 @@ The file body contains instructions that are injected into the agent's system pr
 
 1. Open the command palette (`Ctrl/Cmd + P`)
 2. Search for **"Create project"**
-3. A new project file is created in the current folder with template frontmatter
-4. Edit the file to customize your project
+3. Enter a name for the project (it becomes the file name) and press **Create**
+4. A new project file is created in the current note's folder (or the vault root if no note is open) with template frontmatter. If a file with that name already exists there, a number is added (`My Project 1.md`, …)
+5. Edit the file to customize your project
 
 ### Converting an Existing Note
 
@@ -103,7 +104,7 @@ Use third-person limited POV from the protagonist's perspective.
 - ![[World Building/Magic System]]
 ```
 
-- **Wikilinks** (`[[file]]`) and **embeds** (`![[file]]`) are resolved as context references
+- **Wikilinks** (`[[file]]`) and **embeds** (`![[file]]`) are **not** resolved or loaded — the literal link text reaches the model as part of the instructions. Write the links as pointers for the agent to follow with tools like `read_file` when it needs the content
 - **Dataview/Bases code blocks** are automatically stripped (not sent to the model)
 - All other Markdown content is passed through as-is
 
@@ -127,13 +128,13 @@ When you create a **new** agent session, the plugin inspects the session's initi
 
 ### What Changes When a Project is Active
 
-| Feature               | Behavior                                                                                                           |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **System prompt**     | Project instructions are injected between the base prompt and tool instructions                                    |
-| **Tool discovery**    | `list_files`, `find_files_by_name`, `find_files_by_content`, and `vault_semantic_search` scope to the project root |
-| **Read/write access** | Unrestricted — the agent can still access files outside the project when you reference them                        |
-| **Skills**            | Only skills listed in the project's `skills` array are available (empty = all)                                     |
-| **Tool policy**       | The project's `toolPolicy` is layered on top of the global plugin tool policy                                      |
+| Feature               | Behavior                                                                                                                                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **System prompt**     | Project instructions are injected between the base prompt and tool instructions                                                                                                                                        |
+| **Tool discovery**    | `list_files`, `find_files_by_name`, `find_files_by_content`, and `vault_semantic_search` are hard-scoped to the project root — discovery inside the project, an out-of-project path argument is rejected with an error |
+| **Read/write access** | Unrestricted — the agent can still access files outside the project when you reference them                                                                                                                            |
+| **Skills**            | Only skills listed in the project's `skills` array are available (empty = all)                                                                                                                                         |
+| **Tool policy**       | The project's `toolPolicy` is layered on top of the global plugin tool policy                                                                                                                                          |
 
 ### Tool Policy Resolution Order
 
@@ -146,7 +147,7 @@ When you create a **new** agent session, the plugin inspects the session's initi
 
 ### Switching Projects
 
-Click the **project badge** in the agent session header to open the project picker. You can also use the **"Switch project"** command from the command palette, or **"Link project to agent session"** to jump straight to the picker without clicking the badge first.
+Click the **project badge** in the agent session header to open the project picker. You can also use the **"Switch project"** or **"Link project to agent session"** command from the command palette; both open the agent view and go straight to the picker.
 
 Select **"No project"** to unlink the session from any project and return to vault-wide scope.
 
@@ -165,7 +166,7 @@ Open the project file and use the **"Remove project"** command to strip the `gem
 ## Tips
 
 - **Keep project files at the root of the relevant folder** — the parent directory becomes the scope boundary
-- **Use wikilinks in the body** to reference files outside the project that the agent should know about
+- **Use wikilinks in the body as pointers** — they reach the model as link text, and the agent can follow them with tools like `read_file` when relevant
 - **Start with an empty `skills` array** to allow all skills, then narrow down as needed
 - **Set `delete_file: deny`** under `toolPolicy.overrides` for projects where you want to prevent accidental deletions
 - **Project instructions stack with custom prompts** — use projects for persistent context and custom prompts for per-session behavior

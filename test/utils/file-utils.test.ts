@@ -2,11 +2,15 @@ import type { Mock } from 'vitest';
 import {
 	shouldExcludePath,
 	shouldExcludePathForPlugin,
-	createFileFilter,
 	ensureFolderExists,
+	ensureParentFolderExists,
+	getFileName,
+	getParentPath,
 	isPathInFolder,
+	validateGeneratedOutputPath,
 } from '../../src/utils/file-utils';
-import { TFile, TFolder, Vault, Notice, normalizePath } from 'obsidian';
+import type { GeneratedOutputPathOptions } from '../../src/utils/file-utils';
+import { TFolder, Vault, Notice, normalizePath } from 'obsidian';
 
 describe('file-utils', () => {
 	describe('isPathInFolder', () => {
@@ -143,64 +147,6 @@ describe('file-utils', () => {
 		});
 	});
 
-	describe('createFileFilter', () => {
-		it('should create a filter function that excludes the config directory', () => {
-			const filter = createFileFilter(undefined, '.obsidian');
-
-			const obsidianFile = { path: '.obsidian/config' } as TFile;
-			const normalFile = { path: 'notes/my-note.md' } as TFile;
-
-			expect(filter(obsidianFile)).toBe(false);
-			expect(filter(normalFile)).toBe(true);
-		});
-
-		it('should create a filter function that excludes a renamed config directory', () => {
-			const filter = createFileFilter(undefined, '_obsidian');
-
-			expect(filter({ path: '_obsidian/workspace' } as TFile)).toBe(false);
-			// A real vault folder literally named .obsidian is not over-matched.
-			expect(filter({ path: '.obsidian/workspace' } as TFile)).toBe(true);
-		});
-
-		it('should create a filter function that excludes custom folder', () => {
-			const filter = createFileFilter('gemini-scribe', '.obsidian');
-
-			const stateFile = { path: 'gemini-scribe/History/chat.md' } as TFile;
-			const obsidianFile = { path: '.obsidian/workspace' } as TFile;
-			const normalFile = { path: 'notes/my-note.md' } as TFile;
-
-			expect(filter(stateFile)).toBe(false);
-			expect(filter(obsidianFile)).toBe(false);
-			expect(filter(normalFile)).toBe(true);
-		});
-
-		it('should work with Array.filter()', () => {
-			const files = [
-				{ path: 'notes/note1.md' } as TFile,
-				{ path: '.obsidian/config' } as TFile,
-				{ path: 'gemini-scribe/History/chat.md' } as TFile,
-				{ path: 'Projects/project.md' } as TFile,
-				{ path: 'gemini-scribe/Prompts/custom.md' } as TFile,
-			];
-
-			const filtered = files.filter(createFileFilter('gemini-scribe', '.obsidian'));
-
-			expect(filtered).toHaveLength(2);
-			expect(filtered[0].path).toBe('notes/note1.md');
-			expect(filtered[1].path).toBe('Projects/project.md');
-		});
-
-		it('should work with TFolder as well as TFile', () => {
-			const filter = createFileFilter('gemini-scribe', '.obsidian');
-
-			const stateFolder = { path: 'gemini-scribe' } as TFolder;
-			const normalFolder = { path: 'Projects' } as TFolder;
-
-			expect(filter(stateFolder)).toBe(false);
-			expect(filter(normalFolder)).toBe(true);
-		});
-	});
-
 	describe('ensureFolderExists', () => {
 		let mockVault: {
 			getAbstractFileByPath: Mock;
@@ -217,37 +163,33 @@ describe('file-utils', () => {
 			(Notice as unknown as Mock).mockClear();
 		});
 
-		it('should return existing folder without creating', async () => {
+		it('should not create a folder that is already in the metadata cache', async () => {
 			const existingFolder = Object.assign(new TFolder(), { path: 'my-folder' });
 			mockVault.getAbstractFileByPath.mockReturnValue(existingFolder);
 
-			const result = await ensureFolderExists(mockVault as unknown as Vault, 'my-folder');
+			await ensureFolderExists(mockVault as unknown as Vault, 'my-folder');
 
-			expect(result).toBe(existingFolder);
+			expect(mockVault.adapter.exists).not.toHaveBeenCalled();
 			expect(mockVault.createFolder).not.toHaveBeenCalled();
 		});
 
 		it('should create folder when it does not exist', async () => {
-			const createdFolder = Object.assign(new TFolder(), { path: 'new-folder' });
-			mockVault.getAbstractFileByPath.mockReturnValueOnce(null).mockReturnValueOnce(createdFolder);
+			mockVault.getAbstractFileByPath.mockReturnValue(null);
 			mockVault.createFolder.mockResolvedValue(undefined);
 
-			const result = await ensureFolderExists(mockVault as unknown as Vault, 'new-folder');
+			await ensureFolderExists(mockVault as unknown as Vault, 'new-folder');
 
 			expect(mockVault.createFolder).toHaveBeenCalledWith('new-folder');
-			expect(result).toBe(createdFolder);
 		});
 
 		it('should handle race condition where folder is created concurrently', async () => {
-			const concurrentFolder = Object.assign(new TFolder(), { path: 'race-folder' });
 			// First check: not found; adapter check: not found; createFolder throws; adapter re-check: found
-			mockVault.getAbstractFileByPath.mockReturnValueOnce(null).mockReturnValueOnce(concurrentFolder);
+			mockVault.getAbstractFileByPath.mockReturnValue(null);
 			mockVault.adapter.exists.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 			mockVault.createFolder.mockRejectedValue(new Error('Folder already exists'));
 
-			const result = await ensureFolderExists(mockVault as unknown as Vault, 'race-folder');
+			await expect(ensureFolderExists(mockVault as unknown as Vault, 'race-folder')).resolves.toBeUndefined();
 
-			expect(result).toBe(concurrentFolder);
 			expect(Notice).not.toHaveBeenCalled();
 		});
 
@@ -256,9 +198,8 @@ describe('file-utils', () => {
 			mockVault.getAbstractFileByPath.mockReturnValue(null);
 			mockVault.adapter.exists.mockResolvedValue(true);
 
-			const result = await ensureFolderExists(mockVault as unknown as Vault, 'synced-folder');
+			await ensureFolderExists(mockVault as unknown as Vault, 'synced-folder');
 
-			expect(result.path).toBe('synced-folder');
 			expect(mockVault.createFolder).not.toHaveBeenCalled();
 		});
 
@@ -301,6 +242,162 @@ describe('file-utils', () => {
 
 			// normalizePath mock just returns the input, but verifies it was called
 			expect(normalizePath).toHaveBeenCalledWith('normalized/path');
+		});
+	});
+
+	describe('getParentPath', () => {
+		it('returns the folder prefix for nested paths', () => {
+			expect(getParentPath('a/b/c.md')).toBe('a/b');
+			expect(getParentPath('folder/note.md')).toBe('folder');
+		});
+
+		it('returns null at the vault root', () => {
+			expect(getParentPath('out.md')).toBeNull();
+			expect(getParentPath('README')).toBeNull();
+		});
+
+		it('produces no trailing slash for a top-level folder', () => {
+			expect(getParentPath('folder/sub/file.md')).toBe('folder/sub');
+			expect(getParentPath('x/file.md')).toBe('x');
+		});
+
+		it('is not confused by a dot inside a folder name', () => {
+			expect(getParentPath('my.notes/README.md')).toBe('my.notes');
+			expect(getParentPath('v1.2/notes/a.md')).toBe('v1.2/notes');
+		});
+	});
+
+	describe('getFileName', () => {
+		it('returns the final path segment', () => {
+			expect(getFileName('folder/sub/note.md')).toBe('note.md');
+			expect(getFileName('a/b.png')).toBe('b.png');
+		});
+
+		it('returns the input unchanged for root-level paths', () => {
+			expect(getFileName('out.md')).toBe('out.md');
+			expect(getFileName('README')).toBe('README');
+		});
+
+		it('keeps dotfiles intact', () => {
+			expect(getFileName('folder/.obsidian.app.css')).toBe('.obsidian.app.css');
+		});
+	});
+
+	describe('ensureParentFolderExists', () => {
+		let mockVault: {
+			getAbstractFileByPath: Mock;
+			createFolder: Mock;
+			adapter: { exists: Mock };
+		};
+
+		beforeEach(() => {
+			mockVault = {
+				getAbstractFileByPath: vi.fn(),
+				createFolder: vi.fn(),
+				adapter: { exists: vi.fn().mockResolvedValue(false) },
+			};
+		});
+
+		it('is a no-op for a root-level path — no existence checks, no create', async () => {
+			await ensureParentFolderExists(mockVault as unknown as Vault, 'out.md');
+
+			expect(mockVault.getAbstractFileByPath).not.toHaveBeenCalled();
+			expect(mockVault.adapter.exists).not.toHaveBeenCalled();
+			expect(mockVault.createFolder).not.toHaveBeenCalled();
+		});
+
+		it('delegates to ensureFolderExists with the derived parent', async () => {
+			const folder = Object.assign(new TFolder(), { path: 'folder' });
+			mockVault.getAbstractFileByPath.mockReturnValue(folder);
+
+			await ensureParentFolderExists(mockVault as unknown as Vault, 'folder/out.md', 'parent directory');
+
+			expect(mockVault.getAbstractFileByPath).toHaveBeenCalledWith('folder');
+			expect(mockVault.createFolder).not.toHaveBeenCalled();
+		});
+
+		it('creates a missing nested parent and propagates context and errors', async () => {
+			mockVault.getAbstractFileByPath.mockReturnValue(null);
+			mockVault.createFolder.mockRejectedValue(new Error('Disk full'));
+
+			await expect(
+				ensureParentFolderExists(mockVault as unknown as Vault, 'a/b/out.md', 'image output folder')
+			).rejects.toThrow('Failed to create folder "a/b" (image output folder): Disk full');
+		});
+	});
+
+	// #1401: the write-path policy shared by deep-research and image-generation.
+	// Each reject arm is asserted here once, so the two callers only have to
+	// cover their own wording and their own extras (e.g. the .png rewrite).
+	describe('validateGeneratedOutputPath', () => {
+		const messages = {
+			'missing-filename': (p: string) => `missing-filename:${p}`,
+			'vault-escape': (p: string) => `vault-escape:${p}`,
+			'config-folder': (p: string) => `config-folder:${p}`,
+			'state-folder': (p: string) => `state-folder:${p}`,
+		};
+		const options: GeneratedOutputPathOptions = {
+			configDir: '.obsidian',
+			historyFolder: 'gemini-scribe',
+			allowedSubfolder: 'Background-Tasks',
+			messages,
+		};
+		const validate = (path: string, overrides: Partial<GeneratedOutputPathOptions> = {}): string =>
+			validateGeneratedOutputPath(path, { ...options, ...overrides });
+
+		it('returns the normalized path for an ordinary vault path', () => {
+			expect(validate('Notes//foo.md')).toBe('Notes/foo.md');
+		});
+
+		it('allows the allowed subfolder under the state folder', () => {
+			expect(validate('gemini-scribe/Background-Tasks/out.md')).toBe('gemini-scribe/Background-Tasks/out.md');
+		});
+
+		it('rejects empty and blank paths', () => {
+			expect(() => validate('')).toThrow('missing-filename:');
+			expect(() => validate('   ')).toThrow('missing-filename:');
+		});
+
+		it('rejects vault-escaping paths', () => {
+			expect(() => validate('../outside.md')).toThrow('vault-escape:../outside.md');
+			expect(() => validate('Notes/../../outside.md')).toThrow('vault-escape:');
+		});
+
+		it('rejects the config folder itself and paths beneath it', () => {
+			expect(() => validate('.obsidian')).toThrow('config-folder:.obsidian');
+			expect(() => validate('.obsidian/snippets/x.md')).toThrow('config-folder:');
+		});
+
+		it('rejects the bare state folder and its other subfolders', () => {
+			expect(() => validate('gemini-scribe')).toThrow('state-folder:gemini-scribe');
+			expect(() => validate('gemini-scribe/Skills/x.md')).toThrow('state-folder:');
+		});
+
+		it('does not treat a sibling-prefixed folder as the allowed subfolder', () => {
+			expect(() => validate('gemini-scribe/Background-Tasks-Other/x.md')).toThrow('state-folder:');
+		});
+
+		it('does not over-match a folder that merely shares the state folder prefix', () => {
+			expect(validate('gemini-scribe-backup/x.md')).toBe('gemini-scribe-backup/x.md');
+		});
+
+		it('skips the state-folder check when no history folder is configured', () => {
+			expect(validate('gemini-scribe/Skills/x.md', { historyFolder: undefined })).toBe('gemini-scribe/Skills/x.md');
+		});
+
+		it('applies rewriteFileName after the config check and before the state-folder check', () => {
+			const rewriteFileName = (p: string) => `${p}.png`;
+
+			// The rewritten path is what gets returned...
+			expect(validate('Notes/img', { rewriteFileName })).toBe('Notes/img.png');
+
+			// ...and what the state-folder check sees: a bare allowed-subfolder
+			// path becomes a file directly under the state folder, so it is
+			// rejected rather than slipping through as the subfolder itself.
+			expect(() => validate('gemini-scribe/Background-Tasks', { rewriteFileName })).toThrow('state-folder:');
+
+			// The config-folder check still runs against the pre-rewrite path.
+			expect(() => validate('.obsidian/x', { rewriteFileName })).toThrow('config-folder:');
 		});
 	});
 });

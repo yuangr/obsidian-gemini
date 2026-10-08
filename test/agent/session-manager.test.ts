@@ -47,6 +47,41 @@ describe('SessionManager', () => {
 		vi.clearAllMocks();
 	});
 
+	describe('releaseSession', () => {
+		it('drops only the released session and clears its tool-loop records, even on a repeated release', async () => {
+			const clearLoopDetectorSession = vi.fn();
+			const manager = new SessionManager({ ...mockPlugin, toolExecutionEngine: { clearLoopDetectorSession } });
+			const released = await manager.createAgentSession('Released');
+			const retained = await manager.createAgentSession('Retained');
+			manager.releaseSession(released.id);
+			manager.releaseSession(released.id);
+			expect(manager.getSession(released.id)).toBeUndefined();
+			expect(manager.getSession(retained.id)).toBe(retained);
+			expect(clearLoopDetectorSession).toHaveBeenCalledWith(released.id);
+		});
+
+		it('can release a session before the tool engine is initialized', async () => {
+			const session = await sessionManager.createAgentSession('Temporary');
+			sessionManager.releaseSession(session.id);
+			expect(sessionManager.getSession(session.id)).toBeUndefined();
+		});
+	});
+
+	it('keeps sessions distinct even when timestamps and Math.random repeat', async () => {
+		const now = vi.spyOn(Date, 'now').mockReturnValue(1788619654778);
+		const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+		try {
+			const first = await sessionManager.createAgentSession('First');
+			const second = await sessionManager.createAgentSession('Second');
+			expect(first.id).not.toBe(second.id);
+			sessionManager.releaseSession(first.id);
+			expect(sessionManager.getSession(second.id)).toBe(second);
+		} finally {
+			now.mockRestore();
+			random.mockRestore();
+		}
+	});
+
 	describe('createAgentSession', () => {
 		it('should sanitize file names with forbidden characters', async () => {
 			const session = await sessionManager.createAgentSession('Agent: Test Mode');
@@ -85,29 +120,6 @@ describe('SessionManager', () => {
 			expect(session.title).toMatch(/Agent Session/);
 			expect(session.type).toBe(SessionType.AGENT_SESSION);
 		});
-	});
-
-	describe('createNoteChatSession', () => {
-		it('should sanitize note chat session titles', async () => {
-			const fileWithSpecialChars = {
-				...mockFile,
-				basename: 'Test:File*Name',
-			};
-
-			const session = await sessionManager.createNoteChatSession(fileWithSpecialChars);
-
-			// Should sanitize the basename in the title
-			expect(session.title).toBe('Test-File-Name Chat');
-			expect(session.historyPath).toContain('Test-File-Name Chat.md');
-		});
-
-		it('should create note chat session with proper type', async () => {
-			const session = await sessionManager.createNoteChatSession(mockFile);
-
-			expect(session.type).toBe(SessionType.NOTE_CHAT);
-			expect(session.sourceNotePath).toBe(mockFile.path);
-			expect(session.context.contextFiles).toContain(mockFile);
-		});
 
 		it('should create agent session with context files', async () => {
 			const contextFiles = [mockFile];
@@ -117,25 +129,6 @@ describe('SessionManager', () => {
 
 			expect(session.context.contextFiles).toEqual(contextFiles);
 			expect(session.context.contextFiles).toHaveLength(1);
-		});
-	});
-
-	describe('getNoteChatSession', () => {
-		it('should use sanitized file name when checking for existing history', async () => {
-			const fileWithSpecialChars = {
-				...mockFile,
-				basename: 'Test:File',
-			};
-
-			// Mock that no file exists
-			mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(null);
-
-			await sessionManager.getNoteChatSession(fileWithSpecialChars);
-
-			// Should have called getAbstractFileByPath with sanitized name
-			expect(mockPlugin.app.vault.getAbstractFileByPath).toHaveBeenCalledWith(
-				expect.stringContaining('Test-File Chat.md')
-			);
 		});
 	});
 
@@ -259,6 +252,37 @@ describe('SessionManager', () => {
 
 			// Verify context files were parsed correctly
 			expect(session.context.contextFiles).toHaveLength(1);
+		});
+
+		it('should not type a file in a sibling folder as an agent session', async () => {
+			const mockHistoryFile = {
+				// A bare prefix match on `gemini-scribe/Agent-Sessions` would swallow this.
+				path: 'gemini-scribe/Agent-Sessions-archive/old.md',
+				basename: 'old',
+				stat: { ctime: Date.now(), mtime: Date.now() },
+			} as any;
+
+			mockPlugin.app.vault.read.mockResolvedValue('test content');
+			mockPlugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: {} });
+
+			const session = await (sessionManager as any).loadSessionFromFile(mockHistoryFile);
+
+			expect(session.type).toBe(SessionType.NOTE_CHAT);
+		});
+
+		it('should type a file inside the agent sessions folder as an agent session', async () => {
+			const mockHistoryFile = {
+				path: 'gemini-scribe/Agent-Sessions/nested/session.md',
+				basename: 'session',
+				stat: { ctime: Date.now(), mtime: Date.now() },
+			} as any;
+
+			mockPlugin.app.vault.read.mockResolvedValue('test content');
+			mockPlugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: {} });
+
+			const session = await (sessionManager as any).loadSessionFromFile(mockHistoryFile);
+
+			expect(session.type).toBe(SessionType.AGENT_SESSION);
 		});
 	});
 

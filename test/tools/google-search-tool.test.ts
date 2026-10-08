@@ -1,5 +1,5 @@
 import type { Mock } from 'vitest';
-import { GoogleSearchTool, getGoogleSearchTool } from '../../src/tools/google-search-tool';
+import { GoogleSearchTool } from '../../src/tools/google-search-tool';
 import { ToolExecutionContext } from '../../src/tools/types';
 import { GoogleGenAI } from '@google/genai';
 import { getDefaultModelForRole } from '../../src/models';
@@ -52,8 +52,9 @@ describe('GoogleSearchTool', () => {
 			plugin: {
 				apiKey: 'test-api-key',
 				settings: {
-					chatModelName: 'gemini-1.5-flash-002',
-					temperature: 0.7,
+					features: {
+						webSearch: { provider: 'gemini', model: 'gemini-1.5-flash-002' },
+					},
 				},
 			},
 			session: {
@@ -130,7 +131,6 @@ describe('GoogleSearchTool', () => {
 			expect(mockGenAI.models.generateContent).toHaveBeenCalledWith({
 				model: 'gemini-1.5-flash-002',
 				config: {
-					temperature: 0.7,
 					maxOutputTokens: 8192,
 					tools: [{ googleSearch: {} }],
 				},
@@ -187,7 +187,7 @@ describe('GoogleSearchTool', () => {
 		});
 
 		it('should use default model when not specified', async () => {
-			(mockContext.plugin as any).settings.chatModelName = undefined;
+			(mockContext.plugin as any).settings.features.webSearch.model = '';
 
 			const mockResponse = {
 				candidates: [
@@ -212,14 +212,6 @@ describe('GoogleSearchTool', () => {
 					model: getDefaultModelForRole('chat'),
 				})
 			);
-		});
-	});
-
-	describe('getGoogleSearchTool', () => {
-		it('should return a GoogleSearchTool instance', () => {
-			const tool = getGoogleSearchTool();
-			expect(tool).toBeInstanceOf(GoogleSearchTool);
-			expect(tool.name).toBe('google_search');
 		});
 	});
 
@@ -258,7 +250,7 @@ describe('GoogleSearchTool', () => {
 			const result = await tool.execute({ query: 'test' }, mockContext);
 
 			expect(result.success).toBe(true);
-			expect(result.data.citations).toEqual([
+			expect((result.data as any).citations).toEqual([
 				{ url: 'https://example.com/page1', title: 'Example Page 1', snippet: 'Snippet for page 1' },
 				{ url: 'https://example.com/page2', title: 'Example Page 2', snippet: 'Snippet for page 2' },
 			]);
@@ -291,7 +283,7 @@ describe('GoogleSearchTool', () => {
 			const result = await tool.execute({ query: 'test' }, mockContext);
 
 			expect(result.success).toBe(true);
-			expect(result.data.citations[0].title).toBe('https://example.com/no-title');
+			expect((result.data as any).citations[0].title).toBe('https://example.com/no-title');
 		});
 
 		it('should use empty string for snippet when chunk.web.snippet is undefined', async () => {
@@ -321,7 +313,7 @@ describe('GoogleSearchTool', () => {
 			const result = await tool.execute({ query: 'test' }, mockContext);
 
 			expect(result.success).toBe(true);
-			expect(result.data.citations[0].snippet).toBe('');
+			expect((result.data as any).citations[0].snippet).toBe('');
 		});
 
 		it('should filter out chunks without web URI', async () => {
@@ -347,8 +339,8 @@ describe('GoogleSearchTool', () => {
 			const result = await tool.execute({ query: 'test' }, mockContext);
 
 			expect(result.success).toBe(true);
-			expect(result.data.citations).toHaveLength(1);
-			expect(result.data.citations[0].url).toBe('https://example.com/valid');
+			expect((result.data as any).citations).toHaveLength(1);
+			expect((result.data as any).citations[0].url).toBe('https://example.com/valid');
 		});
 	});
 
@@ -388,8 +380,8 @@ describe('GoogleSearchTool', () => {
 
 			expect(result.success).toBe(true);
 			// Citations inserted from end: "Hello world" → at 11: " [2](https://b.com)" → at 5: " [1](https://a.com)"
-			expect(result.data.answer).toBe('Hello [1](https://a.com) world [2](https://b.com)');
-			expect(result.data.originalAnswer).toBe('Hello world');
+			expect((result.data as any).answer).toBe('Hello [1](https://a.com) world [2](https://b.com)');
+			expect((result.data as any).originalAnswer).toBe('Hello world');
 		});
 
 		it('should skip supports with missing endIndex', async () => {
@@ -422,7 +414,7 @@ describe('GoogleSearchTool', () => {
 
 			expect(result.success).toBe(true);
 			// No inline citations should be inserted
-			expect(result.data.answer).toBe('Some text here');
+			expect((result.data as any).answer).toBe('Some text here');
 		});
 
 		it('should skip supports with missing groundingChunkIndices', async () => {
@@ -454,7 +446,7 @@ describe('GoogleSearchTool', () => {
 			const result = await tool.execute({ query: 'test' }, mockContext);
 
 			expect(result.success).toBe(true);
-			expect(result.data.answer).toBe('Some text');
+			expect((result.data as any).answer).toBe('Some text');
 		});
 
 		it('should filter out citation links when chunk has no URI', async () => {
@@ -486,7 +478,7 @@ describe('GoogleSearchTool', () => {
 
 			expect(result.success).toBe(true);
 			// Only chunk 0 should produce a citation link; chunk 1 (no URI) is filtered
-			expect(result.data.answer).toBe('Hello world [1](https://a.com)');
+			expect((result.data as any).answer).toBe('Hello world [1](https://a.com)');
 		});
 	});
 
@@ -502,8 +494,8 @@ describe('GoogleSearchTool', () => {
 			const result = await tool.execute({ query: 'test' }, mockContext);
 
 			expect(result.success).toBe(true);
-			expect(result.data.originalAnswer).toBe('Fallback text from result.text');
-			expect(result.data.answer).toBe('Fallback text from result.text');
+			expect((result.data as any).originalAnswer).toBe('Fallback text from result.text');
+			expect((result.data as any).answer).toBe('Fallback text from result.text');
 		});
 
 		it('should catch and log error when result.text getter throws inside fallback', async () => {

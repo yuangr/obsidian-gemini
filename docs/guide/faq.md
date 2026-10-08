@@ -6,7 +6,7 @@ Common questions and answers gathered from [GitHub Issues](https://github.com/al
 
 ### Where do I get an API key?
 
-Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey). Paste it into the plugin settings under Settings → Gemini Scribe → API Key.
+Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey). Paste it into the plugin settings under Settings → Gemini Scribe → **Providers** → Gemini card → API key.
 
 ### Why do Pro models fail with my free API key?
 
@@ -55,27 +55,29 @@ This is usually caused by an invalid/expired API key or an unavailable model.
 
 ### Requests fail after several retry attempts
 
-The plugin has built-in retry logic with exponential backoff (3 retries by default, so up to 4 attempts total). If requests keep failing, it's usually a rate limit or transient API issue. Check your API key validity and rate limit dashboard. You can adjust retry settings under Advanced Settings. ([#131](https://github.com/allenhutchison/obsidian-gemini/issues/131))
+The plugin has built-in retry logic with exponential backoff (3 retries, so up to 4 attempts total — fixed, not configurable). If requests keep failing, it's usually a rate limit or transient API issue. Check your API key validity and rate limit dashboard. ([#131](https://github.com/allenhutchison/obsidian-gemini/issues/131))
 
 ## Models
 
 ### A model I selected shows "model not found"
 
-Google regularly retires preview model versions. The plugin automatically fetches the latest model list from GitHub on startup (cached 24 hours). Click **Refresh model list** in Settings → General to pick up the current list immediately, without waiting for the cache to expire. ([#223](https://github.com/allenhutchison/obsidian-gemini/issues/223))
+Google regularly retires preview model versions. The plugin automatically fetches the latest model list from GitHub on startup (cached 24 hours). Click **Refresh** on the Gemini card in Settings → Gemini Scribe → Providers to pick up the current list immediately, without waiting for the cache to expire. ([#223](https://github.com/allenhutchison/obsidian-gemini/issues/223))
 
 ### Where are the Temperature and Top-P settings?
 
-These are available under **Advanced Settings** in the plugin settings. Click "Show advanced settings" to reveal them. Temperature ranges are automatically adjusted based on the selected model's capabilities. ([#105](https://github.com/allenhutchison/obsidian-gemini/issues/105))
+They were removed. Every request now uses the provider SDK's own defaults; there is no per-request tuning. A session saved with a `temperature`/`top_p` frontmatter key keeps that key on disk, but it is never read or rewritten. ([#105](https://github.com/allenhutchison/obsidian-gemini/issues/105))
 
 ## Other Models & Providers
 
 ### Will you add support for Gemma models?
 
-If the Gemma model you want is served through the Gemini API (ai.google.dev) it can be added to the curated model list — open an issue naming the specific model ID. If you're asking about Gemma running locally via Ollama or similar, see the local LLM question below. ([#587](https://github.com/allenhutchison/obsidian-gemini/issues/587))
+Yes — the Gemma 4 models served through the Gemini API (ai.google.dev), currently `gemma-4-31b-it` and `gemma-4-26b-a4b-it`, are in the bundled model list, so you can pick them in the Gemini text-model dropdowns (chat, summary, completions, rewrite, web search). They are text models, so they don't appear in the image-generation model dropdown. New Gemma 4 (`gemma-4-*`) variants the Gemini API starts serving are picked up by the regular model-list update, as long as they support `generateContent`. If you're asking about Gemma running locally via Ollama or similar, see the local LLM question below. ([#587](https://github.com/allenhutchison/obsidian-gemini/issues/587), [#1484](https://github.com/allenhutchison/obsidian-gemini/issues/1484))
 
 ### Can I use non-Gemini providers like OpenAI, Anthropic, or Mistral?
 
-No. Gemini Scribe is intentionally a Gemini-only integration — it's built tightly around the `@google/genai` SDK, Gemini's tool-calling surface, URL Context, inline attachments, Google Search grounding, and the File Search API used for semantic vault search. Abstracting these to a generic provider interface would effectively be a rewrite, and there are other Obsidian plugins focused on multi-provider chat if that's what you need. ([#588](https://github.com/allenhutchison/obsidian-gemini/issues/588))
+**OpenAI is supported** as a provider — see the question below for setup, including using your own API key or an OpenAI-compatible local server. **Anthropic (Claude) is supported** too — add your Anthropic API key on the Anthropic card and route features to it; see the [Anthropic Setup guide](./anthropic-setup.md). Ollama is also supported for local models — see [Can I use a local LLM via Ollama or llama.cpp?](#can-i-use-a-local-llm-via-ollama-or-llama-cpp) below.
+
+Mistral is not supported directly. A handful of Gemini-specific features — Google Search grounding, URL Context, and the File Search API used for semantic vault search — remain tightly coupled to the `@google/genai` SDK and are Gemini-only regardless of which provider serves chat; the Features page lets you mix, e.g. chat on OpenAI or Claude with those features still on Gemini. ([#588](https://github.com/allenhutchison/obsidian-gemini/issues/588), [#1237](https://github.com/allenhutchison/obsidian-gemini/issues/1237))
 
 ### Can I point the plugin at Vertex AI for privacy or compliance reasons?
 
@@ -85,20 +87,20 @@ If privacy is the concern, the paid AI Studio tier's no-training terms are the i
 
 ### Can I use a local LLM via Ollama or llama.cpp?
 
-**Ollama is supported.** Switch the provider to **Ollama** in Settings → Gemini Scribe → Provider, point the base URL at your Ollama instance, and enter the model name you have pulled. See the [Ollama Setup guide](./ollama-setup.md) for a step-by-step walkthrough.
+**Ollama is supported.** Add the Ollama card in Settings → Gemini Scribe → **Providers**, point its endpoint at your Ollama instance, then route Chat and agent (and anything else you want) to Ollama on the **Features** page. See the [Ollama Setup guide](./ollama-setup.md) for a step-by-step walkthrough.
 
-A few Gemini-specific features are unavailable on Ollama — these all depend on Google's cloud APIs and have no local equivalent:
+A few features are unavailable on Ollama — these depend on cloud APIs and have no local equivalent:
 
 - **Deep Research** (requires Google Search grounding)
 - **Semantic vault search / RAG** (requires the Gemini File Search API)
 - **Google Search grounding** in agent mode
 - **Google Maps grounding** in agent mode
 - **URL Context** web-fetch tool
-- **Image generation** (Imagen API)
+- **Image generation** (served by Gemini or OpenAI)
 
 Agent mode, tool calling, scheduled tasks, lifecycle hooks, custom prompts, completions, summarization, and rewriting all work with Ollama.
 
-You can also mix the two: under **Settings → Gemini Scribe → Per-feature provider**, each feature can be pointed at its own provider, so you can keep chat local while still using Gemini for web search or image generation (an API key is needed for whichever features you route there). Nothing is sent to the cloud unless you explicitly route it — a feature Ollama can't serve stays off rather than falling back to Google. See [Provider Capabilities](../reference/provider-capabilities.md). ([#576](https://github.com/allenhutchison/obsidian-gemini/discussions/576))
+You can also mix the two: on the **Features page**, each feature can be pointed at its own provider, so you can keep chat local while still using Gemini for web search or image generation (an API key is needed for whichever features you route there). Nothing is sent to the cloud unless you explicitly route it — a feature Ollama can't serve stays off rather than falling back to Google. See [Provider Capabilities](../reference/provider-capabilities.md). ([#576](https://github.com/allenhutchison/obsidian-gemini/discussions/576))
 
 ### My Ollama answers are irrelevant, or the agent invents files that aren't in my vault
 
@@ -110,13 +112,19 @@ Raise it in the Ollama desktop app's settings slider, or with `OLLAMA_CONTEXT_LE
 
 Because the plugin lists models from your daemon's `/api/tags` endpoint, which reports **locally pulled models only**. Using a cloud model from the Ollama desktop app or `ollama run` doesn't create a local entry, so it stays invisible to the plugin.
 
-Pull it explicitly — this fetches a small manifest, not the weights — then click **Refresh** in Settings → General:
+Pull it explicitly — this fetches a small manifest, not the weights — then click **Refresh** on the Ollama provider card:
 
 ```bash
 ollama pull deepseek-v4-pro:cloud
 ```
 
 Watch the tag format: models with a size tag take a `-cloud` suffix (`gpt-oss:120b-cloud`), while untagged models use `cloud` as the tag itself (`glm-5.2:cloud`). Note that a cloud model runs on ollama.com, so your notes leave your machine even though the provider is set to Ollama. See [Cloud models](./ollama-setup.md#cloud-models).
+
+### Can I use my own OpenAI API key, or point the plugin at LM Studio / another OpenAI-compatible server?
+
+**Yes to both.** Add the OpenAI card in Settings → Gemini Scribe → **Providers**, enter your API key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys), then route chat, summary, completions, rewrite, or image generation to OpenAI on the **Features** page and pick a model for each. To use an OpenAI-compatible server instead — LM Studio, an MLX-served endpoint, Ollama's own OpenAI-compatible endpoint, etc. — point the OpenAI card's **Base URL** field at it (e.g. `http://localhost:1234/v1` for LM Studio) and enter any placeholder value in the API key field if the server doesn't check one. Compatible-server image generation also requires a `/v1/images/generations` implementation. See the [OpenAI Setup guide](./openai-setup.md) for a full walkthrough.
+
+This uses OpenAI Platform API-key billing; a ChatGPT subscription cannot authenticate Gemini Scribe. OpenAI supports one-shot image generation through its Images API. Deep Research, semantic vault search, Google Search/Maps grounding, and URL Context remain Gemini-only, and the same per-feature mixing applies: keep chat or image generation on OpenAI while routing Google-backed features to Gemini. See [Provider Capabilities](../reference/provider-capabilities.md). ([#1237](https://github.com/allenhutchison/obsidian-gemini/issues/1237))
 
 ## Language & Localization
 

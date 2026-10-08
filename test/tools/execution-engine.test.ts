@@ -1,7 +1,6 @@
 import { ToolExecutionEngine } from '../../src/tools/execution-engine';
 import { ToolRegistry } from '../../src/tools/tool-registry';
-import { ReadFileTool, ListFilesTool, WriteFileTool } from '../../src/tools/vault';
-import { getExtendedVaultTools } from '../../src/tools/vault-tools-extended';
+import { AppendContentTool, ReadFileTool, ListFilesTool, WriteFileTool } from '../../src/tools/vault';
 import { ToolCategory } from '../../src/types/agent';
 import { ToolClassification } from '../../src/types/tool-policy';
 import { IConfirmationProvider, Tool } from '../../src/tools/types';
@@ -48,10 +47,7 @@ describe('ToolExecutionEngine - Confirmation Requirements', () => {
 	beforeEach(() => {
 		// Mock plugin
 		plugin = {
-			settings: {
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
-			},
+			settings: {},
 			app: {
 				vault: {
 					getAbstractFileByPath: vi.fn(),
@@ -108,7 +104,7 @@ describe('ToolExecutionEngine - Confirmation Requirements', () => {
 
 		// Tool should execute without confirmation — returns success with exists: false
 		expect(readResult.success).toBe(true);
-		expect(readResult.data.exists).toBe(false);
+		expect((readResult.data as any).exists).toBe(false);
 
 		// Test list_files - should not require confirmation
 		const listResult = await engine.executeTool(
@@ -215,7 +211,7 @@ describe('ToolExecutionEngine - Confirmation Requirements', () => {
 			expect.objectContaining({ path: 'test.md' }),
 			'user edited content'
 		);
-		expect(writeResult.data.userEdited).toBe(true);
+		expect((writeResult.data as any).userEdited).toBe(true);
 	});
 });
 
@@ -227,10 +223,7 @@ describe('ToolExecutionEngine - Error Handling', () => {
 	beforeEach(() => {
 		// Mock plugin
 		plugin = {
-			settings: {
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
-			},
+			settings: {},
 			app: {
 				vault: {
 					getAbstractFileByPath: vi.fn(),
@@ -391,41 +384,6 @@ describe('ToolExecutionEngine - Error Handling', () => {
 		expect(result.success).toBe(false);
 		expect(result.error).toContain('Invalid parameters');
 	});
-
-	it('should handle multiple tool calls with proper error isolation', async () => {
-		const context = {
-			plugin,
-			session: {
-				id: 'test-session',
-				type: 'agent-session',
-				context: {
-					contextFiles: [],
-					contextDepth: 2,
-					enabledTools: [ToolCategory.READ_ONLY],
-					requireConfirmation: [],
-				},
-			},
-		} as any;
-
-		registry.registerTool(new ListFilesTool());
-
-		// Execute multiple tool calls
-		const results = await engine.executeToolCalls(
-			[
-				{ name: 'list_files', arguments: { path: '' } }, // Should succeed
-				{ name: 'non_existent', arguments: {} }, // Should fail
-				{ name: 'list_files', arguments: { path: 'folder' } }, // Should succeed
-			],
-			context,
-			denyProvider
-		);
-
-		// Should only have 2 results because execution stops on error by default
-		expect(results).toHaveLength(2);
-		expect(results[0].success).toBe(true);
-		expect(results[1].success).toBe(false);
-		expect(results[1].error).toBe('Tool non_existent not found');
-	});
 });
 
 describe('ToolExecutionEngine - Loop Detection', () => {
@@ -446,11 +404,7 @@ describe('ToolExecutionEngine - Loop Detection', () => {
 
 	beforeEach(() => {
 		plugin = {
-			settings: {
-				loopDetectionEnabled: true,
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
-			},
+			settings: {},
 			logger: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 			agentEventBus: { emit: vi.fn().mockResolvedValue(undefined) },
 		};
@@ -501,113 +455,12 @@ describe('ToolExecutionEngine - Loop Detection', () => {
 		expect(plugin.agentEventBus.emit).toHaveBeenCalledWith(
 			'toolLoopDetected',
 			expect.objectContaining({
+				sessionId: 'loop-session',
 				toolName: 'noop',
 				args: {},
 				identicalCallCount: 3,
 			})
 		);
-	});
-
-	it('does not set loopDetected when detection is disabled', async () => {
-		plugin.settings.loopDetectionEnabled = false;
-
-		const context = {
-			plugin,
-			session: {
-				id: 'no-detection-session',
-				type: 'agent-session',
-				context: {
-					contextFiles: [],
-					contextDepth: 2,
-					enabledTools: [ToolCategory.READ_ONLY],
-					requireConfirmation: [],
-				},
-			},
-		} as any;
-
-		const call = { name: 'noop', arguments: {} };
-		for (let i = 0; i < 5; i++) {
-			const result = await engine.executeTool(call, context, denyProvider);
-			expect(result.success).toBe(true);
-			expect(result.loopDetected).toBeUndefined();
-		}
-		expect(plugin.agentEventBus.emit).not.toHaveBeenCalled();
-	});
-});
-
-describe('ToolExecutionEngine - executeToolCalls with stopOnToolError=false', () => {
-	let plugin: any;
-	let registry: ToolRegistry;
-	let engine: ToolExecutionEngine;
-
-	const succeedTool = {
-		name: 'succeed_tool',
-		description: 'Always succeeds',
-		category: ToolCategory.READ_ONLY,
-		classification: ToolClassification.READ,
-		parameters: { type: 'object' as const, properties: {}, required: [] },
-		execute: vi.fn().mockResolvedValue({ success: true, data: { ok: true } }),
-	};
-
-	const failTool = {
-		name: 'fail_tool',
-		description: 'Always fails',
-		category: ToolCategory.READ_ONLY,
-		classification: ToolClassification.READ,
-		parameters: { type: 'object' as const, properties: {}, required: [] },
-		execute: vi.fn().mockResolvedValue({ success: false, error: 'deliberate failure' }),
-	};
-
-	beforeEach(() => {
-		plugin = {
-			settings: {
-				stopOnToolError: false,
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
-			},
-			logger: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
-		};
-
-		registry = new ToolRegistry(plugin);
-		engine = new ToolExecutionEngine(plugin, registry);
-		registry.registerTool(succeedTool);
-		registry.registerTool(failTool);
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
-	it('continues executing all tool calls when stopOnToolError is false', async () => {
-		const context = {
-			plugin,
-			session: {
-				id: 'continue-session',
-				type: 'agent-session',
-				context: {
-					contextFiles: [],
-					contextDepth: 2,
-					enabledTools: [ToolCategory.READ_ONLY],
-					requireConfirmation: [],
-				},
-			},
-		} as any;
-
-		const results = await engine.executeToolCalls(
-			[
-				{ name: 'succeed_tool', arguments: {} },
-				{ name: 'fail_tool', arguments: {} },
-				{ name: 'succeed_tool', arguments: {} },
-			],
-			context,
-			denyProvider
-		);
-
-		expect(results).toHaveLength(3);
-		expect(results[0].success).toBe(true);
-		expect(results[1].success).toBe(false);
-		expect(results[1].error).toBe('deliberate failure');
-		expect(results[2].success).toBe(true);
 	});
 });
 
@@ -624,8 +477,6 @@ describe('ToolExecutionEngine - diff/confirm hook dispatch', () => {
 	beforeEach(() => {
 		plugin = {
 			settings: {
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
 				historyFolder: 'gemini-scribe',
 			},
 			app: {
@@ -752,143 +603,7 @@ describe('ToolExecutionEngine - diff/confirm hook dispatch', () => {
 	});
 });
 
-describe('ToolExecutionEngine - formatToolResult', () => {
-	let plugin: any;
-	let registry: ToolRegistry;
-	let engine: ToolExecutionEngine;
-
-	beforeEach(() => {
-		plugin = {
-			settings: {
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
-			},
-			logger: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
-		};
-
-		registry = new ToolRegistry(plugin);
-		engine = new ToolExecutionEngine(plugin, registry);
-	});
-
-	it('formats a successful result with data', () => {
-		const execution = {
-			toolName: 'read_file',
-			parameters: { path: 'test.md' },
-			result: { success: true, data: { content: 'hello' } },
-			timestamp: new Date(),
-		} as any;
-
-		const formatted = engine.formatToolResult(execution);
-
-		expect(formatted).toContain('### Tool Execution: read_file');
-		expect(formatted).toContain('✓ Success');
-		expect(formatted).toContain('**Result:**');
-		expect(formatted).toContain('"content": "hello"');
-		expect(formatted).not.toContain('**Error:**');
-	});
-
-	it('formats a failed result with error', () => {
-		const execution = {
-			toolName: 'write_file',
-			parameters: { path: 'test.md', content: 'x' },
-			result: { success: false, error: 'Permission denied' },
-			timestamp: new Date(),
-		} as any;
-
-		const formatted = engine.formatToolResult(execution);
-
-		expect(formatted).toContain('### Tool Execution: write_file');
-		expect(formatted).toContain('✗ Failed');
-		expect(formatted).toContain('**Error:** Permission denied');
-		expect(formatted).not.toContain('**Result:**');
-	});
-});
-
-describe('ToolExecutionEngine - getAvailableToolsDescription', () => {
-	let plugin: any;
-	let registry: ToolRegistry;
-	let engine: ToolExecutionEngine;
-
-	beforeEach(() => {
-		plugin = {
-			settings: {
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
-			},
-			logger: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
-		};
-
-		registry = new ToolRegistry(plugin);
-		engine = new ToolExecutionEngine(plugin, registry);
-	});
-
-	it('returns "No tools" message when no tools are enabled', () => {
-		const context = {
-			plugin,
-			session: {
-				id: 'test-session',
-				type: 'agent-session',
-				context: {
-					contextFiles: [],
-					contextDepth: 2,
-					enabledTools: [],
-					requireConfirmation: [],
-				},
-			},
-			featureToolPolicy: {
-				overrides: {},
-			},
-		} as any;
-
-		const desc = engine.getAvailableToolsDescription(context);
-
-		expect(desc).toBe('No tools are currently available.');
-	});
-
-	it('includes parameter descriptions for tools with parameters', () => {
-		const toolWithParams = {
-			name: 'test_tool',
-			description: 'A test tool',
-			category: ToolCategory.READ_ONLY,
-			classification: ToolClassification.READ,
-			parameters: {
-				type: 'object' as const,
-				properties: {
-					path: { type: 'string' as const, description: 'File path to read' },
-					depth: { type: 'number' as const, description: 'Depth level' },
-				},
-				required: ['path'],
-			},
-			execute: vi.fn().mockResolvedValue({ success: true }),
-		};
-		registry.registerTool(toolWithParams);
-
-		const context = {
-			plugin,
-			session: {
-				id: 'test-session',
-				type: 'agent-session',
-				context: {
-					contextFiles: [],
-					contextDepth: 2,
-					enabledTools: [ToolCategory.READ_ONLY],
-					requireConfirmation: [],
-				},
-			},
-		} as any;
-
-		const desc = engine.getAvailableToolsDescription(context);
-
-		expect(desc).toContain('## Available Tools');
-		expect(desc).toContain('### test_tool');
-		expect(desc).toContain('A test tool');
-		expect(desc).toContain('**Parameters:**');
-		expect(desc).toContain('`path` (string) (required): File path to read');
-		expect(desc).toContain('`depth` (number): Depth level');
-	});
-});
-
-describe('ToolExecutionEngine - Execution History Management', () => {
+describe('ToolExecutionEngine - Session state lifecycle (#1387)', () => {
 	let plugin: any;
 	let registry: ToolRegistry;
 	let engine: ToolExecutionEngine;
@@ -898,16 +613,17 @@ describe('ToolExecutionEngine - Execution History Management', () => {
 		description: 'noop',
 		category: ToolCategory.READ_ONLY,
 		classification: ToolClassification.READ,
-		parameters: { type: 'object' as const, properties: {}, required: [] },
+		parameters: {
+			type: 'object' as const,
+			properties: { a: { type: 'number' as const, description: 'loop detector probe' } },
+			required: [],
+		},
 		execute: vi.fn().mockResolvedValue({ success: true, data: {} }),
 	};
 
 	beforeEach(() => {
 		plugin = {
-			settings: {
-				loopDetectionThreshold: 99,
-				loopDetectionTimeWindowSeconds: 60,
-			},
+			settings: {},
 			logger: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 		};
 
@@ -920,15 +636,11 @@ describe('ToolExecutionEngine - Execution History Management', () => {
 		vi.clearAllMocks();
 	});
 
-	it('returns empty array for unknown session', () => {
-		expect(engine.getExecutionHistory('unknown-session')).toEqual([]);
-	});
-
-	it('records execution history and retrieves it', async () => {
-		const context = {
+	const sessionContext = (id: string) =>
+		({
 			plugin,
 			session: {
-				id: 'history-session',
+				id,
 				type: 'agent-session',
 				context: {
 					contextFiles: [],
@@ -937,38 +649,31 @@ describe('ToolExecutionEngine - Execution History Management', () => {
 					requireConfirmation: [],
 				},
 			},
-		} as any;
+		}) as any;
 
-		await engine.executeTool({ name: 'noop', arguments: {} }, context, denyProvider);
-		await engine.executeTool({ name: 'noop', arguments: {} }, context, denyProvider);
+	const identicalCall = { name: 'noop', arguments: { a: 1 } };
 
-		const history = engine.getExecutionHistory('history-session');
-		expect(history).toHaveLength(2);
-		expect(history[0].toolName).toBe('noop');
-		expect(history[0].result.success).toBe(true);
-		expect(history[0].timestamp).toBeInstanceOf(Date);
+	it('flags a loop once identical calls reach the (fixed) threshold', async () => {
+		await engine.executeTool(identicalCall, sessionContext('flag-session'), denyProvider);
+		await engine.executeTool(identicalCall, sessionContext('flag-session'), denyProvider);
+		await engine.executeTool(identicalCall, sessionContext('flag-session'), denyProvider);
+		const flagged = await engine.executeTool(identicalCall, sessionContext('flag-session'), denyProvider);
+		expect(flagged.success).toBe(false);
+		expect(flagged.loopDetected).toBe(true);
 	});
 
-	it('clears execution history for a session', async () => {
-		const context = {
-			plugin,
-			session: {
-				id: 'clear-session',
-				type: 'agent-session',
-				context: {
-					contextFiles: [],
-					contextDepth: 2,
-					enabledTools: [ToolCategory.READ_ONLY],
-					requireConfirmation: [],
-				},
-			},
-		} as any;
+	it('clearLoopDetectorSession drops the recorded calls so detection restarts (#1387)', async () => {
+		const context = sessionContext('shrink-session');
+		await engine.executeTool(identicalCall, context, denyProvider);
+		await engine.executeTool(identicalCall, context, denyProvider);
+		await engine.executeTool(identicalCall, context, denyProvider);
+		engine.clearLoopDetectorSession('shrink-session');
 
-		await engine.executeTool({ name: 'noop', arguments: {} }, context, denyProvider);
-		expect(engine.getExecutionHistory('clear-session')).toHaveLength(1);
-
-		engine.clearExecutionHistory('clear-session');
-		expect(engine.getExecutionHistory('clear-session')).toEqual([]);
+		// Without the clear, the next identical call would be flagged at the
+		// threshold; with the session state released it runs again.
+		const result = await engine.executeTool(identicalCall, context, denyProvider);
+		expect(result.success).toBe(true);
+		expect(result.loopDetected).toBeUndefined();
 	});
 });
 
@@ -988,11 +693,7 @@ describe('ToolExecutionEngine - Loop Detection Event Bus Emit Error', () => {
 
 	beforeEach(() => {
 		plugin = {
-			settings: {
-				loopDetectionEnabled: true,
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
-			},
+			settings: {},
 			logger: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 			agentEventBus: {
 				emit: vi.fn().mockImplementation(() => {
@@ -1048,8 +749,6 @@ describe('ToolExecutionEngine - Confirmation Flow', () => {
 	beforeEach(() => {
 		plugin = {
 			settings: {
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
 				historyFolder: 'gemini-scribe',
 			},
 			app: {
@@ -1121,7 +820,7 @@ describe('ToolExecutionEngine - Confirmation Flow', () => {
 	it('flips append_content to a full overwrite when the user edits the diff', async () => {
 		// The append→overwrite flip now lives in AppendContentTool.applyConfirmedEdit;
 		// register the real tool so the engine exercises that hook end-to-end.
-		const appendTool = getExtendedVaultTools().find((tt) => tt.name === 'append_content')!;
+		const appendTool = new AppendContentTool();
 		registry.registerTool(appendTool);
 
 		const context = {
@@ -1166,8 +865,8 @@ describe('ToolExecutionEngine - Confirmation Flow', () => {
 		expect(result.success).toBe(true);
 		// A user edit means "replace the whole file", not "append the suffix":
 		// the tool overwrites with the edited content and reports a replace.
-		expect(result.data.action).toBe('replaced');
-		expect(result.data.userEdited).toBe(true);
+		expect((result.data as any).action).toBe('replaced');
+		expect((result.data as any).userEdited).toBe(true);
 		expect(plugin.app.vault.modify).toHaveBeenCalledWith(
 			expect.objectContaining({ path: 'doc.md' }),
 			'full edited file'
@@ -1182,10 +881,7 @@ describe('ToolExecutionEngine - Non-Error Thrown Value', () => {
 
 	beforeEach(() => {
 		plugin = {
-			settings: {
-				loopDetectionThreshold: 3,
-				loopDetectionTimeWindowSeconds: 60,
-			},
+			settings: {},
 			logger: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 		};
 

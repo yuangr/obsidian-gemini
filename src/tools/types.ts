@@ -18,11 +18,9 @@ export type ToolParams = Record<string, unknown>;
  */
 export interface ToolResult {
 	success: boolean;
-	// Per-tool payload: each tool returns a differently-shaped object (and the ~40
-	// consumer sites narrow it by runtime shape), so this is a genuine dynamic
-	// boundary. Kept as `any` deliberately.
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- per-tool payload is a genuine dynamic boundary
-	data?: any;
+	// Per-tool payload: each tool returns a differently-shaped object, so
+	// consumers narrow it by runtime shape before reading fields.
+	data?: unknown;
 	error?: string;
 	requiresConfirmation?: boolean;
 	/** Binary attachments to inject as inlineData parts alongside the functionResponse */
@@ -58,7 +56,16 @@ export interface IToolHostView {
 export interface ToolExecutionContext {
 	session: ChatSession;
 	plugin: ObsidianGemini;
-	/** When set, discovery tools default their search scope to this directory */
+	/**
+	 * When set, the project boundary for discovery tools (#1506). All four
+	 * discovery tools (`list_files`, `find_files_by_name`,
+	 * `find_files_by_content`, `vault_semantic_search`) hard-scope to this
+	 * directory: an out-of-project path argument is rejected with an error
+	 * (the parameterized tools) or filtered out (the search tools), and the
+	 * parameterized tools fall back to this root when their path/folder
+	 * argument is omitted. An empty string (vault-root project) means no
+	 * boundary. Read/write tools are unrestricted.
+	 */
 	projectRootPath?: string;
 	/**
 	 * Side effects on the agent view that owns this session (shelf updates, header
@@ -143,25 +150,6 @@ export interface Tool {
 	 * `finalContent`. A tool without an editable diff omits this hook.
 	 */
 	applyConfirmedEdit?(params: ToolParams, result: ConfirmationResult): void;
-}
-
-/**
- * Tool execution record for history
- */
-export interface ToolExecution {
-	toolName: string;
-	parameters: ToolParams;
-	result: ToolResult;
-	timestamp: Date;
-	confirmed?: boolean;
-}
-
-/**
- * Tool choice configuration for AI requests
- */
-export interface ToolChoice {
-	type: 'auto' | 'none' | 'any' | 'tool';
-	toolName?: string; // When type is 'tool'
 }
 
 /**

@@ -1,41 +1,51 @@
 /**
  * Factory for creating model API clients.
  *
- * Resolves the provider *per use case* (#704) — chat may run on Ollama while
- * summaries run on Gemini — then instantiates the matching client and wraps it
- * in a RetryDecorator. This is the single creation entry point for the agent
- * and all role-specific use cases.
+ * Resolves the provider *per feature* (settings redesign; successor to #704's
+ * per-use-case routing) — chat may run on Ollama while summaries run on
+ * Gemini — then instantiates the matching client and wraps it in a
+ * RetryDecorator. This is the single creation entry point for the agent and
+ * all role-specific use cases.
  */
 
 import { GeminiClient } from './providers/gemini/client';
 import type { GeminiClientConfig } from './providers/gemini/config';
 import { OllamaClient } from './providers/ollama/client';
 import type { OllamaClientConfig } from './providers/ollama/config';
+import { OpenAIClient } from './providers/openai/client';
+import { DEFAULT_OPENAI_BASE_URL, type OpenAIClientConfig } from './providers/openai/config';
+import { AnthropicClient } from './providers/anthropic/client';
+import type { AnthropicClientConfig } from './providers/anthropic/config';
 import { ModelApi } from './interfaces/model-api';
+import type { ImageGenerationApi } from './interfaces/image-generation-api';
 import { GeminiPrompts } from '../prompts';
 import { RetryDecorator } from './retry-decorator';
-import { getDefaultModelForRole, getOllamaModelForRole } from '../models';
+import { resolveFeatureModel } from '../models';
 import type { ObsidianGemini } from '../types/plugin';
 import { ModelUseCase } from './model-use-case';
-import { resolveProviderOrDefault } from './provider-routing';
-import type { ProviderUseCase } from './providers/registry';
+import { featureProvider, featureRoute } from './feature-routing';
+import { FeatureUnavailableError } from './feature-errors';
+import type { FeatureId } from '../types/features';
 
 /**
- * Which routable use case each model-client use case is billed to.
+ * Which routable feature each model-client use case is billed to.
  *
- * Mapped explicitly rather than reusing the enum's string values: they overlap
- * by coincidence, not by design. `ModelUseCase.SEARCH` is a *thinking-level
- * tier* for query-understanding calls on the chat path — not the `webSearch`
- * capability, which gates the Google Search / URL-context tools. Routing it to
- * `webSearch` would send a local-only install's chat calls looking for a
- * provider that serves web search and find none.
+ * Mapped explicitly rather than reusing the enum's string values: any overlap
+ * between a `ModelUseCase` name and a `FeatureId` name is coincidence, not
+ * design. A use-case name that matches a feature must NOT route to that
+ * feature unless that is really intended — e.g. a hypothetical `SEARCH`
+ * use case is a thinking-level tier for query-understanding calls on the chat
+ * path, not the `webSearch` feature, which gates the Google Search /
+ * URL-context tools. Routing on the name collision would send a local-only
+ * install's chat calls looking for a provider that serves web search and find
+ * none. Decide each row by what the call site does, not what the enum arm is
+ * called.
  */
-const ROUTING_USE_CASE: Record<ModelUseCase, ProviderUseCase> = {
+const FEATURE_FOR_USE_CASE: Record<ModelUseCase, FeatureId> = {
 	[ModelUseCase.CHAT]: 'chat',
 	[ModelUseCase.SUMMARY]: 'summary',
 	[ModelUseCase.COMPLETIONS]: 'completions',
 	[ModelUseCase.REWRITE]: 'rewrite',
-	[ModelUseCase.SEARCH]: 'chat',
 };
 
 // Re-exported so existing `import { ModelUseCase } from '.../api/factory'` call
@@ -47,147 +57,128 @@ export { ModelUseCase } from './model-use-case';
  */
 export class ModelClientFactory {
 	/**
+	 * Create the provider client serving the image-generation feature.
+	 *
+	 * This path is intentionally separate from ModelApi: image providers return
+	 * base64 image bytes rather than a conversational ModelResponse.
+	 */
+	static createImageGenerationClient(plugin: ObsidianGemini): ImageGenerationApi {
+		const provider = featureProvider(plugin.settings, 'imageGen');
+		if (!provider) {
+			const route = featureRoute(plugin.settings, 'imageGen');
+			const reason = route.provider === 'none' ? 'unconfigured' : 'unsupported';
+			throw new FeatureUnavailableError('imageGen', reason);
+		}
+
+		const prompts = new GeminiPrompts(plugin);
+		if (provider === 'openai') {
+			return new OpenAIClient(
+				{
+					apiKey: plugin.openaiApiKey,
+					baseUrl: plugin.settings.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL,
+				},
+				prompts,
+				plugin
+			);
+		}
+
+		if (provider === 'gemini') {
+			return new GeminiClient({ apiKey: plugin.apiKey }, prompts, plugin);
+		}
+
+		// featureProvider currently makes this branch unreachable, but keep the
+		// factory total if the registry and implementation ever drift.
+		throw new FeatureUnavailableError('imageGen', 'unsupported');
+	}
+
+	/**
 	 * Create a ModelApi client from plugin settings
 	 *
 	 * @param plugin - Plugin instance with settings
 	 * @param useCase - The use case for this model (determines which model to use)
 	 * @param overrides - Optional config overrides (for per-session settings)
 	 * @returns Configured ModelApi instance wrapped with retry logic
+	 * @throws {FeatureUnavailableError} when the feature this use case bills to
+	 *   is routed to `'none'` or to a provider that can't serve it. There is no
+	 *   silent fallback to another provider — the caller surfaces this as a
+	 *   Notice.
 	 */
 	static createFromPlugin(
 		plugin: ObsidianGemini,
 		useCase: ModelUseCase,
-		overrides?: Partial<GeminiClientConfig> & Partial<OllamaClientConfig>
+		overrides?: Partial<GeminiClientConfig> &
+			Partial<OllamaClientConfig> &
+			Partial<OpenAIClientConfig> &
+			Partial<AnthropicClientConfig>
 	): ModelApi {
 		const settings = plugin.settings;
-		// Every ModelUseCase maps to a use case that all providers support, so the
-		// `null` branch of resolveProvider is unreachable here — capability-gated
-		// features (RAG, image generation) never reach the client factory.
-		const provider = resolveProviderOrDefault(settings, ROUTING_USE_CASE[useCase]);
+		const feature = FEATURE_FOR_USE_CASE[useCase];
+		const provider = featureProvider(settings, feature);
+		if (!provider) {
+			const route = featureRoute(settings, feature);
+			const reason = route.provider === 'none' ? 'unconfigured' : 'unsupported';
+			throw new FeatureUnavailableError(feature, reason);
+		}
 
-		const modelName = this.resolveModelName(plugin, useCase);
+		const modelName = resolveFeatureModel(settings, feature);
 
 		const prompts = new GeminiPrompts(plugin);
-
-		const retryConfig = {
-			maxRetries: settings.maxRetries ?? 3,
-			initialBackoffDelay: settings.initialBackoffDelay ?? 1000,
-		};
 
 		if (provider === 'ollama') {
 			const config: OllamaClientConfig = {
 				baseUrl: settings.ollamaBaseUrl || 'http://localhost:11434',
 				model: modelName,
-				temperature: settings.temperature ?? 0.7,
-				topP: settings.topP ?? 1,
-				streamingEnabled: settings.streamingEnabled ?? true,
 				...overrides,
 			};
 			const client = new OllamaClient(config, prompts, plugin);
-			return new RetryDecorator(client, retryConfig, plugin.logger);
+			return new RetryDecorator(client, plugin.logger);
+		}
+
+		if (provider === 'openai') {
+			const config: OpenAIClientConfig = {
+				apiKey: plugin.openaiApiKey,
+				baseUrl: settings.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL,
+				model: modelName,
+				...overrides,
+			};
+			const client = new OpenAIClient(config, prompts, plugin);
+			return new RetryDecorator(client, plugin.logger);
+		}
+
+		if (provider === 'anthropic') {
+			const config: AnthropicClientConfig = {
+				apiKey: plugin.anthropicApiKey,
+				model: modelName,
+				...overrides,
+			};
+			const client = new AnthropicClient(config, prompts, plugin);
+			return new RetryDecorator(client, plugin.logger);
 		}
 
 		const config: GeminiClientConfig = {
 			apiKey: plugin.apiKey,
 			model: modelName,
 			useCase,
-			temperature: settings.temperature ?? 1.0,
-			topP: settings.topP ?? 0.95,
-			streamingEnabled: settings.streamingEnabled ?? true,
-			useInteractionsApi: settings.useInteractionsApi ?? false,
 			...overrides,
 		};
 		const client = new GeminiClient(config, prompts, plugin);
-		return new RetryDecorator(client, retryConfig, plugin.logger);
-	}
-
-	/** The model role a use case reads its configured model from. */
-	private static roleForUseCase(useCase: ModelUseCase): 'chat' | 'summary' | 'completions' {
-		switch (useCase) {
-			case ModelUseCase.SUMMARY:
-				return 'summary';
-			case ModelUseCase.COMPLETIONS:
-				return 'completions';
-			// Rewrite and search deliberately reuse the chat model rather than
-			// carrying their own setting.
-			default:
-				return 'chat';
-		}
-	}
-
-	private static resolveModelName(plugin: ObsidianGemini, useCase: ModelUseCase): string {
-		const settings = plugin.settings;
-		const provider = resolveProviderOrDefault(settings, ROUTING_USE_CASE[useCase]);
-		const role = this.roleForUseCase(useCase);
-
-		if (provider === 'ollama') {
-			// Ollama keeps one model resident, so the per-use-case fields default
-			// to inheriting the chat model rather than forcing a swap (#1077).
-			return getOllamaModelForRole(settings, role);
-		}
-
-		const configured =
-			role === 'summary'
-				? settings.summaryModelName
-				: role === 'completions'
-					? settings.completionsModelName
-					: settings.chatModelName;
-		return configured || getDefaultModelForRole(role, provider);
+		return new RetryDecorator(client, plugin.logger);
 	}
 
 	/**
-	 * Create a GeminiClient with custom configuration
-	 *
-	 * @param config - Complete client configuration
-	 * @param prompts - Optional prompts instance
-	 * @param plugin - Optional plugin instance
-	 * @returns Configured GeminiClient instance wrapped with retry logic
-	 */
-	static createCustom(config: GeminiClientConfig, prompts?: GeminiPrompts, plugin?: ObsidianGemini): ModelApi {
-		const client = new GeminiClient(config, prompts, plugin);
-
-		// Use retry config from plugin settings if available, otherwise use defaults
-		const retryConfig = plugin
-			? {
-					maxRetries: plugin.settings.maxRetries ?? 3,
-					initialBackoffDelay: plugin.settings.initialBackoffDelay ?? 1000,
-				}
-			: {
-					maxRetries: 3,
-					initialBackoffDelay: 1000,
-				};
-
-		return new RetryDecorator(client, retryConfig, plugin?.logger);
-	}
-
-	/**
-	 * Create a chat model with optional session-specific overrides
+	 * Create a chat model.
 	 *
 	 * @param plugin - Plugin instance
-	 * @param sessionConfig - Optional session-level config (model, temperature, topP)
+	 * @param _legacySessionConfig - Deprecated: Unused. Kept only so
+	 *   `agent-factory.ts` (`createChatModel(plugin, session.modelConfig)`)
+	 *   keeps compiling until the settings redesign's agent-view work package
+	 *   drops the argument at that call site; the model override it used to
+	 *   carry is applied at request time via `session.modelConfig`, and its
+	 *   temperature/topP fields no longer exist.
 	 * @returns Configured ModelApi client for chat
 	 */
-	static createChatModel(
-		plugin: ObsidianGemini,
-		sessionConfig?: { model?: string; temperature?: number; topP?: number; sessionId?: string }
-	): ModelApi {
-		const overrides: Partial<GeminiClientConfig> = {};
-
-		if (sessionConfig) {
-			// Session config takes precedence
-			if (sessionConfig.temperature !== undefined) {
-				overrides.temperature = sessionConfig.temperature;
-			}
-			if (sessionConfig.topP !== undefined) {
-				overrides.topP = sessionConfig.topP;
-			}
-			if (sessionConfig.sessionId !== undefined) {
-				overrides.sessionId = sessionConfig.sessionId;
-			}
-			// Note: model override is handled at request time via session.modelConfig
-		}
-
-		return this.createFromPlugin(plugin, ModelUseCase.CHAT, overrides);
+	static createChatModel(plugin: ObsidianGemini, _legacySessionConfig?: unknown): ModelApi {
+		return this.createFromPlugin(plugin, ModelUseCase.CHAT);
 	}
 
 	/**
@@ -218,15 +209,5 @@ export class ModelClientFactory {
 	 */
 	static createRewriteModel(plugin: ObsidianGemini): ModelApi {
 		return this.createFromPlugin(plugin, ModelUseCase.REWRITE);
-	}
-
-	/**
-	 * Create a search model
-	 *
-	 * @param plugin - Plugin instance
-	 * @returns Configured ModelApi client for search operations
-	 */
-	static createSearchModel(plugin: ObsidianGemini): ModelApi {
-		return this.createFromPlugin(plugin, ModelUseCase.SEARCH);
 	}
 }

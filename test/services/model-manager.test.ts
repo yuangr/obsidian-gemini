@@ -1,5 +1,9 @@
+import type { Mock } from 'vitest';
+import { requestUrl } from 'obsidian';
 import { ModelManager } from '../../src/services/model-manager';
 import { GeminiModel, setGeminiModels, GEMINI_MODELS } from '../../src/models';
+
+const mockedRequestUrl = requestUrl as unknown as Mock;
 
 const mockPlugin = {
 	settings: {
@@ -9,6 +13,7 @@ const mockPlugin = {
 		imageModelName: 'gemini-2.5-flash-image',
 	},
 	apiKey: 'test-api-key',
+	openaiApiKey: 'sk-test-key',
 	loadData: vi.fn().mockResolvedValue({}),
 	saveData: vi.fn(),
 	logger: {
@@ -131,54 +136,6 @@ describe('ModelManager', () => {
 		});
 	});
 
-	describe('getParameterRanges', () => {
-		it('should return valid parameter ranges', async () => {
-			const ranges = await modelManager.getParameterRanges();
-
-			expect(ranges.temperature.min).toBe(0);
-			expect(ranges.temperature.max).toBeGreaterThanOrEqual(1);
-			expect(ranges.topP.min).toBe(0);
-			expect(ranges.topP.max).toBe(1);
-		});
-
-		it('should return step values for temperature and topP', async () => {
-			const ranges = await modelManager.getParameterRanges();
-
-			expect(ranges.temperature.step).toBeGreaterThan(0);
-			expect(ranges.topP.step).toBeGreaterThan(0);
-		});
-	});
-
-	describe('validateParameters', () => {
-		it('should accept valid parameters', async () => {
-			const result = await modelManager.validateParameters(0.7, 0.9);
-
-			expect(result.temperature.isValid).toBe(true);
-			expect(result.topP.isValid).toBe(true);
-		});
-
-		it('should reject out-of-range parameters', async () => {
-			const result = await modelManager.validateParameters(10, 1.5);
-
-			expect(result.temperature.isValid).toBe(false);
-			expect(result.topP.isValid).toBe(false);
-		});
-
-		it('should accept edge-case zero values', async () => {
-			const result = await modelManager.validateParameters(0, 0);
-
-			expect(result.temperature.isValid).toBe(true);
-			expect(result.topP.isValid).toBe(true);
-		});
-
-		it('should reject negative values', async () => {
-			const result = await modelManager.validateParameters(-1, -0.5);
-
-			expect(result.temperature.isValid).toBe(false);
-			expect(result.topP.isValid).toBe(false);
-		});
-	});
-
 	describe('getListProvider', () => {
 		it('should return the internal ModelListProvider instance', () => {
 			const provider = modelManager.getListProvider();
@@ -227,16 +184,6 @@ describe('ModelManager', () => {
 		});
 	});
 
-	describe('getParameterDisplayInfo', () => {
-		it('should return display strings and hasModelData flag', async () => {
-			const info = await modelManager.getParameterDisplayInfo();
-
-			expect(typeof info.temperature).toBe('string');
-			expect(typeof info.topP).toBe('string');
-			expect(typeof info.hasModelData).toBe('boolean');
-		});
-	});
-
 	describe('Ollama provider', () => {
 		let ollamaPlugin: any;
 		let ollamaManager: ModelManager;
@@ -246,7 +193,8 @@ describe('ModelManager', () => {
 				...mockPlugin,
 				settings: {
 					...mockPlugin.settings,
-					provider: 'ollama',
+					defaultProvider: 'ollama',
+					features: { chat: { provider: 'ollama', model: '' } },
 				},
 			};
 			ollamaManager = new ModelManager(ollamaPlugin);
@@ -275,14 +223,78 @@ describe('ModelManager', () => {
 			const bundledValues = new Set(originalModels.map((m) => m.value));
 			expect(models.some((m) => bundledValues.has(m.value))).toBe(false);
 		});
+	});
 
-		it('getParameterRanges() returns normalized numeric ranges', async () => {
-			const ranges = await ollamaManager.getParameterRanges();
+	describe('OpenAI provider', () => {
+		let openaiPlugin: any;
+		let openaiManager: ModelManager;
 
-			expect(ranges.temperature.min).toBe(0);
-			expect(ranges.topP.min).toBe(0);
-			expect(ranges.temperature.step).toBeGreaterThan(0);
-			expect(ranges.topP.step).toBeGreaterThan(0);
+		beforeEach(() => {
+			openaiPlugin = {
+				...mockPlugin,
+				settings: {
+					...mockPlugin.settings,
+					defaultProvider: 'openai',
+					features: { chat: { provider: 'openai', model: '' } },
+					openaiBaseUrl: 'https://api.openai.com/v1',
+				},
+			};
+			openaiManager = new ModelManager(openaiPlugin);
+			mockedRequestUrl.mockReset();
+		});
+
+		afterEach(() => {
+			setGeminiModels(originalModels);
+		});
+
+		it('initialize() merges discovered OpenAI models into the global model list', async () => {
+			mockedRequestUrl.mockResolvedValue({
+				status: 200,
+				json: { data: [{ id: 'gpt-5.6-sol' }, { id: 'gpt-5.6-luna' }] },
+			});
+
+			await openaiManager.initialize();
+
+			const active = GEMINI_MODELS.filter((m) => m.provider === 'openai').map((m) => m.value);
+			expect(active).toEqual(expect.arrayContaining(['gpt-5.6-sol', 'gpt-5.6-luna']));
+		});
+
+		it('initialize() still completes when the OpenAI endpoint is unreachable', async () => {
+			mockedRequestUrl.mockRejectedValue(new Error('ECONNREFUSED'));
+
+			await expect(openaiManager.initialize()).resolves.not.toThrow();
+			expect(GEMINI_MODELS.filter((m) => m.provider === 'openai')).toHaveLength(0);
+		});
+
+		it('getAvailableModels() does not return Gemini bundled models', async () => {
+			const models = await openaiManager.getAvailableModels();
+
+			// OpenAIModelsService.getModels() may return empty if the endpoint is
+			// unreachable, but the important thing is it doesn't return Gemini bundled models.
+			expect(Array.isArray(models)).toBe(true);
+			const bundledValues = new Set(originalModels.map((m) => m.value));
+			expect(models.some((m) => bundledValues.has(m.value))).toBe(false);
+		});
+
+		it('offers an unknown compatible-endpoint model for image generation', async () => {
+			openaiPlugin.settings.openaiBaseUrl = 'http://localhost:1234/v1';
+			mockedRequestUrl.mockResolvedValue({
+				status: 200,
+				json: { data: [{ id: 'custom-image-model' }] },
+			});
+
+			const models = await openaiManager.getImageGenerationModels('openai');
+
+			expect(models).toEqual([expect.objectContaining({ value: 'custom-image-model', capabilitiesUnknown: true })]);
+		});
+
+		it('getProviderModelsService() returns a distinct service per provider', () => {
+			const service = openaiManager.getProviderModelsService('openai');
+			expect(service).not.toBe(openaiManager.getProviderModelsService('anthropic'));
+			expect(service).toBe(openaiManager.getProviderModelsService('openai'));
+			expect(service).toBeDefined();
+			expect(typeof service.getModels).toBe('function');
+			expect(typeof service.invalidate).toBe('function');
 		});
 	});
 });

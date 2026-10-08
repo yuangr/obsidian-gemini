@@ -34,7 +34,9 @@ import {
 import { GeminiPrompts } from '../../../prompts';
 import type { ObsidianGemini } from '../../../types/plugin';
 import type { OllamaClientConfig } from './config';
-import { getLegacyEntryText } from '../../../utils/history-normalize';
+import { walkHistoryEntry } from '../history-walk';
+import { runCancellableStream } from '../../utils/cancellable-stream';
+import { t } from '../../../i18n';
 
 export class OllamaClient implements ModelApi {
 	private client: Ollama;
@@ -43,12 +45,7 @@ export class OllamaClient implements ModelApi {
 	private plugin?: ObsidianGemini;
 
 	constructor(config: OllamaClientConfig, prompts?: GeminiPrompts, plugin?: ObsidianGemini) {
-		this.config = {
-			temperature: 0.7,
-			topP: 1,
-			streamingEnabled: true,
-			...config,
-		};
+		this.config = config;
 		this.plugin = plugin;
 		this.prompts = prompts || new GeminiPrompts(plugin);
 		this.client = new Ollama({ host: this.config.baseUrl });
@@ -72,11 +69,12 @@ export class OllamaClient implements ModelApi {
 					model,
 					prompt: request.prompt,
 					stream: false,
-					options: this.buildOptions(request),
+					options: this.buildOptions(),
 				});
 				const usageMetadata = this.toUsageMetadata(generateResponse.prompt_eval_count, generateResponse.eval_count);
 				return {
-					markdown: generateResponse.response,
+					// `response` is optional since ollama 0.6.4 (image-generation responses omit it).
+					markdown: generateResponse.response ?? '',
 					rendered: '',
 					...(usageMetadata && { usageMetadata }),
 				};
@@ -100,124 +98,112 @@ export class OllamaClient implements ModelApi {
 		// role-correct model; no chat-default fallback here.
 		const model = request.model || this.config.model;
 
-		let cancelled = false;
-		let accumulatedText = '';
-		let accumulatedThoughts = '';
-		let toolCalls: ToolCall[] | undefined;
-		let promptEvalCount: number | undefined;
-		let evalCount: number | undefined;
+		const state = {
+			accumulatedText: '',
+			accumulatedThoughts: '',
+			toolCalls: undefined as ToolCall[] | undefined,
+			promptEvalCount: undefined as number | undefined,
+			evalCount: undefined as number | undefined,
+		};
+
+		const finalize = (): ModelResponse => {
+			const usageMetadata = this.toUsageMetadata(state.promptEvalCount, state.evalCount);
+			return {
+				markdown: state.accumulatedText,
+				rendered: '',
+				...(state.accumulatedThoughts && { thoughts: state.accumulatedThoughts }),
+				...(state.toolCalls && state.toolCalls.length && { toolCalls: state.toolCalls }),
+				...(usageMetadata && { usageMetadata }),
+			};
+		};
+
+		// The Ollama SDK's requests take no signal; its streams expose abort().
+		// The helper's signal covers the lifecycle; `onCancel` and the
+		// post-`start` abort inside the callbacks reach the transport, closing
+		// the cancel-before-the-stream-reference window the signal-first shape
+		// (openai) avoids by construction.
 		let activeStream: { abort: () => void } | null = null;
 
-		const complete = (async (): Promise<ModelResponse> => {
-			if (!model) {
-				throw new Error('No Ollama model selected. Pull a model with `ollama pull <name>` and choose it in settings.');
-			}
-
-			try {
+		return runCancellableStream<ChatResponse & { response?: string }>({
+			start: async (signal) => {
+				if (!model) {
+					throw new Error(
+						'No Ollama model selected. Pull a model with `ollama pull <name>` and choose it in settings.'
+					);
+				}
+				let stream: AsyncIterable<ChatResponse> & { abort: () => void };
 				if (!isExtended) {
 					// generate() supports streaming too; route the same way for consistency
-					const stream = await this.client.generate({
+					stream = (await this.client.generate({
 						model,
 						prompt: request.prompt,
 						stream: true,
-						options: this.buildOptions(request),
-					});
-					activeStream = stream;
-					// cancel() may have fired while the await above was outstanding —
-					// abort immediately so the daemon stops generating.
-					if (cancelled) {
-						stream.abort();
-					}
-
-					for await (const chunk of stream) {
-						if (cancelled) break;
-						if (chunk.response) {
-							accumulatedText += chunk.response;
-							onChunk({ text: chunk.response });
-						}
-						if (chunk.done) {
-							promptEvalCount = chunk.prompt_eval_count;
-							evalCount = chunk.eval_count;
-						}
-					}
+						options: this.buildOptions(),
+					})) as AsyncIterable<ChatResponse> & { abort: () => void };
 				} else {
 					const chatRequest = await this.buildChatRequest(request, model, true);
-					const stream = await this.client.chat(chatRequest as ChatRequest & { stream: true });
-					activeStream = stream;
-					if (cancelled) {
+					stream = (await this.client.chat(
+						chatRequest as ChatRequest & { stream: true }
+					)) as AsyncIterable<ChatResponse> & { abort: () => void };
+				}
+				activeStream = stream;
+				// cancel() may have fired while the await above was outstanding —
+				// abort immediately so the daemon stops generating.
+				if (signal.aborted) {
+					try {
 						stream.abort();
-					}
-
-					for await (const chunk of stream) {
-						if (cancelled) break;
-						const msg = chunk.message;
-						if (msg?.content) {
-							accumulatedText += msg.content;
-							onChunk({ text: msg.content });
-						}
-						if (msg?.thinking) {
-							accumulatedThoughts += msg.thinking;
-							onChunk({ text: '', thought: msg.thinking });
-						}
-						if (msg?.tool_calls?.length) {
-							toolCalls = toolCalls ?? [];
-							for (const tc of msg.tool_calls) {
-								toolCalls.push({
-									name: tc.function.name,
-									arguments: tc.function.arguments || {},
-								});
-							}
-						}
-						if (chunk.done) {
-							promptEvalCount = chunk.prompt_eval_count;
-							evalCount = chunk.eval_count;
-						}
+					} catch (err) {
+						this.plugin?.logger.debug('[OllamaClient] Abort failed:', err);
 					}
 				}
-
-				const usageMetadata = this.toUsageMetadata(promptEvalCount, evalCount);
-				return {
-					markdown: accumulatedText,
-					rendered: '',
-					...(accumulatedThoughts && { thoughts: accumulatedThoughts }),
-					...(toolCalls && toolCalls.length && { toolCalls }),
-					...(usageMetadata && { usageMetadata }),
-				};
-			} catch (error) {
-				if (cancelled) {
-					const usageMetadata = this.toUsageMetadata(promptEvalCount, evalCount);
-					return {
-						markdown: accumulatedText,
-						rendered: '',
-						...(accumulatedThoughts && { thoughts: accumulatedThoughts }),
-						...(toolCalls && toolCalls.length && { toolCalls }),
-						...(usageMetadata && { usageMetadata }),
-					};
-				}
-				this.plugin?.logger.error('[OllamaClient] Streaming error:', error);
-				throw error;
-			}
-		})();
-
-		return {
-			complete,
-			cancel: () => {
-				cancelled = true;
+				return stream;
+			},
+			onCancel: () => {
 				try {
 					activeStream?.abort();
 				} catch (err) {
 					this.plugin?.logger.debug('[OllamaClient] Abort failed:', err);
 				}
 			},
-		};
+			onChunk: (chunk) => {
+				if (!isExtended) {
+					// generate() chunks carry `.response` (and no message shape).
+					if (chunk.response) {
+						state.accumulatedText += chunk.response;
+						onChunk({ text: chunk.response });
+					}
+				} else {
+					const msg = chunk.message;
+					if (msg?.content) {
+						state.accumulatedText += msg.content;
+						onChunk({ text: msg.content });
+					}
+					if (msg?.thinking) {
+						state.accumulatedThoughts += msg.thinking;
+						onChunk({ text: '', thought: msg.thinking });
+					}
+					if (msg?.tool_calls?.length) {
+						state.toolCalls = state.toolCalls ?? [];
+						for (const tc of msg.tool_calls) {
+							state.toolCalls.push({
+								name: tc.function.name,
+								arguments: tc.function.arguments || {},
+							});
+						}
+					}
+				}
+				if (chunk.done) {
+					state.promptEvalCount = chunk.prompt_eval_count;
+					state.evalCount = chunk.eval_count;
+				}
+			},
+			finalize,
+			onError: (error) => this.plugin?.logger.error('[OllamaClient] Streaming error:', error),
+		});
 	}
 
-	private buildOptions(request: BaseModelRequest | ExtendedModelRequest): Record<string, unknown> {
+	private buildOptions(): Record<string, unknown> {
 		const options: Record<string, unknown> = {};
-		const temperature = request.temperature ?? this.config.temperature;
-		const topP = request.topP ?? this.config.topP;
-		if (typeof temperature === 'number') options.temperature = temperature;
-		if (typeof topP === 'number') options.top_p = topP;
 		if (typeof this.config.maxOutputTokens === 'number') options.num_predict = this.config.maxOutputTokens;
 		return options;
 	}
@@ -227,7 +213,7 @@ export class OllamaClient implements ModelApi {
 		model: string,
 		stream: boolean
 	): Promise<ChatRequest & { stream: boolean }> {
-		const systemInstruction = await this.buildSystemInstruction(request);
+		const systemInstruction = await this.prompts.buildExtendedSystemInstruction(request);
 		const messages: Message[] = [];
 
 		if (systemInstruction) {
@@ -257,10 +243,7 @@ export class OllamaClient implements ModelApi {
 			if (att.mimeType.startsWith('image/')) {
 				userImages.push(att.base64);
 			} else {
-				throw new Error(
-					`Ollama only supports image attachments; received ${att.mimeType}. ` +
-						`Switch to the Gemini provider for PDF, audio, or video input.`
-				);
+				throw new Error(t('provider.unsupportedAttachment', { provider: 'Ollama', mimeType: att.mimeType }));
 			}
 		}
 		if (userParts.length || userImages.length) {
@@ -280,101 +263,48 @@ export class OllamaClient implements ModelApi {
 			model,
 			messages,
 			stream,
-			options: this.buildOptions(request),
+			options: this.buildOptions(),
 			...(tools && tools.length ? { tools } : {}),
 		};
 	}
 
-	private async buildSystemInstruction(request: ExtendedModelRequest): Promise<string> {
-		return this.prompts.buildExtendedSystemInstruction(request);
-	}
-
 	private convertHistoryEntry(entry: unknown): Message[] | null {
-		if (!entry || typeof entry !== 'object') return null;
-		const record = entry as Record<string, unknown>;
+		const walked = walkHistoryEntry(entry, 'Ollama');
+		if (!walked) return null;
 
-		// Gemini Content shape: { role: 'user'|'model', parts: Part[] }
-		if ('role' in record && Array.isArray(record.parts)) {
-			const role = record.role === 'model' ? 'assistant' : record.role === 'system' ? 'system' : 'user';
-			const textChunks: string[] = [];
-			const images: string[] = [];
-			const toolCallParts: { name: string; arguments: Record<string, unknown> }[] = [];
-			const toolResponseParts: { name: string; response: unknown }[] = [];
-			for (const rawPart of record.parts) {
-				const part = rawPart as {
-					text?: unknown;
-					inlineData?: { mimeType?: string; data?: string };
-					functionCall?: { name: string; args?: Record<string, unknown> };
-					functionResponse?: { name: string; response?: unknown };
-				};
-				if (typeof part?.text === 'string') {
-					textChunks.push(part.text);
-				} else if (part?.inlineData?.mimeType?.startsWith('image/') && part.inlineData.data) {
-					images.push(part.inlineData.data);
-				} else if (part?.inlineData?.mimeType) {
-					// Mirror buildChatRequest's current-turn handling so resumed sessions
-					// don't silently drop PDF/audio/video context the model never sees.
-					throw new Error(
-						`Ollama only supports image attachments; conversation history contains ${part.inlineData.mimeType}. ` +
-							`Switch to the Gemini provider for PDF, audio, or video input.`
-					);
-				} else if (part?.functionCall) {
-					toolCallParts.push({
-						name: part.functionCall.name,
-						arguments: part.functionCall.args || {},
-					});
-				} else if (part?.functionResponse) {
-					toolResponseParts.push({
-						name: part.functionResponse.name,
-						response: part.functionResponse.response,
-					});
-				}
-			}
+		const out: Message[] = [];
 
-			const out: Message[] = [];
-
-			// Tool responses become tool-role messages. Don't coalesce `null` to
-			// `{}` — an explicit null response carries different meaning ("no
-			// result") than an empty object, and JSON.stringify(null) === "null"
-			// is the correct serialization to preserve that.
-			for (const tr of toolResponseParts) {
-				const responseText = typeof tr.response === 'string' ? tr.response : JSON.stringify(tr.response);
-				out.push({ role: 'tool', content: responseText, tool_name: tr.name });
-			}
-
-			// Assistant turn (text + tool calls together)
-			if (role === 'assistant' && (textChunks.length || toolCallParts.length)) {
-				const message: Message = {
-					role: 'assistant',
-					content: textChunks.join('\n').trim(),
-				};
-				if (toolCallParts.length) {
-					message.tool_calls = toolCallParts.map((tc) => ({
-						function: { name: tc.name, arguments: tc.arguments },
-					}));
-				}
-				out.push(message);
-			} else if (role !== 'assistant' && (textChunks.length || images.length)) {
-				const message: Message = {
-					role,
-					content: textChunks.join('\n\n').trim(),
-				};
-				if (images.length) message.images = images;
-				out.push(message);
-			}
-
-			return out.length ? out : null;
+		// Tool responses become tool-role messages. Don't coalesce `null` to
+		// `{}` — an explicit null response carries different meaning ("no
+		// result") than an empty object, and JSON.stringify(null) === "null"
+		// is the correct serialization to preserve that.
+		//
+		// Ordering note: these precede the assistant message, the opposite of
+		// OpenAIClient.convertHistoryEntry. That is not a contradiction — the
+		// Chat Completions API *requires* the `tool_calls`-declaring assistant
+		// message to come first, while Ollama imposes no such constraint, so
+		// this half of the pair is arbitrary rather than load-bearing.
+		for (const tr of walked.toolResponses) {
+			const responseText = typeof tr.response === 'string' ? tr.response : JSON.stringify(tr.response);
+			out.push({ role: 'tool', content: responseText, tool_name: tr.name });
 		}
 
-		// Internal shape: { role, text } or { role, message }
-		if ('role' in record) {
-			const text = getLegacyEntryText(record);
-			if (typeof text !== 'string' || !text.trim()) return null;
-			const role = record.role === 'model' || record.role === 'assistant' ? 'assistant' : 'user';
-			return [{ role, content: text }];
+		// Assistant turn (text + tool calls together)
+		if (walked.role === 'assistant' && (walked.hasText || walked.toolCalls.length)) {
+			const message: Message = { role: 'assistant', content: walked.text };
+			if (walked.toolCalls.length) {
+				message.tool_calls = walked.toolCalls.map((tc) => ({
+					function: { name: tc.name, arguments: tc.args },
+				}));
+			}
+			out.push(message);
+		} else if (walked.role !== 'assistant' && (walked.hasText || walked.images.length)) {
+			const message: Message = { role: walked.role, content: walked.text };
+			if (walked.images.length) message.images = walked.images.map((image) => image.base64);
+			out.push(message);
 		}
 
-		return null;
+		return out.length ? out : null;
 	}
 
 	private toOllamaTools(tools: ToolDefinition[]): Tool[] {

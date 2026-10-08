@@ -10,12 +10,17 @@ vi.mock('obsidian', async () => ({
 	...(await vi.importActual<any>('../../__mocks__/obsidian.js')),
 }));
 vi.mock('../../src/main');
-vi.mock('../../src/ui/agent-view/file-picker-modal');
 vi.mock('../../src/ui/agent-view/session-list-modal');
 vi.mock('../../src/ui/agent-view/file-mention-modal');
 vi.mock('../../src/ui/agent-view/session-settings-modal');
 vi.mock('../../src/utils/dom-context');
-vi.mock('../../src/utils/file-utils');
+// Only the plugin-aware exclusion predicate is stubbed; the pure path helpers
+// (isPathInFolder, …) keep their real implementations so containment behaviour
+// is exercised rather than mocked away.
+vi.mock('../../src/utils/file-utils', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../src/utils/file-utils')>()),
+	shouldExcludePathForPlugin: vi.fn(),
+}));
 
 // Mock external ESM dependencies
 vi.mock('@allenhutchison/gemini-utils/research', () => ({
@@ -82,7 +87,6 @@ describe('AgentViewUI', () => {
 
 		// Setup Callbacks mock
 		callbacks = {
-			showFilePicker: vi.fn().mockResolvedValue(undefined),
 			showFileMention: vi.fn().mockResolvedValue(undefined),
 			showSkillPicker: vi.fn().mockResolvedValue(undefined),
 			showSessionList: vi.fn().mockResolvedValue(undefined),
@@ -91,13 +95,9 @@ describe('AgentViewUI', () => {
 			sendMessage: vi.fn().mockResolvedValue(undefined),
 			stopAgentLoop: vi.fn(),
 			togglePlanMode: vi.fn(),
-			removeContextFile: vi.fn(),
-			updateSessionHeader: vi.fn(),
 			updateSessionMetadata: vi.fn().mockResolvedValue(undefined),
-			loadSession: vi.fn().mockResolvedValue(undefined),
 			isCurrentSession: vi.fn(),
 			addAttachment: vi.fn(),
-			removeAttachment: vi.fn(),
 			getAttachments: vi.fn().mockReturnValue([]),
 			handleDroppedFiles: vi.fn(),
 			switchProject: vi.fn(),
@@ -235,6 +235,41 @@ describe('AgentViewUI', () => {
 			// .md is classified as TEXT → handleDroppedFiles
 			expect(callbacks.handleDroppedFiles).toHaveBeenCalledWith([mockFile]);
 			expect(app.vault.getAbstractFileByPath).toHaveBeenCalledWith('folder/note.md');
+		});
+
+		it('should ignore drops from a sibling folder that shares the vault path prefix', async () => {
+			const mockFile = {
+				path: 'Archive/note.md',
+				extension: 'md',
+			} as unknown as TFile;
+			Object.setPrototypeOf(mockFile, TFile.prototype);
+
+			// The vault happens to contain the same relative path, so an unanchored
+			// prefix check would resolve the external file to this vault file.
+			(app.vault.getAbstractFileByPath as Mock).mockReturnValue(mockFile);
+
+			// `/Users/test/vault-backup` shares the `/Users/test/vault` prefix but is a
+			// different folder entirely.
+			const droppedFile = {
+				path: '/Users/test/vault-backup/Archive/note.md',
+				name: 'note.md',
+			};
+
+			const dataTransfer = {
+				files: [droppedFile],
+				types: ['Files'],
+				// Nothing resolves, so the handler falls through to the text-link branch.
+				getData: vi.fn(() => ''),
+			};
+			Object.defineProperty(dataTransfer.files, 'length', { value: 1 });
+			(dataTransfer.files as any)[Symbol.iterator] = function* () {
+				yield droppedFile;
+			};
+
+			await triggerDrop(dataTransfer);
+
+			expect(app.vault.getAbstractFileByPath).not.toHaveBeenCalled();
+			expect(callbacks.handleDroppedFiles).not.toHaveBeenCalled();
 		});
 
 		it('should normalize Windows paths correctly', async () => {
@@ -568,6 +603,78 @@ describe('AgentViewUI', () => {
 		});
 	});
 
+	// The drop handler's dataTransfer walk, extracted from `createInputArea`
+	// (#1396). The cases below reach it directly rather than through a dispatched
+	// drop event, so the resolution precedence and dedup are pinned as a unit —
+	// the drop tests above can only observe them indirectly, via what gets routed.
+	describe('collectVaultDropTargets', () => {
+		const collect = (dataTransfer: any): (TFile | TFolder)[] =>
+			(agentViewUI as any).collectVaultDropTargets({ dataTransfer });
+
+		const vaultFile = (path: string): TFile => {
+			const file = { path, extension: path.split('.').pop() } as unknown as TFile;
+			Object.setPrototypeOf(file, TFile.prototype);
+			return file;
+		};
+
+		const fileList = (entries: { path: string }[]) => {
+			const list: any = [...entries];
+			Object.defineProperty(list, 'length', { value: entries.length });
+			list[Symbol.iterator] = function* () {
+				yield* entries;
+			};
+			return list;
+		};
+
+		it('prefers filesystem File objects over text links in the same drop', () => {
+			const fromFile = vaultFile('folder/note.md');
+			(app.vault.getAbstractFileByPath as Mock).mockReturnValue(fromFile);
+			const getData = vi.fn().mockReturnValue('[[Some Other Note]]');
+
+			const result = collect({
+				files: fileList([{ path: '/Users/test/vault/folder/note.md' }]),
+				types: ['Files', 'text/plain'],
+				getData,
+			});
+
+			expect(result).toEqual([fromFile]);
+			// The text/plain payload is never *resolved* once a filesystem file was
+			// found, which is what keeps Obsidian's double-payload drops (File object
+			// plus wikilink for the same drag) from counting the same note twice.
+			expect(app.vault.getAbstractFileByPath).toHaveBeenCalledWith('folder/note.md');
+			expect(app.vault.getAbstractFileByPath).not.toHaveBeenCalledWith('Some Other Note');
+		});
+
+		it('deduplicates repeated links by path', () => {
+			const note = vaultFile('note.md');
+			(app.vault.getAbstractFileByPath as Mock).mockReturnValue(note);
+
+			const result = collect({
+				files: [],
+				types: ['text/plain'],
+				getData: vi.fn().mockReturnValue('[[note.md]]\n[[note.md]]\n[[note.md]]'),
+			});
+
+			expect(result).toEqual([note]);
+		});
+
+		it('rejects File objects whose path lies outside the vault', () => {
+			(app.vault.getAbstractFileByPath as Mock).mockReturnValue(null);
+			(app.metadataCache.getFirstLinkpathDest as Mock).mockReturnValue(null);
+
+			const result = collect({
+				files: fileList([{ path: '/Users/other/elsewhere/file.md' }]),
+				types: ['Files'],
+				getData: vi.fn().mockReturnValue(''),
+			});
+
+			expect(result).toEqual([]);
+			// Out-of-vault paths are rejected on the base-path prefix check alone —
+			// they never reach vault resolution.
+			expect(app.vault.getAbstractFileByPath).not.toHaveBeenCalled();
+		});
+	});
+
 	// The external-drop and clipboard-paste handlers share this per-file
 	// image/SVG loop (extracted from the two near-verbatim copies). Exercise it
 	// directly so the shared unit is covered independently of the DOM events.
@@ -601,17 +708,51 @@ describe('AgentViewUI', () => {
 		});
 
 		it('delegates SVG files to attachExternalSvgFile (success counts as processed)', async () => {
-			const svgSpy = vi.spyOn(agentViewUI as any, 'attachExternalSvgFile').mockResolvedValue(true);
+			// New contract (#1430): the delegate returns the decoded payload size
+			// (a number) on success, not a boolean.
+			const svgSpy = vi.spyOn(agentViewUI as any, 'attachExternalSvgFile').mockResolvedValue(500);
 			const result = await run([imageFile('icon.svg', 'image/svg+xml')]);
 			expect(svgSpy).toHaveBeenCalledTimes(1);
+			// The remaining budget is passed as the third argument.
+			expect(svgSpy).toHaveBeenCalledWith(expect.anything(), callbacks, GEMINI_INLINE_DATA_LIMIT);
 			expect(result).toEqual({ imagesProcessed: 1, unsupportedCount: 0 });
 		});
 
 		it('counts an SVG that fails rasterization as unsupported', async () => {
-			vi.spyOn(agentViewUI as any, 'attachExternalSvgFile').mockResolvedValue(false);
+			vi.spyOn(agentViewUI as any, 'attachExternalSvgFile').mockResolvedValue(null);
 			const result = await run([imageFile('icon.svg', 'image/svg+xml')]);
 			expect(result).toEqual({ imagesProcessed: 0, unsupportedCount: 1 });
 			expect(callbacks.addAttachment).not.toHaveBeenCalled();
+		});
+
+		it('breaks with a size-limit notice when the rasterized SVG payload is too large (#1430)', async () => {
+			vi.spyOn(agentViewUI as any, 'attachExternalSvgFile').mockResolvedValue('too-large');
+			const result = await run([imageFile('icon.svg', 'image/svg+xml')]);
+			expect(result).toEqual({ imagesProcessed: 0, unsupportedCount: 0 });
+			expect(callbacks.addAttachment).not.toHaveBeenCalled();
+			expect(Notice).toHaveBeenCalledWith(expect.stringContaining('20 MB'));
+		});
+
+		it('rejects a second SVG whose rasterized total exceeds the budget (#1430)', async () => {
+			// First SVG rasterizes to 12 MB of decoded payload, second to 9 MB.
+			// The old code counted file.size (a few KB each), so both attached
+			// and silently overspent the 20 MB budget; the running total now
+			// holds the converted bytes, so the second is rejected.
+			const svgSpy = vi
+				.spyOn(agentViewUI as any, 'attachExternalSvgFile')
+				.mockResolvedValueOnce(12 * 1024 * 1024)
+				.mockResolvedValueOnce('too-large');
+			const result = await run([imageFile('first.svg', 'image/svg+xml'), imageFile('second.svg', 'image/svg+xml')]);
+			expect(result).toEqual({ imagesProcessed: 1, unsupportedCount: 0 });
+			// Second call got the remaining budget after the first attachment
+			// (20 MB − 12 MB = 8 MB), which the caller-side stub sees as its
+			// third argument — the running total held the converted bytes.
+			expect(svgSpy).toHaveBeenLastCalledWith(
+				expect.anything(),
+				callbacks,
+				GEMINI_INLINE_DATA_LIMIT - 12 * 1024 * 1024
+			);
+			expect(Notice).toHaveBeenCalledWith(expect.stringContaining('20 MB'));
 		});
 
 		it('ignores non-image files', async () => {

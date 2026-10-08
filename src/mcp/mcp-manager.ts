@@ -32,65 +32,16 @@ function isHttpTransport(config: MCPServerConfig): boolean {
 	return config.transport === MCP_TRANSPORT_HTTP;
 }
 
+/**
+ * Describe a server config's connection target for the debug log — the URL for
+ * HTTP transports, the command and args for stdio ones.
+ */
+function describeConnectionTarget(config: MCPServerConfig, useHttp: boolean): string {
+	return useHttp ? `url: ${config.url}` : `command: ${config.command}, args: [${config.args.join(', ')}]`;
+}
+
 /** Union type for supported MCP transports */
 type MCPTransport = StdioClientTransportType | StreamableHTTPClientTransport;
-
-/**
- * Patch the global setTimeout to return objects with .unref() in Electron's renderer.
- *
- * The MCP SDK internally calls setTimeout(...).unref(), which works in Node.js
- * (where setTimeout returns a Timeout object) but fails in Electron's renderer
- * (where setTimeout returns a number, like in browsers).
- *
- * This polyfill wraps the return value so .unref() is a safe no-op.
- */
-function patchSetTimeoutForElectron(): void {
-	const origSetTimeout = window.setTimeout.bind(window);
-	if (typeof origSetTimeout === 'function') {
-		// Test if unref already works (true Node.js environment)
-		const testTimer = origSetTimeout(() => {}, 0);
-		if (typeof (testTimer as unknown as { unref?: unknown }).unref === 'function') {
-			// Already has .unref() — no patch needed
-			window.clearTimeout(testTimer);
-			return;
-		}
-		window.clearTimeout(testTimer);
-
-		// Patch: wrap return value to add .unref() and .ref() as no-ops. The wrapper
-		// deliberately does not match the native `number` return type, so the
-		// assignment is bridged through `unknown` — a genuine monkey-patch boundary.
-		window.setTimeout = function patchedSetTimeout(
-			callback: (...args: unknown[]) => void,
-			ms?: number,
-			...args: unknown[]
-		) {
-			const id = origSetTimeout(callback, ms, ...args);
-			return {
-				[Symbol.toPrimitive]() {
-					return id;
-				},
-				unref() {
-					return this;
-				},
-				ref() {
-					return this;
-				},
-				// Preserve the raw id so clearTimeout still works
-				__timerId: id,
-			};
-		} as unknown as typeof window.setTimeout;
-
-		// Also patch clearTimeout to handle our wrapper objects
-		const origClearTimeout = window.clearTimeout.bind(window);
-		window.clearTimeout = function patchedClearTimeout(id?: unknown): void {
-			if (id && typeof id === 'object' && '__timerId' in id) {
-				origClearTimeout((id as { __timerId?: number }).__timerId);
-			} else {
-				origClearTimeout(id as number | undefined);
-			}
-		};
-	}
-}
 
 /**
  * Runtime connection info for an MCP server
@@ -255,13 +206,7 @@ export class MCPManager {
 
 		this.updateState(config.name, { status: MCPConnectionStatus.CONNECTING, toolNames: [] });
 
-		if (useHttp) {
-			this.logger.debug(`MCP: Connecting to "${config.name}" — url: ${config.url}`);
-		} else {
-			this.logger.debug(
-				`MCP: Connecting to "${config.name}" — command: ${config.command}, args: [${config.args.join(', ')}]`
-			);
-		}
+		this.logger.debug(`MCP: Connecting to "${config.name}" — ${describeConnectionTarget(config, useHttp)}`);
 
 		let transport: MCPTransport | null = null;
 		try {
@@ -362,52 +307,6 @@ export class MCPManager {
 	}
 
 	/**
-	 * Re-query tools from a connected server. Registers new tools, removes old ones.
-	 */
-	async refreshTools(serverName: string): Promise<void> {
-		const conn = this.connections.get(serverName);
-		if (!conn) {
-			this.logger.warn(`MCP: Cannot refresh tools for disconnected server "${serverName}"`);
-			return;
-		}
-
-		const config = this.plugin.settings.mcpServers.find((s) => s.name === serverName);
-		if (!config) {
-			this.logger.warn(`MCP: Cannot refresh tools — config not found for "${serverName}"`);
-			return;
-		}
-
-		// Re-query and build new wrappers first so a listTools() failure
-		// doesn't leave us with no tools registered.
-		const { tools } = await withTimeout(
-			conn.client.listTools(),
-			MCP_LIST_TOOLS_TIMEOUT_MS,
-			`MCP listTools (refresh) for "${serverName}"`
-		);
-		const newWrappers: MCPToolWrapper[] = [];
-		for (const toolDef of tools) {
-			const wrapper = new MCPToolWrapper(conn.client, config.name, toolDef);
-			newWrappers.push(wrapper);
-		}
-
-		// Swap registrations
-		for (const wrapper of conn.toolWrappers) {
-			this.plugin.toolRegistry.unregisterTool(wrapper.name);
-		}
-		for (const wrapper of newWrappers) {
-			this.plugin.toolRegistry.registerTool(wrapper);
-		}
-
-		conn.toolWrappers = newWrappers;
-		this.updateState(serverName, {
-			status: MCPConnectionStatus.CONNECTED,
-			toolNames: tools.map((t) => t.name),
-		});
-
-		this.logger.log(`MCP: Refreshed tools for "${serverName}": ${tools.length} tool(s)`);
-	}
-
-	/**
 	 * Get the connection status of a server.
 	 */
 	getServerStatus(serverName: string): MCPServerState {
@@ -417,13 +316,6 @@ export class MCPManager {
 				toolNames: [],
 			}
 		);
-	}
-
-	/**
-	 * Get status for all configured servers.
-	 */
-	getAllServerStatuses(): Map<string, MCPServerState> {
-		return new Map(this.serverStates);
 	}
 
 	/**
@@ -444,13 +336,7 @@ export class MCPManager {
 			throw new Error(`${OFFLINE_ERROR_PREFIX} — cannot test HTTP MCP server`);
 		}
 
-		if (useHttp) {
-			this.logger.debug(`MCP: Test connection to "${config.name}" — url: ${config.url}`);
-		} else {
-			this.logger.debug(
-				`MCP: Test connection to "${config.name}" — command: ${config.command}, args: [${config.args.join(', ')}]`
-			);
-		}
+		this.logger.debug(`MCP: Test connection to "${config.name}" — ${describeConnectionTarget(config, useHttp)}`);
 
 		let transport: MCPTransport | null = null;
 		try {
@@ -502,9 +388,6 @@ export class MCPManager {
 		config: MCPServerConfig
 	): Promise<{ client: Client; transport: MCPTransport }> {
 		const useHttp = isHttpTransport(config);
-
-		// Patch setTimeout for Electron compatibility before any MCP SDK calls
-		patchSetTimeoutForElectron();
 
 		let transport: MCPTransport;
 		let authProvider: ObsidianOAuthClientProvider | undefined;

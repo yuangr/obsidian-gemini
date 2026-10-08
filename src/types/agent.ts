@@ -42,12 +42,6 @@ export interface AgentContext {
 
 	/** Actions that require user confirmation */
 	requireConfirmation: DestructiveAction[];
-
-	/** Maximum total characters to include from context files */
-	maxContextChars?: number;
-
-	/** Maximum characters per individual file */
-	maxCharsPerFile?: number;
 }
 
 /**
@@ -62,14 +56,8 @@ export enum SessionType {
  * Model configuration for a session
  */
 export interface SessionModelConfig {
-	/** Model to use (e.g., 'gemini-2.0-flash') */
+	/** Model id to use; defaults to the plugin's chat model when omitted. */
 	model?: string;
-
-	/** Temperature setting (0-2) */
-	temperature?: number;
-
-	/** Top-P setting (0-1) */
-	topP?: number;
 
 	/** Path to custom prompt template */
 	promptTemplate?: string;
@@ -102,6 +90,14 @@ export interface ChatSession {
 
 	/** File path where this session's history is stored */
 	historyPath: string;
+
+	/**
+	 * True for a headless run's session (scheduled task, agent-task hook), which
+	 * is deliberately never written to disk: `historyPath` is nominal and no file
+	 * will exist there. History writers skip such sessions rather than treating
+	 * the missing file as a failure.
+	 */
+	ephemeral?: boolean;
 
 	/** For note-chat sessions, the source note path */
 	sourceNotePath?: string;
@@ -150,55 +146,6 @@ export interface SessionMetadata {
 }
 
 /**
- * Message within a chat session
- */
-export interface ChatMessage {
-	/** Unique message ID */
-	id: string;
-
-	/** Message role */
-	role: 'user' | 'assistant' | 'system';
-
-	/** Message content */
-	content: string;
-
-	/** Timestamp */
-	timestamp: Date;
-
-	/** Tools used in this message (for assistant messages) */
-	toolsUsed?: ToolExecution[];
-
-	/** Context that was active when this message was sent */
-	contextSnapshot?: {
-		files: string[]; // File paths
-	};
-}
-
-/**
- * Information about a tool execution
- */
-export interface ToolExecution {
-	/** Tool name/identifier */
-	name: string;
-
-	/** Tool category */
-	category: ToolCategory;
-
-	/** Parameters passed to the tool */
-	parameters: Record<string, unknown>;
-
-	/** Tool execution result */
-	result?: unknown;
-
-	/** Any error that occurred */
-	error?: string;
-
-	/** Whether user confirmation was required/given */
-	confirmationRequired?: boolean;
-	confirmationGiven?: boolean;
-}
-
-/**
  * Default agent contexts for different use cases
  */
 export const DEFAULT_CONTEXTS = {
@@ -209,8 +156,6 @@ export const DEFAULT_CONTEXTS = {
 		// are filtered out of the registry.
 		toolPolicy: { preset: PolicyPreset.READ_ONLY },
 		requireConfirmation: [],
-		maxContextChars: 50000,
-		maxCharsPerFile: 10000,
 	} as Omit<AgentContext, 'contextFiles'>,
 
 	AGENT_SESSION: {
@@ -225,8 +170,6 @@ export const DEFAULT_CONTEXTS = {
 			DestructiveAction.DELETE_FILES,
 			DestructiveAction.EXTERNAL_API_CALLS,
 		],
-		maxContextChars: 100000,
-		maxCharsPerFile: 15000,
 	} as AgentContext,
 } as const;
 

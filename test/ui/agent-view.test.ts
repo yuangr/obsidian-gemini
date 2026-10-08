@@ -9,7 +9,6 @@ import { WorkspaceLeaf, Notice } from 'obsidian';
 vi.mock('../../src/agent/session-history');
 vi.mock('../../src/tools/tool-registry');
 vi.mock('../../src/tools/execution-engine');
-vi.mock('../../src/ui/agent-view/file-picker-modal');
 vi.mock('../../src/ui/agent-view/session-settings-modal');
 
 // Mock external ESM dependencies
@@ -88,8 +87,6 @@ describe('AgentView UI Tests', () => {
 				historyFolder: 'gemini-scribe',
 				agentModelName: 'gemini-1.5-pro',
 				enabledTools: ['read_files', 'write_files'],
-				temperature: 0.7,
-				topP: 0.95,
 				chatHistory: true,
 			},
 			logger: {
@@ -200,16 +197,12 @@ describe('AgentView UI Tests', () => {
 				getShelf: () => (agentView as any).shelf,
 				getUserInput: () => (agentView as any).userInput,
 				getSendButton: () => (agentView as any).sendButton,
-				getChatContainer: () => (agentView as any).chatContainer,
 				progress: (agentView as any).progress || { show: vi.fn(), hide: vi.fn(), update: vi.fn() },
 				messages: (agentView as any).messages || { displayMessage: vi.fn(), settlePendingPlanApproval: vi.fn() },
 				tools: (agentView as any).tools || { handleToolCalls: vi.fn() },
 				session: (agentView as any).session || { autoLabelSessionIfNeeded: vi.fn() },
 				displayMessage: (agentView as any).displayMessage || vi.fn(),
 				updateTokenUsage: vi.fn(),
-				isToolAllowedWithoutConfirmation: vi.fn().mockReturnValue(false),
-				allowToolWithoutConfirmation: vi.fn(),
-				showConfirmationInChat: vi.fn(),
 			};
 			(agentView as any).send = new AgentViewSend(mockSendCtx as any);
 
@@ -219,7 +212,6 @@ describe('AgentView UI Tests', () => {
 				removeTrailingTriggerChar: vi.fn(),
 				handleDroppedFiles: vi.fn(),
 				addAttachment: vi.fn(),
-				removeAttachment: vi.fn(),
 			};
 		});
 
@@ -317,13 +309,13 @@ describe('AgentView UI Tests', () => {
 		it('should show session configuration badges', async () => {
 			await agentView.onOpen();
 
-			// Create session with custom config
+			// Create session with custom config. modelConfig is plain session
+			// data — the badges render whatever the loaded session carries.
 			const session = await plugin.sessionManager.createAgentSession();
-			await plugin.sessionManager.updateSessionModelConfig(session.id, {
+			session.modelConfig = {
 				model: 'custom-model',
-				temperature: 0.5,
 				promptTemplate: 'custom-prompt.md',
-			});
+			};
 
 			// Create badge elements
 			const promptBadge = document.createElement('div');

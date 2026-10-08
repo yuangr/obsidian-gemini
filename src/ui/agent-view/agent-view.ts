@@ -2,13 +2,14 @@ import { ItemView, MarkdownView, Platform, WorkspaceLeaf, TFile, Notice } from '
 import { getActiveChatModel } from '../../models';
 import { ChatSession, SessionModelConfig } from '../../types/agent';
 import { isSameSession } from './session-identity';
+import { formatTokenUsageLine } from './token-usage-format';
 import { GeminiConversationEntry } from '../../types/conversation';
 import type { ObsidianGemini } from '../../types/plugin';
 import type { Tool, ToolResult } from '../../tools/types';
 import { HandlerPriority } from '../../types/agent-events';
 
 // Import all component modules
-import { AgentViewProgress } from './agent-view-progress';
+import { AgentViewProgress, type ProgressState } from './agent-view-progress';
 import { shouldExcludePathForPlugin } from '../../utils/file-utils';
 import { AgentViewMessages } from './agent-view-messages';
 import { AgentViewContext } from './agent-view-context';
@@ -22,7 +23,6 @@ import { AgentViewAttachments } from './agent-view-attachments';
 import { ProjectPickerModal } from './project-picker-modal';
 
 // Import modals from agent-view directory
-import { FilePickerModal } from './file-picker-modal';
 import { SessionListModal } from './session-list-modal';
 import { SkillMentionModal, formatSkillTrigger } from './skill-mention-modal';
 import { SessionSettingsModal } from './session-settings-modal';
@@ -129,9 +129,11 @@ export class AgentView extends ItemView {
 	 *      pushes our children off-screen.
 	 * We compute chat's height directly (targeting the smaller of container
 	 * bottom or mobile-navbar top) and lock overflow on the container and
-	 * its parent so nothing can scroll behind our back. setProperty with
-	 * 'important' is defensive — themes or other plugins sometimes add
-	 * `!important` to flex rules that would otherwise beat inline styles.
+	 * its parent so nothing can scroll behind our back. The flex and overflow
+	 * overrides live in CSS classes scoped to this view (specificity rather
+	 * than `!important`, which the plugin audit's CSS lint rejects), so
+	 * teardown only has to remove the classes; the computed height is the one
+	 * value set inline.
 	 */
 	private applyMobileLayoutFix(container: HTMLElement) {
 		const apply = () => {
@@ -141,12 +143,7 @@ export class AgentView extends ItemView {
 			const ctrBottom = container.getBoundingClientRect().bottom;
 			const navbarTop = this.findMobileNavbar()?.getBoundingClientRect().top ?? Infinity;
 			const targetBottom = Math.min(ctrBottom, navbarTop);
-			// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- inline !important is the point (see doc comment): it must beat theme !important flex rules, which a class cannot
-			chat.style.setProperty('flex-grow', '0', 'important');
-			// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- see above
-			chat.style.setProperty('flex-shrink', '0', 'important');
-			// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- see above
-			chat.style.setProperty('flex-basis', 'auto', 'important');
+			chat.addClass('gemini-agent-chat--mobile-pinned');
 			for (let i = 0; i < 3; i++) {
 				const delta = targetBottom - iarea.getBoundingClientRect().bottom;
 				if (Math.abs(delta) < 1) break;
@@ -165,24 +162,12 @@ export class AgentView extends ItemView {
 		const vv = window.visualViewport;
 		vv?.addEventListener('resize', apply);
 
-		// Capture overflow before overriding so we can restore it on teardown.
-		// Obsidian reuses host elements across views; leaving `overflow: hidden`
-		// behind would make subsequent views non-scrollable.
+		// Lock overflow with a class so teardown can remove it cleanly. Obsidian
+		// reuses host elements across views; leaving `overflow: hidden` behind
+		// would make subsequent views non-scrollable.
 		const parent = container.parentElement;
-		const prevContainerOverflow = {
-			value: container.style.getPropertyValue('overflow'),
-			priority: container.style.getPropertyPriority('overflow'),
-		};
-		const prevParentOverflow = parent
-			? {
-					value: parent.style.getPropertyValue('overflow'),
-					priority: parent.style.getPropertyPriority('overflow'),
-				}
-			: null;
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- paired with the inline save/restore above on host elements Obsidian reuses; a class can't round-trip the pre-existing inline value
-		container.style.setProperty('overflow', 'hidden', 'important');
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment -- see above
-		parent?.style.setProperty('overflow', 'hidden', 'important');
+		container.addClass('gemini-agent-scroll-locked');
+		parent?.addClass('gemini-agent-scroll-locked');
 		const onScroll = () => {
 			if (container.scrollTop !== 0) container.scrollTop = 0;
 			if (parent && parent.scrollTop !== 0) parent.scrollTop = 0;
@@ -196,18 +181,8 @@ export class AgentView extends ItemView {
 			vv?.removeEventListener('resize', apply);
 			container.removeEventListener('scroll', onScroll);
 			parent?.removeEventListener('scroll', onScroll);
-			if (prevContainerOverflow.value) {
-				container.style.setProperty('overflow', prevContainerOverflow.value, prevContainerOverflow.priority);
-			} else {
-				container.style.removeProperty('overflow');
-			}
-			if (parent && prevParentOverflow) {
-				if (prevParentOverflow.value) {
-					parent.style.setProperty('overflow', prevParentOverflow.value, prevParentOverflow.priority);
-				} else {
-					parent.style.removeProperty('overflow');
-				}
-			}
+			container.removeClass('gemini-agent-scroll-locked');
+			parent?.removeClass('gemini-agent-scroll-locked');
 		});
 	}
 
@@ -332,17 +307,12 @@ export class AgentView extends ItemView {
 			getUserInput: () => this.userInput,
 			getSendButton: () => this.sendButton,
 			getPlanModeButton: () => this.planModeButton,
-			getChatContainer: () => this.chatContainer,
 			progress: this.progress,
 			messages: this.messages,
 			tools: this.tools,
 			session: this.session,
 			displayMessage: (entry: GeminiConversationEntry) => this.displayMessage(entry),
 			updateTokenUsage: () => this.updateTokenUsage(),
-			isToolAllowedWithoutConfirmation: (toolName: string) => this.isToolAllowedWithoutConfirmation(toolName),
-			allowToolWithoutConfirmation: (toolName: string) => this.allowToolWithoutConfirmation(toolName),
-			showConfirmationInChat: (tool, parameters, executionId, diffContext) =>
-				this.showConfirmationInChat(tool, parameters, executionId, diffContext),
 		});
 
 		// Register session lifecycle event bus subscribers for token display
@@ -449,51 +419,6 @@ export class AgentView extends ItemView {
 
 		this.plugin.lastEditorSelection = captured;
 	};
-
-	/**
-	 * Remove a file from context
-	 */
-	private removeContextFile(file: TFile) {
-		this.context.removeContextFile(file, this.currentSession);
-		this.updateSessionHeader();
-	}
-
-	/**
-	 * Show file picker modal
-	 */
-	private async showFilePicker() {
-		if (!this.currentSession) return;
-		const session = this.currentSession;
-		const initialFiles = [...session.context.contextFiles];
-
-		const modal = new FilePickerModal(
-			this.app,
-			(newFiles: TFile[]) => {
-				const newSet = new Set(newFiles);
-				const oldSet = new Set(initialFiles);
-				// Remove files no longer selected
-				initialFiles
-					.filter((f) => !newSet.has(f))
-					.forEach((f) => {
-						this.context.removeContextFile(f, session);
-						const shelfItems = this.shelf.getItems();
-						const match = shelfItems.find((item) => item.type === 'text' && item.path === f.path);
-						if (match) this.shelf.removeItem(match.id);
-					});
-				// Add newly selected files
-				newFiles
-					.filter((f) => !oldSet.has(f))
-					.forEach((f) => {
-						this.context.addFileToContext(f, session);
-						this.shelf.addTextFile(f);
-					});
-				this.updateSessionHeader();
-			},
-			this.plugin,
-			initialFiles
-		);
-		modal.open();
-	}
 
 	/**
 	 * Show skill picker modal for / slash commands
@@ -719,7 +644,6 @@ export class AgentView extends ItemView {
 	 */
 	private getUICallbacks(): UICallbacks {
 		return {
-			showFilePicker: () => this.showFilePicker(),
 			showFileMention: () => this.attachments.showFileMention(),
 			showSkillPicker: () => this.showSkillPicker(),
 			showSessionList: () => this.showSessionList(),
@@ -728,13 +652,9 @@ export class AgentView extends ItemView {
 			sendMessage: () => this.send.sendMessage(),
 			stopAgentLoop: () => this.send.stopAgentLoop(),
 			togglePlanMode: () => this.send.togglePlanMode(),
-			removeContextFile: (file: TFile) => this.removeContextFile(file),
-			updateSessionHeader: () => this.updateSessionHeader(),
 			updateSessionMetadata: () => this.updateSessionMetadata(),
-			loadSession: (session: ChatSession) => this.loadSession(session),
 			isCurrentSession: (session: ChatSession) => this.isCurrentSession(session),
 			addAttachment: (attachment: InlineAttachment) => this.attachments.addAttachment(attachment),
-			removeAttachment: (id: string) => this.attachments.removeAttachment(id),
 			getAttachments: () => this.shelf?.getPendingAttachments() || [],
 			handleDroppedFiles: (files: TFile[]) => this.attachments.handleDroppedFiles(files),
 			switchProject: () => this.switchProject(),
@@ -753,8 +673,7 @@ export class AgentView extends ItemView {
 		return {
 			getCurrentSession: () => this.currentSession,
 			isCancellationRequested: () => this.send?.isCancellationRequested() ?? false,
-			updateProgress: (statusText: string, state?: 'thinking' | 'tool' | 'waiting' | 'streaming') =>
-				this.progress.update(statusText, state),
+			updateProgress: (statusText: string, state?: ProgressState) => this.progress.update(statusText, state),
 			hideProgress: () => this.progress.hide(),
 			displayMessage: (entry: GeminiConversationEntry) => this.displayMessage(entry),
 			renderReasoning: (container: HTMLElement, thoughts: string, sourcePath: string) =>
@@ -862,20 +781,7 @@ export class AgentView extends ItemView {
 			this.tokenUsageContainer.empty();
 
 			const tokenText = this.tokenUsageContainer.createSpan({ cls: 'gemini-agent-token-text' });
-			const usageVars = {
-				used: usage.estimatedTokens.toLocaleString(),
-				limit: usage.inputTokenLimit.toLocaleString(),
-				percent: usage.percentUsed,
-			};
-			if (usage.cachedTokens > 0 && usage.estimatedTokens > 0) {
-				// Cached ratio reflects how much of the current prompt was served
-				// from Gemini's implicit/explicit cache — a positive signal that
-				// rewards stable prefixes (system prompt, pinned history).
-				const cachedPercent = Math.round((usage.cachedTokens / usage.estimatedTokens) * 100);
-				tokenText.textContent = t('agent.tokens.usageCached', { ...usageVars, cached: cachedPercent });
-			} else {
-				tokenText.textContent = t('agent.tokens.usage', usageVars);
-			}
+			tokenText.textContent = formatTokenUsageLine(usage);
 
 			// Add warning class if approaching threshold
 			const threshold = this.plugin.settings.contextCompactionThreshold;

@@ -4,7 +4,7 @@ import type { FileSystemAdapter, FileInfo, FileContent } from '@allenhutchison/g
 // The MIME helpers are runtime values — import them from the built-in-free
 // `/mime` subpath so this module never pulls Node built-ins at load (#1154).
 import { getMimeTypeWithFallback, isExtensionSupportedWithFallback } from '@allenhutchison/gemini-utils/mime';
-import { isPathInFolder } from '../utils/file-utils';
+import { getFileName, isPathInFolder } from '../utils/file-utils';
 
 /**
  * Obsidian Vault adapter for the gemini-utils FileSystemAdapter interface.
@@ -37,6 +37,11 @@ export class ObsidianVaultAdapter implements FileSystemAdapter {
 	/**
 	 * List all files in the vault that should be indexed.
 	 * If includeAttachments is true, includes PDFs and other supported file types.
+	 *
+	 * Required by the external {@link FileSystemAdapter} contract even though
+	 * in-repo consumers (the RAG modules) currently reach the same listing
+	 * through `shouldIndex` + vault queries directly (#1388 audit: no
+	 * in-repo caller, not deletable).
 	 */
 	async listFiles(_basePath: string): Promise<string[]> {
 		const files = this.includeAttachments ? this.vault.getFiles() : this.vault.getMarkdownFiles();
@@ -45,6 +50,10 @@ export class ObsidianVaultAdapter implements FileSystemAdapter {
 
 	/**
 	 * Get file info/metadata.
+	 *
+	 * Required by the external {@link FileSystemAdapter} contract even though
+	 * in-repo consumers currently use `readFileForUpload`/`computeHash`
+	 * instead (#1388 audit: no in-repo caller, not deletable).
 	 */
 	async getFileInfo(filePath: string): Promise<FileInfo | null> {
 		const file = this.vault.getAbstractFileByPath(filePath);
@@ -199,7 +208,7 @@ export class ObsidianVaultAdapter implements FileSystemAdapter {
 		if (this.includeAttachments) {
 			// Extract extension safely - handle files without extensions or dotfiles
 			// Use the filename part only to avoid matching dots in folder paths
-			const filename = filePath.substring(filePath.lastIndexOf('/') + 1);
+			const filename = getFileName(filePath);
 			const dotIdx = filename.lastIndexOf('.');
 			if (dotIdx <= 0) {
 				// No extension (dotIdx === -1) or dotfile (dotIdx === 0) - not indexable
@@ -223,13 +232,13 @@ export class ObsidianVaultAdapter implements FileSystemAdapter {
 		}
 
 		// Exclude history folder
-		if (this.historyFolder && filePath.startsWith(this.historyFolder + '/')) {
+		if (this.historyFolder && isPathInFolder(filePath, this.historyFolder)) {
 			return false;
 		}
 
 		// Check user-configured exclude folders
 		for (const folder of this.excludeFolders) {
-			if (filePath.startsWith(folder + '/') || filePath === folder) {
+			if (isPathInFolder(filePath, folder)) {
 				return false;
 			}
 		}

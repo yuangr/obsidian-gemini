@@ -24,274 +24,65 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'agent.empty.examplesHeader': 'Essayez ces exemples :',
 	'i18n.aiTranslatedNotice':
 		"Cette traduction de l'interface est générée par IA. Les PR d'amélioration sont les bienvenues.",
-	'settings.common.saveFailedNotice': "Échec de l'enregistrement des paramètres : {error}",
-	'settings.common.advancedBadge': 'Avancé',
-	'settings.general.sectionTitle': 'Général',
-	'settings.general.sectionDesc':
-		'Configurez votre fournisseur, votre clé API et les modèles utilisés par le plugin. Requis pour le fonctionnement du plugin.',
-	'settings.general.documentationName': 'Documentation',
-	'settings.general.documentationDesc': 'Consulter la documentation complète et les guides du plugin',
-	'settings.general.viewDocumentationButton': 'Voir la documentation',
-	'settings.general.providerName': 'Fournisseur',
-	'settings.general.providerDesc':
-		"Choisissez le fournisseur de modèle. Gemini utilise l'API Google Cloud. Ollama exécute les modèles localement sur votre machine ; installez-le depuis https://ollama.com et récupérez un modèle avec `ollama pull <name>`.",
 	'settings.general.providerOptionGemini': 'Google Gemini (cloud)',
-	'settings.general.providerOptionOllama': 'Ollama (local)',
-	'settings.general.ollamaBaseUrlName': "URL de base d'Ollama",
-	'settings.general.ollamaBaseUrlDesc':
-		'Point de terminaison HTTP de votre démon Ollama local. Par défaut : http://localhost:11434.',
-	'settings.general.refreshModelListName': 'Actualiser la liste des modèles',
-	'settings.general.refreshOllamaModelListName': 'Actualiser la liste des modèles Ollama',
-	'settings.general.refreshModelListOllamaDesc':
-		'Interroger à nouveau le démon Ollama pour obtenir les modèles disponibles.',
-	'settings.general.refreshModelListGeminiDesc':
-		"Récupérer la dernière liste de modèles Gemini depuis GitHub maintenant, en contournant le cache de 24h. Utilisez cette option après la publication d'un nouveau modèle.",
-	'settings.general.refreshButton': 'Actualiser',
-	'settings.general.ollamaModelsFoundSingular': '{count} modèle Ollama trouvé.',
-	'settings.general.ollamaModelsFound': '{count} modèles Ollama trouvés.',
-	'settings.general.refreshFailedNotice': "Échec de l'actualisation : {error}",
-	'settings.general.localOnlyNoticeName': 'Avis sur les fonctionnalités locales uniquement',
-	'settings.general.localOnlyNoticeDesc':
-		"Tout s'exécute sur votre machine. Google Search, URL Context (récupération web), Deep Research, la génération d'images et l'index de recherche du coffre dépendent des services cloud de Gemini et sont désactivés. Pour en activer un, attribuez-lui un fournisseur sous « Fournisseur par fonctionnalité » — les données de cette fonctionnalité seront alors envoyées vers le cloud.",
-	'settings.general.perFeatureProviderTitle': 'Fournisseur par fonctionnalité',
-	'settings.general.perFeatureProviderDesc':
-		'Choisissez un fournisseur différent pour chaque fonctionnalité. Tout ce qui est laissé par défaut utilise le fournisseur sélectionné ci-dessus.',
-	'settings.general.useProviderDefault': 'Par défaut — {provider}',
-	'settings.general.useCaseUnavailableOption': 'Non disponible',
-	'settings.general.useCaseChatName': 'Chat et agent',
-	'settings.general.useCaseChatDesc': "Chat interactif, sessions d'agent, tâches planifiées et hooks.",
-	'settings.general.useCaseSummaryName': 'Résumés',
-	'settings.general.useCaseSummaryDesc':
-		'La commande « Résumer le fichier actif » et la compression de la conversation.',
-	'settings.general.useCaseCompletionsName': 'Complétions',
-	'settings.general.useCaseCompletionsDesc': 'Suggestions en ligne de style IDE pendant la saisie.',
-	'settings.general.useCaseRewriteName': 'Réécriture',
-	'settings.general.useCaseRewriteDesc': 'Réécriture du texte sélectionné. Utilise le modèle de chat.',
-	'settings.general.useCaseWebSearchName': 'Web et recherche',
-	'settings.general.useCaseWebSearchDesc':
-		'Outils Google Search, Google Maps, URL Context (récupération web) et Deep Research.',
-	'settings.general.useCaseRagName': 'Index de recherche du coffre',
-	'settings.general.useCaseRagDesc':
-		'Recherche sémantique dans votre coffre. Téléverse le contenu des notes vers un index de recherche cloud.',
-	'settings.general.useCaseImageGenName': "Génération d'images",
-	'settings.general.useCaseImageGenDesc': "Génération d'images à partir d'un prompt.",
-	'settings.general.missingKeyNoticeName': 'Clé API requise',
-	'settings.general.missingKeyNoticeDesc':
-		'Certaines fonctionnalités sont configurées pour utiliser {providers}, qui nécessite une clé API. Saisissez-en une ci-dessus, sinon ces fonctionnalités échoueront lors de leur utilisation.',
-	'settings.general.mixedProviderNoticeName': 'Certaines fonctionnalités utilisent un fournisseur différent',
-	'settings.general.mixedProviderNoticeDesc':
-		"Ces fonctionnalités n'utilisent pas votre fournisseur par défaut : {features}. Leurs requêtes — y compris tout contenu de note envoyé — vont vers le fournisseur que vous avez choisi pour elles.",
-	'settings.general.inheritOllamaChatModel': 'Identique au modèle de chat',
-	'settings.general.ollamaSummaryModelDesc':
-		"Modèle utilisé pour les résumés. Laissez sur « Identique au modèle de chat » sauf si vous en avez besoin d'un autre — Ollama ne garde qu'un seul modèle chargé à la fois, donc un second modèle est rechargé à chaque changement.",
-	'settings.general.ollamaCompletionsModelDesc':
-		"Modèle utilisé pour les complétions en ligne. Laissez sur « Identique au modèle de chat » sauf si vous en avez besoin d'un autre — Ollama ne garde qu'un seul modèle chargé à la fois, donc un second modèle est rechargé à chaque changement. Un petit modèle ici peut valoir le coup.",
-	'settings.general.apiKeyName': 'Clé API',
-	'settings.general.apiKeyDesc':
-		"Liez votre clé API Google Gemini. Cliquez sur « Lier... » et Obsidian vous demandera un nom de secret (ce n'est qu'une étiquette — utilisez le nom de votre choix comme « gemini-api ») et une valeur de secret (collez votre clé API ici). Obtenez une clé gratuitement sur https://aistudio.google.com/apikey",
-	'settings.general.chatModelName': 'Modèle de chat',
-	'settings.general.chatModelDesc':
-		"Modèle utilisé pour les sessions de discussion de l'agent, la réécriture de sélection et les outils de recherche web.",
-	'settings.general.summaryModelName': 'Modèle de résumé',
-	'settings.general.summaryModelDesc':
-		'Modèle utilisé pour la commande « Résumer le fichier actif » qui ajoute des résumés au frontmatter.',
-	'settings.general.completionModelName': 'Modèle de complétion',
-	'settings.general.completionModelDesc':
-		'Modèle utilisé pour les complétions en ligne de style IDE lors de la saisie dans les notes.',
-	'settings.general.ollamaModelName': 'Modèle Ollama',
-	'settings.general.ollamaModelDesc':
-		'Modèle utilisé pour le chat et la réécriture, ainsi que pour toute autre fonctionnalité Ollama laissée sur « Identique au modèle de chat ».',
-	'settings.general.imageModelName': "Modèle d'image",
-	'settings.general.imageModelDesc': "Modèle utilisé pour la génération d'images.",
-	'settings.general.stateFolderName': "Dossier d'état du plugin",
-	'settings.general.stateFolderDesc':
-		"Dossier où sont stockées les données du plugin. Les sessions d'agent se trouvent sous Agent-Sessions/, les invites personnalisées sous Prompts/, les hooks sous Hooks/, et l'état des tâches planifiées sous Scheduled-Tasks/.",
-	'settings.general.showAdvancedName': 'Afficher les paramètres avancés',
-	'settings.general.showAdvancedDesc':
-		"Afficher les sections avancées (Prompts personnalisés, Configuration de l'API, Autorisations des outils, Détection de boucle d'outils, Serveurs MCP, Débogage) pour les utilisateurs expérimentés.",
-	'settings.general.modelListUpdatedSingular': 'Liste des modèles mise à jour : {count} modèle.',
+	'settings.general.providerOptionOllama': 'Ollama',
+	'settings.general.providerOptionOpenai': 'OpenAI (cloud)',
+	'settings.general.providerOptionAnthropic': 'Anthropic (cloud)',
 	'settings.general.modelListUpdated': 'Liste des modèles mise à jour : {count} modèles.',
+	'settings.general.modelListUpdatedSingular': 'Liste des modèles mise à jour : {count} modèle.',
 	'settings.general.refreshSkippedOffline': 'Ignoré : hors ligne',
 	'settings.general.refreshSkippedNotGemini': "Ignoré : aucune fonctionnalité n'est configurée pour utiliser Gemini",
 	'settings.general.refreshModelListFailed': "Échec de l'actualisation de la liste des modèles : {error}",
-	'settings.ui.sectionTitle': 'Expérience utilisateur',
-	'settings.ui.sectionDesc':
-		'Options de streaming, de vue diff, de rattrapage du planificateur et de personnalisation qui affectent votre interaction avec le plugin.',
-	'settings.ui.userNameName': 'Votre nom',
-	'settings.ui.userNameDesc':
-		"Votre nom utilisé dans les instructions système afin que l'IA puisse s'adresser à vous personnellement dans les conversations.",
-	'settings.ui.userNamePlaceholder': 'Saisissez votre nom',
-	'settings.ui.summaryFrontmatterKeyName': 'Clé de frontmatter pour le résumé',
-	'settings.ui.summaryFrontmatterKeyDesc':
-		"Nom de la propriété du frontmatter où les résumés sont stockés lors de l'utilisation de la commande « Résumer le fichier actif ».",
-	'settings.ui.enableStreamingName': 'Activer le streaming',
-	'settings.ui.enableStreamingDesc':
-		"Diffuser les réponses de l'IA mot par mot au fur et à mesure de leur génération pour une expérience de discussion plus interactive.",
-	'settings.ui.alwaysShowDiffViewName': "Toujours afficher la vue diff pour l'écriture de fichiers",
-	'settings.ui.alwaysShowDiffViewDesc':
-		"Ouvrir automatiquement une vue diff lorsque l'agent propose des modifications de fichiers, au lieu de nécessiter un clic sur un bouton.",
-	'settings.ui.sessionHistoryName': "Activer l'historique des sessions",
-	'settings.ui.sessionHistoryDesc':
-		"Conserver les sessions de discussion de l'agent sous forme de fichiers Markdown dans votre coffre. Les sessions sont enregistrées sous Agent-Sessions/ avec des titres générés automatiquement.",
-	'settings.ui.logToolExecutionName': "Enregistrer l'exécution des outils dans l'historique des sessions",
-	'settings.ui.logToolExecutionDesc':
-		"Ajouter un résumé de chaque exécution d'outil au fichier d'historique des sessions pour audit. Nécessite l'activation de l'historique des sessions. Nécessite le rechargement du plugin pour prendre effet.",
-	'settings.automation.sectionTitle': 'Automatisation',
-	'settings.automation.sectionDesc':
-		"Exécuter automatiquement les tâches de l'agent IA — selon un calendrier ou en réponse à des événements du coffre (fichier créé/modifié/supprimé/renommé).",
-	'settings.automation.manageScheduledTasksName': 'Gérer les tâches planifiées',
-	'settings.automation.manageScheduledTasksDesc':
-		"Créer, modifier, activer/désactiver et supprimer des tâches IA planifiées. Les tâches s'exécutent automatiquement en arrière-plan lorsque Obsidian est ouvert.",
-	'settings.automation.openSchedulerButton': 'Ouvrir le planificateur',
-	'settings.automation.newTaskButton': 'Nouvelle tâche',
-	'settings.automation.autoRunCatchUpName': 'Exécuter automatiquement au démarrage les tâches planifiées manquées',
-	'settings.automation.autoRunCatchUpDesc':
-		"Si cette option est activée, les tâches manquées pendant qu'Obsidian était fermé (et pour lesquelles « Exécuter si manquée » est activé) sont soumises automatiquement au démarrage sans afficher la fenêtre de validation.",
-	'settings.automation.enableHooksName': 'Activer les hooks de cycle de vie',
-	'settings.automation.enableHooksDesc':
-		"S'abonner aux événements du coffre et exécuter des tâches de l'agent IA en réponse. Désactivé par défaut — les événements du coffre se déclenchent en continu, et un hook à portée large peut rapidement épuiser votre quota d'API.",
-	'settings.automation.manageHooksName': 'Gérer les hooks de cycle de vie',
-	'settings.automation.manageHooksDesc':
-		"Créer, modifier, activer/désactiver et supprimer des hooks. Chaque hook se déclenche lorsqu'un événement de coffre correspondant se produit et s'exécute en tant que session d'agent autonome.",
-	'settings.automation.openHookManagerButton': 'Ouvrir le gestionnaire de hooks',
-	'settings.automation.newHookButton': 'Nouveau hook',
-	'settings.debug.sectionTitle': 'Débogage',
-	'settings.debug.sectionDesc': 'Options de diagnostic pour le dépannage du comportement du plugin.',
-	'settings.debug.debugModeName': 'Mode débogage',
-	'settings.debug.debugModeDesc': 'Activer la journalisation de débogage dans la console. Utile pour le dépannage.',
-	'settings.debug.showTokenUsageName': "Afficher l'utilisation des jetons",
-	'settings.debug.showTokenUsageDesc':
-		"Afficher l'estimation de l'utilisation des jetons dans la vue de l'agent (à des fins de débogage).",
-	'settings.debug.stopOnToolErrorName': "Arrêter en cas d'erreur d'outil",
-	'settings.debug.stopOnToolErrorDesc':
-		"Arrêter l'exécution de l'agent lorsqu'un appel d'outil échoue. Si désactivé, l'agent continuera d'exécuter les outils suivants.",
-	'settings.agentConfig.sectionTitle': "Configuration de l'agent",
-	'settings.agentConfig.sectionDesc':
-		"Ajuster la façon dont l'agent communique avec le modèle : invites personnalisées, paramètres de tentative/génération, résumé de conversation et protections contre les boucles.",
-	'settings.agentConfig.customPromptsHeading': 'Prompts personnalisés',
-	'settings.agentConfig.systemPromptOverrideName': "Autoriser la surcharge de l'invite système",
-	'settings.agentConfig.systemPromptOverrideDesc':
-		"AVERTISSEMENT : Permet aux invites personnalisées de remplacer complètement l'invite système. Cela peut perturber le fonctionnement attendu.",
-	'settings.agentConfig.apiConfigurationHeading': "Configuration de l'API",
-	'settings.agentConfig.contextCachingName': 'Activer la mise en cache du contexte',
-	'settings.agentConfig.contextCachingDesc':
-		"Met en cache le préfixe de l'historique des conversations sur les modèles Gemini. Réduit les coûts et la latence pour les sessions de plus de 32k jetons.",
-	'settings.agentConfig.filesApiName': "Activer l'API Gemini Files",
-	'settings.agentConfig.filesApiDesc':
-		"Téléversez les pièces jointes volumineuses (images, vidéos, audio, PDF) sur l'hébergement de fichiers sécurisé de Gemini au lieu de les envoyer directement dans chaque message. Réduit la taille des requêtes et accélère les échanges suivants.",
-	'settings.agentConfig.logToFileName': 'Enregistrer dans un fichier',
-	'settings.agentConfig.logToFileDesc':
-		"Écrire les entrées de journal dans un fichier du dossier d'état du plugin. Les erreurs et les avertissements sont toujours enregistrés ; les entrées de débogage nécessitent le mode débogage. Les fichiers de journalisation subissent une rotation automatique à 1 Mo.",
-	'settings.agentConfig.useInteractionsApiName': "Utiliser l'API Interactions",
-	'settings.agentConfig.useInteractionsApiDesc':
-		"Achemine les requêtes Gemini via la nouvelle API Interactions de Google plutôt que l'ancienne API generateContent. Il s'agit du transport par défaut. Fonctionne sans état — l'historique de la conversation est rejoué à chaque tour et n'est pas conservé du côté de Google entre les tours. Désactivez-le pour revenir à generateContent en cas de problème. Les modèles qui ne prennent en charge que l'API Interactions (comme Gemini Omni) l'utilisent toujours, quel que soit ce paramètre.",
-	'settings.agentConfig.customEndpointName': "Point de terminaison d'API personnalisé",
-	'settings.agentConfig.customEndpointDesc':
-		"Surcharger l'URL de base par défaut de l'API Google (par ex. pour un proxy d'entreprise ou une passerelle locale). Laisser vide pour utiliser le point de terminaison officiel.",
-	'settings.agentConfig.customEndpointInvalidNotice':
-		"Le point de terminaison d'API personnalisé n'est pas une URL valide — réinitialisation.",
-	'settings.agentConfig.maxRetriesName': 'Nombre maximal de tentatives',
-	'settings.agentConfig.maxRetriesDesc': "Nombre maximal de tentatives lorsqu'une requête au modèle échoue.",
-	'settings.agentConfig.maxRetriesPlaceholder': 'ex. 3',
-	'settings.agentConfig.initialBackoffName': "Délai d'attente initial (ms)",
-	'settings.agentConfig.initialBackoffDesc':
-		'Délai initial en millisecondes avant la première tentative. Les tentatives suivantes utiliseront un retard exponentiel.',
-	'settings.agentConfig.initialBackoffPlaceholder': 'ex. 1000',
-	'settings.agentConfig.contextManagementHeading': 'Gestion du contexte',
-	'settings.agentConfig.compactionThresholdName': 'Seuil de compactage du contexte',
-	'settings.agentConfig.compactionThresholdDesc':
-		"Résumer automatiquement les anciens tours de conversation lorsque l'utilisation des jetons dépasse ce pourcentage de la fenêtre de contexte du modèle. Actuel : {percent} %",
-	'settings.agentConfig.loopDetectionHeading': "Détection de boucle d'outils",
-	'settings.agentConfig.loopDetectionName': 'Activer la détection de boucle',
-	'settings.agentConfig.loopDetectionDesc':
-		"Empêche l'IA d'appeler de manière répétée le même outil avec des paramètres identiques.",
-	'settings.agentConfig.loopThresholdName': 'Seuil de boucle',
-	'settings.agentConfig.loopThresholdDesc':
-		"Nombre d'appels d'outils identiques avant de considérer qu'il s'agit d'une boucle (par défaut : 3).",
-	'settings.agentConfig.timeWindowName': 'Fenêtre de temps (secondes)',
-	'settings.agentConfig.timeWindowDesc':
-		'Fenêtre de temps pour vérifier les appels répétés (par défaut : 30 secondes).',
-	'settings.agentConfig.temperatureName': 'Température',
-	'settings.agentConfig.temperatureDescWithInfo':
-		"Contrôle l'aléa. Des valeurs plus basses sont plus déterministes. {info}",
-	'settings.agentConfig.temperatureDescDefault':
-		"Contrôle l'aléa. Des valeurs plus basses sont plus déterministes. (Par défaut : 0.7)",
-	'settings.agentConfig.temperatureSaveFailedNotice':
-		"Échec de l'enregistrement du paramètre de température. Voir la console pour plus de détails.",
-	'settings.agentConfig.topPName': 'Top P',
-	'settings.agentConfig.topPDescWithInfo': 'Contrôle la diversité. Des valeurs plus basses sont plus ciblées. {info}',
-	'settings.agentConfig.topPDescDefault':
-		'Contrôle la diversité. Des valeurs plus basses sont plus ciblées. (Par défaut : 1)',
-	'settings.agentConfig.topPSaveFailedNotice':
-		"Échec de l'enregistrement du paramètre Top P. Voir la console pour plus de détails.",
-	'settings.mcp.sectionTitle': 'Serveurs MCP',
-	'settings.mcp.sectionDesc':
-		"Connectez des serveurs externes Model Context Protocol pour étendre l'agent avec des outils supplémentaires.",
-	'settings.mcp.loadErrorDesc': 'Erreur lors du chargement des paramètres MCP : {error}',
-	'settings.mcp.enableName': 'Activer les serveurs MCP',
-	'settings.mcp.enableDesc':
-		"Connectez-vous à des serveurs Model Context Protocol pour étendre l'agent avec des outils externes. Prend en charge les serveurs locaux (stdio) et distants (HTTP).",
-	'settings.mcp.noServers': 'Aucun serveur MCP configuré. Cliquez sur « Ajouter un serveur » pour commencer.',
-	'settings.mcp.httpUrl': 'HTTP : {url}',
-	'settings.mcp.authorized': 'Autorisé ✓',
-	'settings.mcp.editButton': 'Modifier',
-	'settings.mcp.deleteButton': 'Supprimer',
-	'settings.mcp.addServerButton': 'Ajouter un serveur',
-	'settings.mcp.duplicateServerName': 'Un serveur nommé "{name}" existe déjà',
-	'settings.mcp.reconnectFailed': 'Échec de la reconnexion à "{name}" : {error}',
-	'settings.mcp.openEditorFailed': "Échec de l'ouverture de l'éditeur de serveur : {error}",
-	'settings.mcp.savedButConnectFailed': 'Serveur enregistré mais échec de la connexion : {error}',
-	'settings.mcp.openAddDialogFailed': "Échec de l'ouverture de la boîte de dialogue d'ajout de serveur : {error}",
-	'settings.rag.sectionTitle': 'Index de recherche du coffre',
-	'settings.rag.sectionDesc':
-		"Recherche sémantique dans votre coffre à l'aide de Google File Search. Permet des réponses d'agent augmentées par récupération. Confidentialité : les fichiers indexés sont importés sur Google Cloud.",
-	'settings.rag.privacyNotice':
-		"⚠️ Avis de confidentialité : l'activation de cette fonctionnalité téléverse les fichiers de votre coffre vers Google Cloud pour la recherche sémantique. Les fichiers sont traités et stockés par Google. Pensez à exclure les dossiers contenant des informations sensibles.",
-	'settings.rag.enableName': "Activer l'indexation du coffre",
-	'settings.rag.enableDesc':
-		"Indexez les fichiers de votre coffre pour la recherche sémantique à l'aide de Google File Search.",
-	'settings.rag.openCleanupFailed': "Échec de l'ouverture de la boîte de dialogue de nettoyage : {error}",
-	'settings.rag.filesIndexed': '{count} fichiers indexés',
-	'settings.rag.notYetIndexed': 'Pas encore indexé',
-	'settings.rag.indexStatusName': "Statut de l'index",
-	'settings.rag.reindexButton': 'Réanalyser le coffre',
-	'settings.rag.indexingButton': 'Indexation...',
-	'settings.rag.serviceNotInitialized': "Service d'indexation RAG non initialisé",
-	'settings.rag.indexResult': 'Réanalyse terminée : {indexed} réindexés, {skipped} ignorés, {failed} échoués',
-	'settings.rag.indexingFailed': "Échec de l'indexation : {error}",
-	'settings.rag.deleteIndexButton': "Supprimer l'index",
-	'settings.rag.deletingButton': 'Suppression...',
-	'settings.rag.indexDeletedNotice': 'Index supprimé. Utilisez "Réanalyser le coffre" pour le reconstruire.',
-	'settings.rag.deleteIndexFailed': "Échec de la suppression de l'index : {error}",
-	'settings.rag.openDeleteConfirmFailed': "Échec de l'ouverture de la confirmation de suppression : {error}",
-	'settings.rag.storeNameName': "Nom de l'index de recherche",
-	'settings.rag.storeNameDescAssigned':
-		"L'identifiant du magasin Google File Search, attribué automatiquement. Supprimez l'index pour recommencer avec un nouveau.",
-	'settings.rag.storeNameDescPending': "Attribué automatiquement par Google File Search au démarrage de l'indexation.",
-	'settings.rag.copyButton': 'Copier',
-	'settings.rag.copyTooltip': 'Copier le nom du store dans le presse-papiers',
-	'settings.rag.storeNameCopiedNotice': 'Nom du store copié dans le presse-papiers',
-	'settings.rag.autoSyncName': 'Synchronisation automatique des modifications',
-	'settings.rag.autoSyncDesc':
-		"Mettre à jour automatiquement l'index lorsque des fichiers sont créés, modifiés ou supprimés.",
-	'settings.rag.includeAttachmentsName': 'Inclure les pièces jointes',
-	'settings.rag.includeAttachmentsDesc':
-		'Indexe les PDF et autres types de fichiers pris en charge en plus des notes markdown. Nécessite une réanalyse.',
-	'settings.rag.attachmentSettingChangedNotice':
-		'Paramètre des pièces jointes modifié. Réanalysez le coffre pour appliquer les modifications.',
-	'settings.rag.excludeFoldersName': 'Exclure des dossiers',
-	'settings.rag.excludeFoldersDesc':
-		'Toujours exclus : {folders}. Ajoutez des dossiers supplémentaires ci-dessous (un par ligne).',
-	'settings.rag.excludeFoldersPlaceholder': 'Dossiers supplémentaires à exclure...',
-	'settings.tools.sectionTitle': 'Autorisations des outils',
-	'settings.tools.sectionDesc':
-		"Contrôlez quels outils d'agent nécessitent une confirmation, s'exécutent automatiquement ou sont complètement bloqués.",
-	'settings.tools.noToolsName': 'Aucun outil enregistré',
-	'settings.tools.noToolsDesc': 'Les autorisations des outils apparaîtront ici une fois les outils chargés.',
-	'settings.tools.presetName': "Préréglage d'autorisations",
-	'settings.tools.presetDesc':
-		'Choisissez un préréglage qui détermine les autorisations par défaut pour tous les outils.',
-	'settings.tools.yoloConfirmFailed': "Échec de l'ouverture de la confirmation YOLO : {error}",
+	'settings.main.groupChat': 'Chat',
+	'settings.main.groupVault': 'Coffre',
+	'settings.main.groupAutomation': 'Automatisation',
+	'settings.main.providersName': 'Fournisseurs',
+	'settings.main.yourNameName': 'Votre nom',
+	'settings.main.yourNameDesc':
+		"Votre nom utilisé dans les instructions système afin que l'IA puisse s'adresser à vous personnellement lors des conversations.",
+	'settings.main.keepSessionHistoryName': "Conserver l'historique des sessions",
+	'settings.main.keepSessionHistoryDesc':
+		"Conserver les sessions de chat de l'agent sous forme de fichiers Markdown dans votre coffre. Les sessions sont enregistrées sous Agent-Sessions/ avec des titres générés automatiquement.",
+	'settings.main.reviewDiffName': "Examiner un diff avant l'écriture des fichiers",
+	'settings.main.reviewDiffDesc':
+		"Ouvrir automatiquement une vue diff lorsque l'agent propose des modifications de fichiers, au lieu de devoir cliquer sur un bouton.",
+	'settings.main.vaultSearchIndexName': 'Index de recherche du coffre',
+	'settings.main.pluginFolderName': 'Dossier du plugin',
+	'settings.main.pluginFolderDesc':
+		"Dossier dans lequel sont stockées les données du plugin. Les sessions de l'agent sont situées sous Agent-Sessions/, les invites personnalisées sous Prompts/, les hooks sous Hooks/ et l'état des tâches planifiées sous Scheduled-Tasks/.",
+	'settings.main.scheduledTasksName': 'Tâches planifiées',
+	'settings.main.lifecycleHooksName': 'Hooks de cycle de vie',
+	'settings.main.mcpServersName': 'Serveurs MCP',
+	'settings.main.toolPermissionsName': 'Autorisations des outils',
+	'settings.main.advancedName': 'Avancé',
+	'settings.main.documentationName': 'Documentation',
+	'settings.main.documentationDesc': 'Consulter la documentation complète et les guides du plugin',
+	'settings.features.pageName': 'Fonctionnalités',
+	'settings.features.groupText': 'Texte',
+	'settings.features.groupTextDesc': 'Chat et agent, résumés, complétions et réécriture.',
+	'settings.features.groupWeb': 'Web et recherche',
+	'settings.features.groupWebDesc': 'Recherche Web, recherche approfondie et index de recherche du coffre.',
+	'settings.features.groupMedia': 'Médias',
+	'settings.features.provider': 'Fournisseur',
+	'settings.features.model': 'Modèle',
+	'settings.features.modelDefault': 'Par défaut pour ce fournisseur',
+	'settings.features.modelDefaultNamed': 'Par défaut ({model})',
+	'settings.features.sameAsChat': 'Identique au chat',
+	'settings.features.modelMissing': 'Plus disponible',
+	'settings.features.modelCapabilitiesUnknown': 'prise en charge des images non signalée',
+	'settings.features.off': 'Désactivé',
+	'settings.features.chooseProvider': 'Choisir un fournisseur',
+	'settings.features.notConnected': 'non connecté',
+	'settings.features.deepResearchAgent': 'Agent Deep Research',
+	'settings.features.fileSearch': 'Google File Search',
+	'settings.features.label.chat': 'Chat et agent',
+	'settings.features.label.summary': 'Résumés',
+	'settings.features.label.completions': 'Complétions',
+	'settings.features.label.rewrite': 'Réécriture',
+	'settings.features.label.webSearch': 'Recherche Web',
+	'settings.features.label.deepResearch': 'Recherche approfondie',
+	'settings.features.label.rag': 'Index de recherche du coffre',
+	'settings.features.label.imageGen': "Génération d'images",
 	'explainPrompt.placeholder': 'Sélectionnez un prompt pour expliquer la sélection...',
 	'ragCleanup.title': "Supprimer l'index du coffre ?",
 	'ragCleanup.body': "L'index de votre coffre est stocké dans Google Cloud. Voulez-vous le supprimer ?",
@@ -300,6 +91,16 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 		'⚠️ Si vous supprimez, cette action est permanente et irréversible. Toutes les données indexées seront définitivement supprimées de Google Cloud, et vous devrez réindexer tous les fichiers.',
 	'ragCleanup.keepButton': 'Conserver les données',
 	'ragCleanup.deleteButton': 'Supprimer définitivement',
+	'projectName.title': 'Nouveau projet',
+	'projectName.defaultName': 'Nouveau projet',
+	'projectName.inputLabel': 'Nom du projet',
+	'projectName.createButton': 'Créer',
+	'projectName.cancelButton': 'Annuler',
+	'projectName.errorEmpty': 'Saisissez un nom de projet.',
+	'projectName.errorReserved':
+		'Ce nom est réservé sous Windows (comme CON, NUL ou COM1) et ne peut pas être utilisé comme nom de fichier.',
+	'projectName.errorInvalidChars':
+		'Les noms de projet ne peuvent pas commencer par un point ni contenir l\'un des caractères suivants : \\ / : * ? " < > | # ^ [ ]',
 	'yolo.title': 'Activer le mode YOLO ?',
 	'yolo.description':
 		"Le mode YOLO permet à l'agent IA d'exécuter tous les outils sans aucune confirmation — y compris la création, la modification, la suppression et le déplacement de fichiers, ainsi que les appels d'API externes.",
@@ -344,21 +145,6 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'ragResume.resumeNote': 'La reprise continuera là où vous vous étiez arrêté, en ignorant les fichiers déjà indexés.',
 	'ragResume.resumeButton': 'Reprendre',
 	'ragResume.startFreshButton': 'Recommencer à zéro',
-	'scheduledTasks.title': 'Tâches planifiées',
-	'scheduledTasks.managerUnavailable': "Le gestionnaire de tâches planifiées n'est pas disponible.",
-	'scheduledTasks.empty':
-		'Aucune tâche planifiée trouvée. Créez un fichier markdown dans le dossier Scheduled-Tasks pour commencer.',
-	'scheduledTasks.badgeDisabled': '{schedule} · désactivé',
-	'scheduledTasks.badgePaused': '{schedule} · en pause',
-	'scheduledTasks.onceComplete': 'Une fois — terminé',
-	'scheduledTasks.nextRun': 'Suivant : {time}',
-	'scheduledTasks.lastRun': 'Dernier : {time}',
-	'scheduledTasks.resetButton': 'Réinitialiser',
-	'scheduledTasks.resetting': 'Réinitialisation...',
-	'scheduledTasks.runNowButton': 'Exécuter maintenant',
-	'scheduledTasks.running': 'Exécution...',
-	'scheduledTasks.submitted': 'Soumis',
-	'scheduledTasks.runError': 'Erreur',
 	'updateNotice.versionInfo': 'Vous avez été mis à jour vers la version {version}',
 	'updateNotice.whatsNew': 'Nouveautés :',
 	'updateNotice.genericTitle': '🎉 Gemini Scribe mis à jour !',
@@ -440,6 +226,8 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'mcpServer.connectingDesc': 'Connexion au serveur...',
 	'mcpServer.connectedDesc': 'Connexion réussie ! {count} outil(s) trouvé(s).',
 	'mcpServer.connectionFailedDesc': 'Échec de la connexion : {message}',
+	'mcpServer.oauthHtmlResponse':
+		"L'étape de connexion (OAuth) au serveur a échoué avec le code HTTP {status}, et la réponse était une page web au lieu d'une réponse OAuth. Cela signifie généralement qu'un pare-feu situé devant le serveur rejette la requête, par exemple parce qu'elle contient l'adresse de rappel locale (127.0.0.1). Ce problème doit être corrigé par l'administrateur du serveur, veuillez donc le contacter en lui transmettant ce message.",
 	'mcpServer.cancelButton': 'Annuler',
 	'mcpServer.saveButton': 'Enregistrer',
 	'mcpServer.nameRequired': 'Le nom du serveur est requis',
@@ -544,7 +332,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'scheduler.advancedOptions': 'Options avancées',
 	'scheduler.modelOverrideSetting': 'Remplacement du modèle',
 	'scheduler.modelOverrideDesc':
-		'Remplacez le modèle de chat du plugin pour cette tâche (ex. gemini-2.0-flash). Laissez vide pour utiliser le modèle par défaut.',
+		'Remplacer le modèle de chat du plugin pour cette tâche. Laissez vide pour utiliser la valeur par défaut.',
 	'scheduler.outputPathSetting': 'Chemin de sortie',
 	'scheduler.outputPathDesc':
 		'Où écrire les résultats. Prend en charge les variables {slug} et {date}. Par défaut : {defaultPath}',
@@ -607,6 +395,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'hooks.pathGlobDesc':
 		"Limiter les déclenchements aux chemins correspondant à ce glob. Exemples : Daily/**/*.md, Notes/*.md. Laisser vide pour n'importe quel chemin.",
 	'hooks.commandIdSetting': 'ID de commande',
+	'hooks.commandIdPlaceholder': 'plugin-id:command-name',
 	'hooks.commandIdDesc':
 		'ID de la commande de la palette à exécuter. Exemples : editor:save-file, gemini-scribe:summarize-active-file. Affichez les ID des commandes via Paramètres → Raccourcis clavier (ouvrez la console de développement avec Ctrl+Shift+I pour inspecter les ID).',
 	'hooks.focusFileSetting': "Focus sur le fichier déclencheur avant l'envoi",
@@ -627,6 +416,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'hooks.maxRunsSetting': "Nombre maximal d'exécutions par heure",
 	'hooks.maxRunsDesc': 'Limite sur fenêtre glissante pour tous les fichiers. 0 (par défaut) signifie illimité.',
 	'hooks.skillsSetting': 'Compétences (séparées par des virgules)',
+	'hooks.skillsPlaceholder': 'summarize, index-files',
 	'hooks.skillsDesc':
 		'Identifiants (slugs) des compétences à pré-activer. Vide = hériter de toutes les compétences disponibles.',
 	'hooks.modelOverrideSetting': 'Surcharge du modèle',
@@ -680,6 +470,9 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'agent.view.noActiveSession': 'Aucune session active',
 	'agent.tokens.usage': 'Tokens : ~{used} / {limit} ({percent} %)',
 	'agent.tokens.usageCached': 'Tokens : ~{used} / {limit} ({percent} %) · {cached} % mis en cache',
+	'agent.tokens.usageThoughts': 'Tokens : ~{used} / {limit} ({percent}%) · {thoughts} de raisonnement',
+	'agent.tokens.usageCachedThoughts':
+		'Tokens : ~{used} / {limit} ({percent}%) · {cached}% en cache · {thoughts} de raisonnement',
 	'agent.empty.example.findTagged': 'Trouver toutes les notes avec le tag #important',
 	'agent.empty.example.weeklySummary': 'Créer un résumé hebdomadaire de mes notes de réunion',
 	'agent.empty.example.research': 'Faire des recherches sur les méthodes de productivité et créer des notes',
@@ -712,9 +505,8 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'agent.header.loading': 'Chargement...',
 	'agent.header.loadingProjectTooltip': 'Chargement du projet...',
 	'agent.header.tooltipModel': 'Modèle : {value}',
-	'agent.header.tooltipTemperature': 'Température : {value}',
-	'agent.header.tooltipTopP': 'Top-P : {value}',
 	'agent.header.tooltipPrompt': 'Prompt : {value}',
+	'agent.header.promptBadgeFallback': 'Personnalisé',
 	'agent.header.menuAria': 'Menu de session',
 	'agent.header.projectTooltip': 'Projet : {name}\n{path}',
 	'agent.header.linkProjectTooltip': 'Cliquez pour lier un projet',
@@ -764,6 +556,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'agent.send.emptyResponse':
 		'Le modèle a renvoyé une réponse vide. Cela peut se produire avec les modèles de réflexion. Essayez de reformuler votre question.',
 	'agent.send.cancelled': "Exécution de l'agent annulée",
+	'agent.loop.notice': 'L\'agent répète le même appel à "{tool}" — il est peut-être bloqué.',
 	'agent.planMode.approved': 'Approuvé',
 	'agent.session.createFailed': "Échec de la création de la session de l'agent",
 	'agent.session.loadFailed': 'Échec du chargement de la session',
@@ -807,9 +600,6 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'agent.diff.approve': 'Approuver',
 	'agent.diff.cancel': 'Annuler',
 	'agent.fileMention.placeholder': 'Sélectionnez un fichier ou un dossier à mentionner...',
-	'agent.filePicker.placeholder': 'Rechercher des fichiers à ajouter comme contexte...',
-	'agent.filePicker.toggleInstruction': 'basculer la sélection',
-	'agent.filePicker.confirmInstruction': 'confirmer et fermer',
 	'agent.skillMention.placeholder': 'Sélectionnez une compétence à activer...',
 	'agent.projectPicker.title': 'Changer de projet',
 	'agent.projectPicker.noProjectDesc': "Utiliser la portée par défaut de l'ensemble du coffre",
@@ -826,17 +616,14 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'agent.sessionList.openTooltip': 'Ouvrir la session',
 	'agent.sessionList.deleteTooltip': 'Supprimer la session',
 	'agent.sessionList.deleteConfirm': 'Supprimer la session "{title}" ?',
+	'agent.sessionList.deleteConfirmAction': 'Supprimer',
+	'agent.sessionList.deleteCancel': 'Annuler',
 	'agent.sessionList.deleted': 'Session "{title}" supprimée',
 	'agent.sessionList.deleteFailed': 'Échec de la suppression de la session',
 	'agent.sessionSettings.model': 'Modèle',
 	'agent.sessionSettings.modelDesc': "Sélectionner le modèle d'IA pour cette session",
 	'agent.sessionSettings.useDefault': 'Utiliser par défaut',
 	'agent.sessionSettings.resetToDefault': 'Réinitialiser aux valeurs par défaut',
-	'agent.sessionSettings.temperature': 'Température',
-	'agent.sessionSettings.temperatureDesc': "Contrôle l'aléa (0 = déterministe, 2 = très créatif)",
-	'agent.sessionSettings.topP': 'Top-P',
-	'agent.sessionSettings.topPDesc':
-		"Seuil d'échantillonnage de noyau (0 = uniquement le meilleur jeton, 1 = tous les jetons)",
 	'agent.sessionSettings.promptTemplate': 'Modèle de prompt',
 	'agent.sessionSettings.promptTemplateDesc': 'Sélectionner un modèle de prompt personnalisé pour cette session',
 	'agent.sessionSettings.useDefaultPrompt': 'Utiliser le prompt par défaut',
@@ -854,7 +641,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'command.createProject': 'Créer un projet',
 	'command.convertToProject': 'Convertir la note en projet',
 	'command.openProjectSettings': 'Ouvrir les paramètres du projet',
-	'command.resumeProjectSession': 'Reprendre la session du projet',
+	'command.resumeProjectSession': 'Reprendre la session de projet',
 	'command.removeProject': 'Retirer le projet',
 	'command.rewriteSelection': "Réécrire le texte avec l'IA",
 	'command.explainSelection': "Expliquer la sélection avec l'IA",
@@ -879,8 +666,12 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 		"Impossible de joindre Ollama à l'adresse {url}. Assurez-vous que le démon Ollama est actif et que l'URL de base est correcte dans Paramètres → Gemini Scribe.",
 	'notice.main.noApiKey':
 		"Aucune clé d'API Gemini configurée. Ouvrez les Paramètres → Gemini Scribe pour en ajouter une. Obtenez une clé gratuite sur aistudio.google.com/apikey",
+	'notice.main.noApiKeyOpenai':
+		"Aucune clé d'API OpenAI configurée. Ouvrez Paramètres → Gemini Scribe pour en ajouter une. Obtenez une clé sur platform.openai.com/api-keys",
+	'notice.main.noApiKeyAnthropic':
+		"Aucune clé d'API Anthropic configurée. Ouvrez Paramètres → Gemini Scribe pour en ajouter une. Obtenez une clé sur platform.claude.com/settings/keys",
 	'notice.main.apiKeyRetrieveFailed':
-		'Impossible de récupérer votre clé API depuis le stockage sécurisé. Essayez de la saisir à nouveau dans Paramètres → Gemini Scribe → Clé API.',
+		"Impossible de récupérer votre clé d'API depuis le stockage sécurisé. Réessayez de la saisir dans Paramètres → Gemini Scribe → Fournisseurs → Google Gemini → Clé d'API.",
 	'notice.main.initFailedConsole':
 		"Échec de l'initialisation de Gemini Scribe : {error}. Consultez la console pour plus de détails.",
 	'notice.main.projectCreated': 'Projet créé : {path}',
@@ -894,10 +685,10 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'notice.main.projectRemoveFailed': 'Échec du retrait du statut de projet',
 	'notice.main.selectTextFirst': "Veuillez d'abord sélectionner du texte",
 	'notice.main.imageGenUnavailableProvider':
-		"Aucun fournisseur n'est configuré pour la génération d'images. Choisissez-en un sous Paramètres → Gemini Scribe → Fournisseur par fonctionnalité.",
+		"Aucun fournisseur n'est configuré pour la génération d'images. Choisissez-en un dans Paramètres → Gemini Scribe → Fonctionnalités → Génération d'images.",
 	'notice.main.imageGenUnavailable': "La génération d'images n'est pas disponible.",
 	'notice.main.ragUnavailableProvider':
-		"Aucun fournisseur n'est configuré pour l'index de recherche du coffre. Choisissez-en un sous Paramètres → Gemini Scribe → Fournisseur par fonctionnalité.",
+		"Aucun fournisseur n'est configuré pour l'index de recherche du coffre. Choisissez-en un dans Paramètres → Gemini Scribe → Coffre → Index de recherche du coffre.",
 	'notice.main.ragNotEnabled': "L'indexation RAG n'est pas activée",
 	'notice.main.ragAlreadyPaused': 'La synchronisation RAG est déjà en pause',
 	'notice.main.ragCannotPauseWhileIndexing': "Impossible de mettre en pause pendant que l'indexation est en cours",
@@ -916,7 +707,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'component.managementModalBase.backToList': '← Retour à la liste',
 	'component.managementModalBase.slugName': 'Nom de {label} (slug)',
 	'component.managementModalBase.slugDesc':
-		'Identifiant en minuscules utilisé comme nom de fichier et dans les chemins de sortie. Ne peut pas être modifié après la création.',
+		'Identifiant en minuscules utilisé comme nom de fichier et dans les chemins de sortie : lettres ASCII minuscules, chiffres et tirets simples (aucun tiret au début, à la fin ou consécutif), 1 à 64 caractères. Ne peut pas être modifié après la création.',
 	'component.managementModalBase.saveChanges': 'Enregistrer les modifications',
 	'component.managementModalBase.createEntity': 'Créer {label}',
 	'component.toolPolicyEditor.title': 'Accès aux outils',
@@ -1062,14 +853,6 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'notice.rewrite.selectionDone': 'Texte réécrit avec succès',
 	'notice.rewrite.rewritingFile': 'Réécriture du fichier entier...',
 	'notice.rewrite.fileDone': 'Fichier réécrit avec succès',
-	'validation.temperature.notANumber': "La température {value} n'est pas un nombre valide. Ajustée à {adjusted}.",
-	'validation.temperature.exceedsModelLimit':
-		'La température {value} dépasse la limite de {model} de {max}. Ajustée à {max}.',
-	'validation.temperature.outOfRange':
-		'La température {value} est en dehors de la plage valide [{min}, {max}]. Ajustée à {adjusted}.',
-	'validation.topP.notANumber': "Le Top P {value} n'est pas un nombre valide. Ajusté à {adjusted}.",
-	'validation.topP.outOfRange':
-		'Le Top P {value} est en dehors de la plage valide [{min}, {max}]. Ajusté à {adjusted}.',
 	'agent.planMode.toggleAria': "Activer/désactiver le mode Plan — examiner un plan avant l'exécution par l'agent",
 	'agent.planMode.label': 'Plan',
 	'agent.planMode.headerLabel': 'Agent (Plan)',
@@ -1077,4 +860,223 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'agent.planMode.rejectBtn': 'Rejeter',
 	'agent.planMode.rejectedNotice': 'Plan rejeté.',
 	'agent.planMode.proceedMessage': 'Poursuivre avec le plan approuvé.',
+	'agent.toolFailedStop':
+		"L'agent s'est arrêté car un appel d'outil a échoué ({tool}). Corrigez le problème et réessayez, ou désactivez « Arrêter l'agent lorsqu'un outil échoue » pour continuer malgré les erreurs d'outil.",
+	'agent.loopAborted':
+		"L'agent a continué de répéter le même appel d'outil (le détecteur de boucle s'est déclenché {count} fois). Arrêt de ce tour pour éviter une boucle infinie. Essayez de reformuler votre demande ou de démarrer une nouvelle session.",
+	'agent.emptyResponseFallback.withTools':
+		"J'ai effectué les actions demandées ({tools}) mais j'ai rencontré des difficultés pour générer un résumé. Les opérations ont réussi.",
+	'agent.emptyResponseFallback.noTools':
+		"J'ai effectué les actions demandées mais j'ai rencontré des difficultés pour générer un résumé. Les opérations ont réussi.",
+	'selection.emptyResponse': "L'IA a renvoyé une réponse vide. Veuillez réessayer.",
+	'provider.openai.noModelSelected': 'Aucun modèle OpenAI sélectionné. Choisissez un modèle dans les paramètres.',
+	'provider.openai.noImageData': "OpenAI n'a renvoyé aucune donnée d'image.",
+	'provider.unsupportedAttachment':
+		"{provider} ne prend en charge que les pièces jointes d'images ; {mimeType} reçu. Passez au fournisseur Gemini pour les fichiers PDF, audio ou vidéo.",
+	'provider.anthropic.noModelSelected': 'Aucun modèle Anthropic sélectionné. Choisissez un modèle dans les paramètres.',
+	'provider.unsupportedAttachmentPdf':
+		'{provider} ne prend en charge que les pièces jointes image et PDF ; {mimeType} reçu. Basculez vers le fournisseur Gemini pour les entrées audio ou vidéo.',
+	'provider.unsupportedAttachmentInHistory':
+		"{provider} ne prend en charge que les pièces jointes image ; l'historique de conversation contient {mimeType}. Basculez vers le fournisseur Gemini pour les entrées PDF, audio ou vidéo.",
+	'provider.unsupportedAttachmentInHistoryPdf':
+		"{provider} ne prend en charge que les pièces jointes image et PDF ; l'historique de conversation contient {mimeType}. Basculez vers le fournisseur Gemini pour les entrées audio ou vidéo.",
+	'provider.gemini.noImageData': "Aucune donnée d'image dans la réponse. Le modèle n'a peut-être renvoyé que du texte.",
+	'error.unknown': 'Une erreur inconnue est survenue',
+	'error.openaiInvalidKey': 'Clé API OpenAI non valide. Veuillez vérifier la clé API dans Paramètres → Gemini Scribe.',
+	'error.anthropicInvalidKey':
+		"Clé d'API Anthropic non valide. Veuillez vérifier la clé d'API dans Paramètres → Gemini Scribe.",
+	'error.modelNotOnEndpoint':
+		"Modèle non disponible sur ce point de terminaison. Veuillez vérifier vos paramètres de modèle ou l'URL de base configurée.",
+	'error.serverUnreachable':
+		"Impossible de se connecter au serveur du modèle. Si vous avez configuré une URL de base personnalisée (LM Studio, MLX, etc.), assurez-vous que le serveur est en cours d'exécution et que l'URL de base dans les paramètres est correcte.",
+	'error.invalidApiKey':
+		'Clé API non valide. Veuillez vérifier les identifiants de votre fournisseur de modèle dans les paramètres.',
+	'error.authFailed':
+		"Échec de l'authentification. Veuillez vérifier les identifiants de votre fournisseur de modèle et vous assurer que votre compte a accès à ce modèle.",
+	'error.quotaExhausted':
+		"Quota de l'offre gratuite épuisé pour ce modèle. Essayez de passer à un autre modèle (par ex. Gemini Flash) ou d'activer la facturation dans Google AI Studio.",
+	'error.rateLimit': 'Limite de requêtes API dépassée. Veuillez patienter un instant et réessayer.',
+	'error.ollamaModelNotPulled': 'Modèle Ollama non récupéré. Exécutez : ollama pull {model}',
+	'error.modelNotAvailable': "Le modèle sélectionné n'est pas disponible. Veuillez vérifier vos paramètres de modèle.",
+	'error.ollamaUnreachable':
+		"Impossible de se connecter au démon Ollama. Assurez-vous que `ollama serve` est en cours d'exécution et que l'URL de base dans les paramètres est correcte.",
+	'error.network': "Erreur réseau : Impossible de joindre l'API du modèle. Veuillez vérifier votre connexion.",
+	'error.timeout': "La requête a expiré. L'API a mis trop de temps à répondre. Veuillez réessayer.",
+	'error.serviceUnavailable': "L'API du modèle est temporairement indisponible. Veuillez réessayer plus tard.",
+	'error.safetyBlocked': 'Le contenu a été bloqué par les filtres de sécurité. Veuillez reformuler votre demande.',
+	'error.tokenLimit':
+		"La requête dépasse la limite de jetons. Veuillez réduire la longueur de votre message ou de l'historique de conversation.",
+	'error.apiPrefix': 'Erreur API : {message}',
+	'error.communicationFailed': "Une erreur est survenue lors de la communication avec l'API du modèle",
+	'error.unknownCommunication': "Une erreur inconnue est survenue lors de la communication avec l'API du modèle",
+	'error.http.badRequest':
+		"Requête incorrecte : La requête API n'est pas valide. Veuillez vérifier votre message et réessayer.",
+	'error.http.unauthorized':
+		"Échec de l'authentification : Clé API non valide. Veuillez vérifier les identifiants de votre fournisseur de modèle dans les paramètres.",
+	'error.http.forbidden':
+		"Accès interdit : Le fournisseur du modèle a refusé l'accès à ce modèle ou à cette fonctionnalité.",
+	'error.http.notFound':
+		"Modèle introuvable : Le modèle sélectionné n'est pas disponible. Veuillez vérifier vos paramètres de modèle.",
+	'error.http.rateLimit': 'Limite de requêtes dépassée : Trop de requêtes. Veuillez patienter un instant et réessayer.',
+	'error.http.serverError':
+		"Erreur serveur : L'API du modèle a rencontré une erreur interne. Veuillez réessayer plus tard.",
+	'error.http.serviceUnavailable':
+		"Service indisponible : L'API du modèle est temporairement hors service. Veuillez réessayer plus tard.",
+	'error.http.gatewayTimeout':
+		"Délai d'attente de la passerelle dépassé : La requête API a mis trop de temps. Veuillez réessayer.",
+	'error.http.serverErrorWithCode':
+		"Erreur serveur ({statusCode}) : L'API du modèle rencontre des difficultés. Veuillez réessayer plus tard.",
+	'error.http.clientErrorWithCode': 'Erreur client ({statusCode}) : {message}',
+	'error.http.clientErrorWithCodeNoDetail':
+		'Erreur client ({statusCode}) : Veuillez vérifier votre requête et réessayer.',
+	'error.http.genericWithCode': 'Erreur HTTP {statusCode} : {message}',
+	'error.http.genericWithCodeNoDetail': 'Erreur HTTP {statusCode} : Une erreur inattendue est survenue.',
+	'settings.advanced.compactionThresholdName': 'Seuil de compactage du contexte',
+	'settings.advanced.compactionThresholdDesc':
+		'Les tours précédents sont résumés dès que la fenêtre de contexte atteint ce pourcentage de remplissage.',
+	'settings.advanced.stopOnToolErrorName': "Arrêter l'agent en cas d'échec d'un outil",
+	'settings.advanced.stopOnToolErrorDesc':
+		"Si désactivé, l'agent continue son exécution après l'échec d'un outil au lieu d'interrompre le tour.",
+	'settings.advanced.summaryFrontmatterKeyName': 'Clé frontmatter du résumé',
+	'settings.advanced.summaryFrontmatterKeyDesc':
+		"Nom de la propriété frontmatter utilisée pour stocker le résumé généré d'une note.",
+	'settings.advanced.logToolExecutionName': "Enregistrer les appels d'outils dans l'historique de session",
+	'settings.advanced.logToolExecutionDesc': "Nécessite l'activation de l'historique de session.",
+	'settings.advanced.diagnosticsHeading': 'Diagnostics',
+	'settings.advanced.debugModeName': 'Mode débogage',
+	'settings.advanced.debugModeDesc':
+		'Enregistre des détails supplémentaires dans la console de développement pour aider à diagnostiquer les problèmes.',
+	'settings.advanced.showTokenUsageName': "Afficher l'utilisation des jetons",
+	'settings.advanced.showTokenUsageDesc': "Affiche le nombre de jetons pour chaque message dans la vue de l'agent.",
+	'settings.advanced.logToFileName': 'Journaliser les appels API dans un fichier',
+	'settings.advanced.logToFileDesc':
+		"Enregistre chaque requête et réponse de l'API du modèle dans un fichier journal situé dans le dossier du plugin.",
+	'settings.automation.manageScheduledTasksName': 'Gérer les tâches planifiées',
+	'settings.automation.manageScheduledTasksDesc': "Consulter, modifier et exécuter vos tâches d'agent planifiées.",
+	'settings.automation.newTaskName': 'Nouvelle tâche planifiée',
+	'settings.automation.newTaskDesc': 'Créer une nouvelle tâche planifiée.',
+	'settings.automation.autoRunCatchUpName': 'Rattraper automatiquement les tâches manquées au démarrage',
+	'settings.automation.autoRunCatchUpDesc':
+		"Si Obsidian était fermé à l'heure prévue d'une tâche, l'exécute automatiquement à la prochaine ouverture du coffre.",
+	'settings.automation.taskCount': '{count} tâches',
+	'settings.automation.taskCountSingular': '{count} tâche',
+	'settings.automation.enableHooksName': 'Activer les hooks de cycle de vie',
+	'settings.automation.enableHooksDesc':
+		"Permet à l'IA de s'exécuter automatiquement lors d'événements du coffre, comme la création ou la modification d'un fichier.",
+	'settings.automation.manageHooksName': 'Gérer les hooks',
+	'settings.automation.manageHooksDesc': 'Consulter, modifier et exécuter vos hooks de cycle de vie.',
+	'settings.automation.newHookName': 'Nouveau hook',
+	'settings.automation.newHookDesc': 'Créer un nouveau hook de cycle de vie.',
+	'settings.automation.hooksStatusOn': 'Activé',
+	'settings.automation.hooksStatusOff': 'Désactivé',
+	'settings.automation.openHookManagerFailed': "Impossible d'ouvrir le gestionnaire de hooks : {error}",
+	'settings.automation.openSchedulerFailed': "Impossible d'ouvrir le planificateur : {error}",
+	'settings.mcp.noServers': 'Aucun serveur MCP configuré pour le moment.',
+	'settings.mcp.addServerButton': 'Ajouter un serveur MCP',
+	'settings.mcp.editButton': 'Modifier',
+	'settings.mcp.httpUrl': 'URL : {url}',
+	'settings.mcp.authorized': 'Autorisé',
+	'settings.mcp.duplicateServerName': 'Un serveur nommé "{name}" existe déjà.',
+	'settings.mcp.reconnectFailed': 'Enregistré, mais la reconnexion à "{name}" a échoué : {error}',
+	'settings.mcp.openEditorFailed': "Impossible d'ouvrir l'éditeur de serveur MCP : {error}",
+	'settings.mcp.openAddDialogFailed': "Impossible d'ouvrir la boîte de dialogue d'ajout de serveur : {error}",
+	'settings.mcp.savedButConnectFailed': 'Enregistré, mais la connexion au serveur a échoué : {error}',
+	'settings.mcp.serverCount': '{count} serveurs',
+	'settings.mcp.serverCountSingular': '{count} serveur',
+	'settings.rag.privacyNoticeName': 'Confidentialité',
+	'settings.rag.privacyNotice':
+		"L'indexation envoie le contenu des notes à Google File Search pour la recherche sémantique. Les dossiers et pièces jointes exclus ne quittent jamais votre appareil.",
+	'settings.rag.enableName': 'Indexer ce coffre',
+	'settings.rag.enableDesc': "Créer un index sémantique interrogeable de vos notes à l'aide de Google File Search.",
+	'settings.rag.statusName': 'État',
+	'settings.rag.notYetIndexed': 'Pas encore indexé.',
+	'settings.rag.filesIndexed': '{count} fichiers indexés.',
+	'settings.rag.reindexButton': 'Réanalyser',
+	'settings.rag.indexingButton': 'Indexation…',
+	'settings.rag.indexResult': '{indexed} indexés, {skipped} ignorés, {failed} échoués.',
+	'settings.rag.indexingFailed': "Échec de l'indexation : {error}",
+	'settings.rag.serviceNotInitialized': "Le service d'indexation de recherche du coffre n'est pas encore initialisé.",
+	'settings.rag.deleteIndexButton': "Supprimer l'index",
+	'settings.rag.deletingButton': 'Suppression…',
+	'settings.rag.indexDeletedNotice': 'Index de recherche du coffre supprimé.',
+	'settings.rag.deleteIndexFailed': "Échec de la suppression de l'index de recherche du coffre : {error}",
+	'settings.rag.openDeleteConfirmFailed': "Échec de l'ouverture de la confirmation de suppression de l'index : {error}",
+	'settings.rag.storeNameName': "Nom de l'index",
+	'settings.rag.storeNameDescAssigned': 'Attribué automatiquement par Google File Search.',
+	'settings.rag.storeNameDescPending': 'Attribué automatiquement dès la première indexation du coffre.',
+	'settings.rag.copyButton': 'Copier',
+	'settings.rag.copyTooltip': "Copier le nom de l'index dans le presse-papiers",
+	'settings.rag.storeNameCopiedNotice': "Nom de l'index copié dans le presse-papiers.",
+	'settings.rag.whatGetsIndexedHeading': 'Ce qui est indexé',
+	'settings.rag.autoSyncName': 'Synchroniser automatiquement les modifications',
+	'settings.rag.autoSyncDesc':
+		"Garder l'index à jour au fur et à mesure que des notes sont créées, modifiées et supprimées.",
+	'settings.rag.includeAttachmentsName': 'Inclure les pièces jointes',
+	'settings.rag.includeAttachmentsDesc':
+		'Indexer également les PDF et autres pièces jointes prises en charge, pas seulement les notes.',
+	'settings.rag.excludeFoldersName': 'Exclure des dossiers',
+	'settings.rag.excludeFoldersDesc':
+		"Un chemin de dossier par ligne. {folders} sont toujours exclus et n'ont pas besoin d'être listés.",
+	'settings.rag.excludeFoldersPlaceholder': 'dossier/sous-dossier',
+	'settings.rag.summaryOn': 'Activé · {count} fichiers',
+	'settings.rag.summaryOff': 'Désactivé',
+	'settings.tools.presetName': 'Préréglage',
+	'settings.tools.presetDesc': "« Personnalisé » s'affiche ici dès que vous modifiez un outil ci-dessous.",
+	'settings.tools.toolsHeading': 'Outils',
+	'settings.tools.filterPlaceholder': 'Filtrer les outils…',
+	'settings.tools.filterRowName': 'Filtrer par type',
+	'settings.tools.filterAll': 'Tous',
+	'settings.tools.filterRead': 'Lecture',
+	'settings.tools.filterWrite': 'Écriture',
+	'settings.tools.filterDestructive': 'Destructif',
+	'settings.tools.filterExternal': 'Externe',
+	'settings.tools.filterMcp': 'MCP',
+	'settings.tools.noToolsName': 'Aucun outil enregistré',
+	'settings.tools.noToolsDesc':
+		"Les permissions d'outils apparaîtront ici une fois le chargement des outils de l'agent terminé.",
+	'settings.tools.yoloConfirmFailed': "Échec de l'ouverture de la confirmation du mode YOLO : {error}",
+	'settings.common.listSeparator': '·',
+	'settings.providers.shortLabel.gemini': 'Gemini',
+	'settings.providers.shortLabel.ollama': 'Ollama',
+	'settings.providers.shortLabel.openai': 'OpenAI',
+	'settings.providers.shortLabel.anthropic': 'Anthropic',
+	'settings.providers.cardNameGemini': 'Google Gemini',
+	'settings.providers.apiKeyName': 'Clé API',
+	'settings.providers.apiKeyDesc':
+		"Enregistrée dans le stockage des secrets d'Obsidian, et non dans les données de ce coffre.",
+	'settings.providers.baseUrlName': 'URL de base',
+	'settings.providers.baseUrlOptionalDesc': 'Laisser vide pour utiliser le point de terminaison par défaut.',
+	'settings.providers.baseUrlRequiredDesc': 'Adresse du serveur local avec lequel ce fournisseur communique.',
+	'settings.providers.baseUrlPlaceholder': 'http://localhost:11434',
+	'settings.providers.baseUrlInvalid': 'Saisissez une URL valide.',
+	'settings.providers.modelsHeading': 'Modèles',
+	'settings.providers.modelsRowName': 'Modèles disponibles',
+	'settings.providers.refreshButton': 'Actualiser',
+	'settings.providers.refreshUnreachable':
+		'Impossible de joindre {provider}. Vérifiez le point de terminaison et réessayez.',
+	'settings.providers.refreshNeedsKey': 'Ajoutez une clé API pour {provider} afin de charger ses modèles.',
+	'settings.providers.modelsAvailable': '{count} disponibles',
+	'settings.providers.modelsPulledAndCloud': '{count} téléchargés · {cloud} cloud',
+	'settings.providers.ollamaCloudModelLabel': '{model} (cloud)',
+	'settings.providers.modelsPulled': '{count} téléchargés',
+	'settings.providers.modelsLoading': 'Chargement…',
+	'settings.providers.includesHeading': 'Inclus',
+	'settings.providers.includesMaps': 'Ancrage Google Maps',
+	'settings.providers.includesUrlFetch': 'Récupération de page par URL',
+	'settings.providers.includesNone': 'Rien de plus',
+	'settings.providers.usedByHeading': 'Utilisé par',
+	'settings.providers.usedByNone': "Rien pour l'instant",
+	'settings.providers.statusConnected': 'Connecté',
+	'settings.providers.statusNeedsKey': 'Non configuré',
+	'settings.providers.statusUnreachable': 'Inaccessible',
+	'settings.providers.statusUnknown': 'Pas encore vérifié',
+	'settings.providers.defaultProviderName': 'Fournisseur par défaut',
+	'settings.providers.defaultProviderDesc': "Utilisé par toute fonctionnalité qui n'est pas redirigée ailleurs.",
+	'settings.providers.privacyNoticeName': 'Confidentialité',
+	'settings.providers.privacyNoticeDesc':
+		"Seuls les fournisseurs réellement utilisés par vos fonctionnalités reçoivent votre contenu. Ollama conserve les requêtes sur cette machine, à l'exception des modèles marqués \"cloud\", qu'il transmet à ollama.com. Gemini, OpenAI et Anthropic envoient la requête aux serveurs de l'entreprise concernée.",
+	'settings.providers.defaultMoved': '{count} fonctionnalités déplacées vers le nouveau fournisseur par défaut.',
+	'settings.providers.groupOnProvider': '{group} sur {provider}',
+	'settings.features.modelMissingHelp':
+		"{model} n'est plus disponible auprès de ce fournisseur. Choisissez-en un autre.",
 };

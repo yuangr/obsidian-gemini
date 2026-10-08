@@ -154,7 +154,6 @@ describe('ToolLoopDetector', () => {
 
 		expect(info.isLoop).toBe(false);
 		expect(info.identicalCallCount).toBe(2);
-		expect(info.consecutiveCallCount).toBe(2);
 		expect(info.timeWindowMs).toBe(60000);
 		expect(info.lastCallTimestamp).toBeDefined();
 	});
@@ -179,22 +178,31 @@ describe('ToolLoopDetector', () => {
 		// Should be treated as different
 		expect(detector.isLoopDetected(sessionId, nullCall)).toBe(false);
 	});
+});
 
-	it('should update configuration', () => {
-		const sessionId = 'test-session';
-		const toolCall: ToolCall = { name: 'test', arguments: {} };
+describe('ToolLoopDetector - key cleanup (#1387)', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
 
-		// Record 2 calls
-		detector.recordExecution(sessionId, toolCall);
-		detector.recordExecution(sessionId, toolCall);
+	it('deletes the session key when cleanup empties it, instead of parking an empty array', () => {
+		// A zero-second window means nothing survives cleanup: the just-recorded
+		// entry is already expired, so the key is dropped entirely rather than
+		// left as an empty array the session's lifetime would keep alive.
+		const detector = new ToolLoopDetector(2, 0);
+		detector.recordExecution('s1', { name: 'read_file', arguments: {} });
 
-		// Should not detect loop with threshold of 3
-		expect(detector.isLoopDetected(sessionId, toolCall)).toBe(false);
+		const internal = detector as unknown as { executionHistory: Map<string, unknown[]> };
+		expect(internal.executionHistory.has('s1')).toBe(false);
+	});
 
-		// Update config to lower threshold
-		detector.updateConfig(2, 60);
+	it('keeps the session key while at least one entry is still within the window', () => {
+		vi.useFakeTimers();
+		const detector = new ToolLoopDetector(2, 60);
+		detector.recordExecution('s1', { name: 'read_file', arguments: {} });
 
-		// Now should detect loop
-		expect(detector.isLoopDetected(sessionId, toolCall)).toBe(true);
+		const internal = detector as unknown as { executionHistory: Map<string, unknown[]> };
+		expect(internal.executionHistory.has('s1')).toBe(true);
+		expect(internal.executionHistory.get('s1')).toHaveLength(1);
 	});
 });

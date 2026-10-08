@@ -15,14 +15,6 @@ export class ToolLoopDetector {
 	}
 
 	/**
-	 * Update configuration
-	 */
-	updateConfig(loopThreshold: number, timeWindowSeconds: number) {
-		this.loopThreshold = loopThreshold;
-		this.timeWindowMs = timeWindowSeconds * 1000;
-	}
-
-	/**
 	 * Record a tool execution
 	 */
 	recordExecution(sessionId: string, toolCall: ToolCall) {
@@ -34,7 +26,7 @@ export class ToolLoopDetector {
 		}
 
 		const history = this.executionHistory.get(sessionId)!;
-		history.push({ key, timestamp, toolCall });
+		history.push({ key, timestamp });
 
 		// Keep history size manageable
 		if (history.length > this.maxHistorySize) {
@@ -49,36 +41,18 @@ export class ToolLoopDetector {
 	 * Check if executing this tool call would create a loop
 	 */
 	isLoopDetected(sessionId: string, toolCall: ToolCall): boolean {
-		const key = this.getToolCallKey(toolCall);
-		const history = this.executionHistory.get(sessionId) || [];
-		const now = Date.now();
-
-		// Count recent identical calls
-		const recentIdenticalCalls = history.filter(
-			(record) => record.key === key && now - record.timestamp < this.timeWindowMs
-		);
-
-		return recentIdenticalCalls.length >= this.loopThreshold;
+		return this.getRecentIdenticalCalls(sessionId, toolCall).length >= this.loopThreshold;
 	}
 
 	/**
 	 * Get loop detection info for a tool call
 	 */
 	getLoopInfo(sessionId: string, toolCall: ToolCall): LoopDetectionInfo {
-		const key = this.getToolCallKey(toolCall);
-		const history = this.executionHistory.get(sessionId) || [];
-		const now = Date.now();
-
-		const recentIdenticalCalls = history.filter(
-			(record) => record.key === key && now - record.timestamp < this.timeWindowMs
-		);
-
-		const consecutiveCalls = this.countConsecutiveCalls(history, key);
+		const recentIdenticalCalls = this.getRecentIdenticalCalls(sessionId, toolCall);
 
 		return {
 			isLoop: recentIdenticalCalls.length >= this.loopThreshold,
 			identicalCallCount: recentIdenticalCalls.length,
-			consecutiveCallCount: consecutiveCalls,
 			timeWindowMs: this.timeWindowMs,
 			lastCallTimestamp: recentIdenticalCalls[recentIdenticalCalls.length - 1]?.timestamp,
 		};
@@ -89,6 +63,21 @@ export class ToolLoopDetector {
 	 */
 	clearSession(sessionId: string) {
 		this.executionHistory.delete(sessionId);
+	}
+
+	/**
+	 * Records for this session matching the tool call, within the time window.
+	 *
+	 * The `isLoop` decision and the `identicalCallCount` reported alongside it are
+	 * the same count, so both entry points read it from here rather than each
+	 * repeating the key/history/window filter.
+	 */
+	private getRecentIdenticalCalls(sessionId: string, toolCall: ToolCall): ToolExecutionRecord[] {
+		const key = this.getToolCallKey(toolCall);
+		const history = this.executionHistory.get(sessionId) || [];
+		const now = Date.now();
+
+		return history.filter((record) => record.key === key && now - record.timestamp < this.timeWindowMs);
 	}
 
 	/**
@@ -117,21 +106,6 @@ export class ToolLoopDetector {
 	}
 
 	/**
-	 * Count consecutive calls with the same key
-	 */
-	private countConsecutiveCalls(history: ToolExecutionRecord[], targetKey: string): number {
-		let count = 0;
-		for (let i = history.length - 1; i >= 0; i--) {
-			if (history[i].key === targetKey) {
-				count++;
-			} else {
-				break;
-			}
-		}
-		return count;
-	}
-
-	/**
 	 * Clean up entries older than the time window
 	 */
 	private cleanupOldEntries(sessionId: string) {
@@ -143,20 +117,30 @@ export class ToolLoopDetector {
 			(record) => now - record.timestamp < this.timeWindowMs * 2 // Keep 2x window for analysis
 		);
 
-		this.executionHistory.set(sessionId, filtered);
+		// When everything expires, drop the key entirely instead of parking an
+		// empty array under it — otherwise a dead session's key lives forever.
+		if (filtered.length === 0) {
+			this.executionHistory.delete(sessionId);
+		} else {
+			this.executionHistory.set(sessionId, filtered);
+		}
 	}
 }
 
+/**
+ * One recorded call. Only the derived {@link key} and the timestamp are kept —
+ * matching and windowing are both done on those, so holding the original
+ * `ToolCall` (and its arguments) here would retain it for the life of the
+ * session's history for no reader.
+ */
 interface ToolExecutionRecord {
 	key: string;
 	timestamp: number;
-	toolCall: ToolCall;
 }
 
 export interface LoopDetectionInfo {
 	isLoop: boolean;
 	identicalCallCount: number;
-	consecutiveCallCount: number;
 	timeWindowMs: number;
 	lastCallTimestamp?: number;
 }

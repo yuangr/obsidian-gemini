@@ -2,6 +2,7 @@ import type { Mock } from 'vitest';
 import { runHeadlessAgentTurn } from '../../src/services/headless-agent-turn';
 import type { HeadlessAgentTurnSpec } from '../../src/services/headless-agent-turn';
 import type { AgentLoopResult } from '../../src/agent/agent-loop';
+import { SessionManager } from '../../src/agent/session-manager';
 import { PolicyPreset } from '../../src/types/tool-policy';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -9,6 +10,7 @@ import { PolicyPreset } from '../../src/types/tool-policy';
 vi.mock('obsidian', () => ({
 	normalizePath: (p: string) => p,
 	TFile: class {},
+	TFolder: class {},
 }));
 
 vi.mock('../../src/utils/format-utils', () => ({
@@ -60,7 +62,6 @@ function successfulLoopResult(markdown = 'Tool result text.'): AgentLoopResult {
 		markdown,
 		history: [],
 		cancelled: false,
-		retried: false,
 		fellBack: false,
 		exhausted: false,
 		loopAborted: false,
@@ -77,11 +78,20 @@ function createMockPlugin(): any {
 	return {
 		logger: { log: vi.fn(), debug: vi.fn(), error: vi.fn(), warn: vi.fn() },
 		settings: {
-			chatModelName: 'plugin-default-model',
-			temperature: 1,
-			topP: 0.95,
+			historyFolder: 'gemini-scribe',
+			features: {
+				chat: { provider: 'gemini', model: 'plugin-default-model' },
+				summary: { provider: 'gemini', model: '' },
+				completions: { provider: 'gemini', model: '' },
+				rewrite: { provider: 'gemini', model: '' },
+				webSearch: { provider: 'gemini', model: '' },
+				deepResearch: { provider: 'gemini', model: '' },
+				rag: { provider: 'gemini', model: '' },
+				imageGen: { provider: 'gemini', model: '' },
+			},
 		},
 		sessionManager: {
+			releaseSession: vi.fn(),
 			createAgentSession: vi.fn().mockResolvedValue({
 				id: 'session-1',
 				title: 'Headless: test',
@@ -95,6 +105,7 @@ function createMockPlugin(): any {
 			getAutoApprovedTools: vi.fn().mockReturnValue(AUTO_APPROVED_TOOLS),
 		},
 		toolExecutionEngine: {
+			clearLoopDetectorSession: vi.fn(),
 			executeTool: vi.fn().mockResolvedValue({ success: true, output: 'ok' }),
 		},
 		app: { vault: {} },
@@ -103,7 +114,7 @@ function createMockPlugin(): any {
 
 function makeSpec(overrides: Partial<HeadlessAgentTurnSpec> = {}): HeadlessAgentTurnSpec {
 	return {
-		sessionLabel: 'Scheduled: test-task',
+		sessionLabel: 'Scheduled task - test-task',
 		logPrefix: '[TestRunner]',
 		subjectNoun: 'Task',
 		subjectName: 'test-task',
@@ -125,6 +136,56 @@ describe('runHeadlessAgentTurn', () => {
 		vi.clearAllMocks();
 		(ModelClientFactory.createChatModel as Mock).mockReturnValue(createMockModelApi());
 		mockAgentLoopRun.mockResolvedValue(successfulLoopResult());
+	});
+
+	describe('temporary session lifetime', () => {
+		it.each([
+			'answer',
+			'empty answer',
+			'cancel before request',
+			'cancel after request',
+			'tool answer',
+			'loop cancellation',
+			'exhaustion',
+			'request error',
+			'loop error',
+			'setup error',
+		])('releases only the temporary session after %s', async (outcome) => {
+			const plugin = createMockPlugin();
+			const manager = new SessionManager(plugin);
+			plugin.sessionManager = manager;
+			const existing = await manager.createAgentSession('Interactive session');
+			const createSession = vi.spyOn(manager, 'createAgentSession');
+			const modelApi = createMockModelApi(outcome === 'empty answer' ? '' : 'Answer');
+			(ModelClientFactory.createChatModel as Mock).mockReturnValue(modelApi);
+			if (['tool answer', 'loop cancellation', 'exhaustion', 'loop error'].includes(outcome)) {
+				modelApi.generateModelResponse.mockResolvedValue({ markdown: '', toolCalls: [{ name: 'read_file' }] });
+			}
+			if (outcome === 'loop cancellation')
+				mockAgentLoopRun.mockResolvedValue({ ...successfulLoopResult(), cancelled: true });
+			if (outcome === 'exhaustion') mockAgentLoopRun.mockResolvedValue({ ...successfulLoopResult(), exhausted: true });
+			if (outcome === 'request error') modelApi.generateModelResponse.mockRejectedValue(new Error('request failed'));
+			if (outcome === 'loop error') mockAgentLoopRun.mockRejectedValue(new Error('loop failed'));
+			if (outcome === 'setup error')
+				plugin.toolRegistry.getAutoApprovedTools.mockImplementation(() => {
+					throw new Error('setup failed');
+				});
+			let checks = 0;
+			const turn = runHeadlessAgentTurn(
+				plugin,
+				makeSpec(),
+				() => outcome === 'cancel before request' || (outcome === 'cancel after request' && checks++ > 0)
+			);
+			if (['exhaustion', 'request error', 'loop error', 'setup error'].includes(outcome)) {
+				await expect(turn).rejects.toThrow(outcome === 'exhaustion' ? 'exhausted' : 'failed');
+			} else {
+				await turn;
+			}
+			const temporary = await createSession.mock.results[0].value;
+			expect(manager.getSession(temporary.id)).toBeUndefined();
+			expect(manager.getSession(existing.id)).toBe(existing);
+			expect(plugin.toolExecutionEngine.clearLoopDetectorSession).toHaveBeenCalledExactlyOnceWith(temporary.id);
+		});
 	});
 
 	describe('missing agent services', () => {
@@ -188,7 +249,7 @@ describe('runHeadlessAgentTurn', () => {
 
 			const result = await runHeadlessAgentTurn(createMockPlugin(), makeSpec(), () => false);
 
-			expect(result).toBe('Straight answer.');
+			expect(result).toEqual({ text: 'Straight answer.', notice: undefined });
 			expect(mockAgentLoopRun).not.toHaveBeenCalled();
 		});
 
@@ -201,7 +262,7 @@ describe('runHeadlessAgentTurn', () => {
 
 			// Empty string, not undefined — callers distinguish "cancelled"
 			// (undefined) from "ran but produced nothing" (empty).
-			expect(result).toBe('');
+			expect(result).toEqual({ text: '', notice: undefined });
 		});
 	});
 
@@ -218,7 +279,7 @@ describe('runHeadlessAgentTurn', () => {
 
 			const result = await runHeadlessAgentTurn(plugin, makeSpec(), () => false);
 
-			expect(result).toBe('Loop answer.');
+			expect(result).toEqual({ text: 'Loop answer.', notice: undefined });
 			expect(mockAgentLoopRun).toHaveBeenCalledWith(
 				expect.objectContaining({
 					initialUserMessage: '[preamble] Write a daily summary.',
@@ -277,6 +338,29 @@ describe('runHeadlessAgentTurn', () => {
 				)
 			).rejects.toThrow('[HookRunner] Hook "my-hook" exhausted');
 		});
+
+		it.each([
+			['fellBack', { fellBack: true, loopAborted: false } as const],
+			['loopAborted', { fellBack: false, loopAborted: true } as const],
+			['both flags', { fellBack: true, loopAborted: true } as const],
+		])('surfaces %s as a notice on the result', async (_label, flags) => {
+			mockAgentLoopRun.mockResolvedValue({
+				...successfulLoopResult('Loop notice text.'),
+				...flags,
+			});
+
+			const result = await runHeadlessAgentTurn(createMockPlugin(), makeSpec(), () => false);
+
+			expect(result).toEqual({ text: 'Loop notice text.', notice: flags });
+		});
+
+		it('omits the notice for a clean terminal answer', async () => {
+			mockAgentLoopRun.mockResolvedValue(successfulLoopResult('Real answer.'));
+
+			const result = await runHeadlessAgentTurn(createMockPlugin(), makeSpec(), () => false);
+
+			expect(result?.notice).toBeUndefined();
+		});
 	});
 
 	describe('tool exposure', () => {
@@ -310,10 +394,10 @@ describe('runHeadlessAgentTurn', () => {
 			const plugin = createMockPlugin();
 			const toolPolicy = { preset: PolicyPreset.READ_ONLY };
 
-			await runHeadlessAgentTurn(plugin, makeSpec({ sessionLabel: 'Hook: my-hook', toolPolicy }), () => false);
+			await runHeadlessAgentTurn(plugin, makeSpec({ sessionLabel: 'Hook - my-hook', toolPolicy }), () => false);
 
 			expect(plugin.sessionManager.createAgentSession).toHaveBeenCalledWith(
-				'Hook: my-hook',
+				'Hook - my-hook',
 				expect.objectContaining({ toolPolicy, requireConfirmation: [] })
 			);
 		});
@@ -327,6 +411,16 @@ describe('runHeadlessAgentTurn', () => {
 				expect.any(String),
 				expect.objectContaining({ toolPolicy: undefined })
 			);
+		});
+
+		it('marks the session ephemeral so history writers skip its nominal file', async () => {
+			const plugin = createMockPlugin();
+			const session = { modelConfig: {} as any, created: new Date() } as any;
+			plugin.sessionManager.createAgentSession = vi.fn().mockResolvedValue(session);
+
+			await runHeadlessAgentTurn(plugin, makeSpec(), () => false);
+
+			expect(session.ephemeral).toBe(true);
 		});
 
 		it('applies a model override to both the session and the request', async () => {
@@ -352,7 +446,7 @@ describe('runHeadlessAgentTurn', () => {
 			expect(lastRequest().userMessage).toBe('[preamble] Do the thing.');
 		});
 
-		it('sends a non-rendering, history-free extended request with plugin sampling settings', async () => {
+		it('sends a non-rendering, history-free extended request', async () => {
 			await runHeadlessAgentTurn(createMockPlugin(), makeSpec(), () => false);
 
 			expect(lastRequest()).toMatchObject({
@@ -360,8 +454,6 @@ describe('runHeadlessAgentTurn', () => {
 				conversationHistory: [],
 				prompt: '',
 				renderContent: false,
-				temperature: 1,
-				topP: 0.95,
 			});
 		});
 

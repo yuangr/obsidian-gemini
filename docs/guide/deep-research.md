@@ -16,7 +16,15 @@ This is fundamentally different from the regular Google Search tool, which retur
 
 ## Getting Started
 
-Deep Research is always available as long as you have a valid API key configured. No additional setup is required for web-only research.
+Deep Research has its own row on the **Features** page (Web and research group) — it's a
+Gemini-only feature with no model field of its own (the underlying managed agent has no model
+parameter). It's routed to Gemini automatically as long as the Gemini provider is connected; no
+additional setup is required for web-only research.
+
+> **Note:** If your vault was migrated from an Ollama-primary setup, Deep Research comes through
+> the migration turned **Off** (Ollama can't serve it, so there's nothing to route it to
+> automatically). Turn it on under **Features → Deep research → Google Gemini** — there's no model
+> to pick, just the provider.
 
 To include your vault notes in research, you'll need [Semantic Vault Search](/guide/semantic-search) enabled and your vault indexed.
 
@@ -96,6 +104,7 @@ When you specify an output file:
 - A `.md` extension is added automatically if missing
 - The file is added to your current session context, so the agent can reference the findings in follow-up messages
 - Protected folders (Obsidian's configuration folder — `.obsidian` by default, or a renamed one — and the plugin state folder) cannot be used as output paths
+- The path must name a file inside your vault: a blank path, or one that escapes the vault with `..`, is rejected
 
 ## How It Differs from Google Search
 
@@ -155,6 +164,7 @@ Deep Research is inherently slow — it's performing thorough multi-source inves
 The research succeeded but saving failed. Check that:
 
 - The output path isn't in a protected folder (Obsidian's configuration folder — `.obsidian` by default, or a renamed one — or the plugin state folder)
+- The output path names a file inside the vault — a blank path, or one containing `..`, is rejected
 - You have write permissions to the target directory
 - The research results are still available in the chat — you can copy them manually
 

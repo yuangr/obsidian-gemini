@@ -2,7 +2,10 @@ import { Tool, ToolResult, ToolExecutionContext } from './types';
 import { ToolCategory } from '../types/agent';
 import { ToolClassification } from '../types/tool-policy';
 import { getRawErrorMessage } from '../utils/error-utils';
+import { executeWithRetry } from '../utils/retry';
+import { isPathInProjectScope } from './vault/utils';
 import { resolveGenerateContentModel } from '../models';
+import { featureModel, featureProvider } from '../api/feature-routing';
 
 /**
  * Search result from RAG semantic search
@@ -10,7 +13,6 @@ import { resolveGenerateContentModel } from '../models';
 interface RagSearchResult {
 	path?: string;
 	excerpt: string;
-	relevance?: number;
 }
 
 /**
@@ -179,9 +181,21 @@ export class RagSearchTool implements Tool {
 			// Validate and clamp maxResults
 			const maxResults = Math.min(Math.max(params.maxResults || 5, 1), 20);
 
-			// Build metadata filter if folder or tags are specified
-			// Default to project root path when no explicit folder is provided
+			// Resolve the effective folder: explicit argument wins over the
+			// project-root default — but only inside the boundary. With a project
+			// active, an out-of-project folder is rejected with an error rather
+			// than silently searched (#1506); a falsy `projectRootPath` (no
+			// project, or vault-root project) disables the boundary.
 			const folder = params.folder || context.projectRootPath;
+			if (!isPathInProjectScope(folder, context.projectRootPath)) {
+				return {
+					success: false,
+					error:
+						`Cannot search folder '${folder}': it is outside the active project root ` +
+						`'${context.projectRootPath}'. Semantic search is scoped to the project root while a project is active; ` +
+						'omit the folder argument to search the project root, or pick a folder inside it.',
+				};
+			}
 			const metadataFilter = this.buildMetadataFilter(folder, params.tags);
 
 			// Reuse API client from RAG indexing service
@@ -201,21 +215,38 @@ export class RagSearchTool implements Tool {
 				fileSearchConfig.metadataFilter = metadataFilter;
 			}
 
-			// Perform search using generateContent with File Search tool.
-			// Use the configured chat model for consistency; an interactions-only
-			// chat model falls back to the bundled default since File Search runs
-			// on generateContent.
-			const response = await ai.models.generateContent({
-				model: resolveGenerateContentModel(plugin.settings.chatModelName),
-				contents: `Search for information about: ${params.query}\n\nProvide a summary of the most relevant findings from the indexed documents. Include specific file references when available.`,
-				config: {
-					tools: [
-						{
-							fileSearch: fileSearchConfig,
+			// Perform search using generateContent with File Search tool. This
+			// synthesis call is a chat-tier call (RAG the feature has no model of
+			// its own — it's Google's managed File Search embeddings), but File
+			// Search itself is Gemini-only: the `ai` client here is always the
+			// Gemini SDK. Only borrow chat's model string when chat is actually
+			// routed to Gemini — otherwise (chat on another provider, or 'none')
+			// pass '' so resolveGenerateContentModel falls back to the bundled
+			// Gemini default rather than resolving some other provider's model
+			// name against the Gemini API.
+			//
+			// Wrapped in executeWithRetry like every other direct SDK call site
+			// (web-fetch, the grounding tools, the RAG vault scanner): a transient
+			// 429/5xx here otherwise fails the tool call outright.
+			const chatModelForRagSynthesis =
+				// eslint-disable-next-line no-restricted-syntax -- RAG reads Gemini File Search stores; other providers have no store-backed RAG yet
+				featureProvider(plugin.settings, 'chat') === 'gemini' ? featureModel(plugin.settings, 'chat') : '';
+			const response = await executeWithRetry(
+				() =>
+					ai.models.generateContent({
+						model: resolveGenerateContentModel(chatModelForRagSynthesis),
+						contents: `Search for information about: ${params.query}\n\nProvide a summary of the most relevant findings from the indexed documents. Include specific file references when available.`,
+						config: {
+							tools: [
+								{
+									fileSearch: fileSearchConfig,
+								},
+							],
 						},
-					],
-				},
-			});
+					}),
+				undefined,
+				{ operationName: 'RagSearchTool.generateContent', logger: plugin.logger }
+			);
 
 			// Extract results from response
 			const results: RagSearchResult[] = [];

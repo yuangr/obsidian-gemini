@@ -3,17 +3,26 @@ import { Tool } from '../tools/types';
 import { Logger } from '../utils/logger';
 import { getVaultTools } from '../tools/vault';
 import type { ObsidianGemini } from '../types/plugin';
-import { resolveProvider } from '../api/provider-routing';
-import type { ProviderUseCase } from '../api/providers/registry';
+import { featureProvider } from '../api/feature-routing';
+import { featureStatus } from '../api/provider-status';
+
+/**
+ * Whether the Gemini key is actually available on this device. `plugin.apiKey`
+ * reads SecretStorage; a settings file can name a secret that was never synced
+ * here, and a tool registered on that basis would only fail when invoked.
+ */
+function hasGeminiKey(plugin: ObsidianGemini): boolean {
+	return Boolean(plugin.apiKey);
+}
 
 interface ToolSource {
 	name: string;
 	/**
-	 * The use case this source's tools belong to. When set, the source is only
-	 * registered if some provider is routed to that use case. Omitted means the
-	 * tools are provider-independent (vault, memory, skills) and always register.
+	 * Whether this source's tools should register, given the current settings.
+	 * Omitted means the tools are provider-independent (vault, memory, skills)
+	 * and always register.
 	 */
-	useCase?: ProviderUseCase;
+	gate?: (plugin: ObsidianGemini) => boolean;
 	getTools: () => Tool[] | Promise<Tool[]>;
 }
 
@@ -22,11 +31,16 @@ interface ToolSource {
  * registration/unregistration. Eliminates duplication between
  * setupGeminiScribe() and teardownGeminiScribe().
  *
- * Capability-coupled sources (web tools backed by Gemini search/URL-context,
- * image generation) register only when their use case resolves to a provider
- * that supports it. Since #704 that is a per-use-case question: an
- * Ollama-primary install that routes `search` to Gemini gets the web tools,
- * while one that doesn't stays fully local.
+ * Capability-coupled sources (web search/fetch, maps, deep research, image
+ * generation) register only when their `gate` passes: web/deep-research/image
+ * are gated on the routed feature resolving to a provider that supports it
+ * *and* on that provider being configured (settings redesign — each is its own
+ * feature, not one shared use case), and maps is provider-bound (gated on the
+ * Gemini key resolving on this device, regardless of routing).
+ *
+ * The credential half of that gate is not belt-and-braces: a tool registered
+ * against a provider with no key is advertised to the model and can only fail
+ * when called.
  *
  * RAG tools are excluded — they have independent lifecycle
  * (toggled without full re-init).
@@ -35,18 +49,41 @@ export class ToolRegistrar {
 	private static readonly CORE_SOURCES: ToolSource[] = [
 		{ name: 'vault', getTools: () => getVaultTools() },
 		{
-			name: 'vault-extended',
-			getTools: () => import('../tools/vault-tools-extended').then((m) => m.getExtendedVaultTools()),
+			name: 'web',
+			// Google Search/URL-context is Gemini-only today, but the routed
+			// provider alone isn't enough: a stale/hand-edited route can still
+			// say 'gemini' with no key configured, and the tool would register
+			// only to fail at call time. Require the key too, matching 'maps'.
+			// eslint-disable-next-line no-restricted-syntax -- per-provider tool wiring (web-search tool exists only for specific providers)
+			gate: (plugin) => featureProvider(plugin.settings, 'webSearch') === 'gemini' && hasGeminiKey(plugin),
+			getTools: () => import('../tools/web-tools').then((m) => m.getWebTools()),
 		},
 		{
-			name: 'web',
-			useCase: 'webSearch',
-			getTools: () => import('../tools/web-tools').then((m) => m.getWebTools()),
+			name: 'maps',
+			// Provider-bound (§2.7): registered iff the Gemini provider is
+			// configured, regardless of which provider webSearch/chat route to.
+			gate: (plugin) => hasGeminiKey(plugin),
+			getTools: () => import('../tools/web-tools').then((m) => m.getMapsTools()),
+		},
+		{
+			name: 'deep-research',
+			// Same reasoning as 'web': require both the route and the key.
+			// eslint-disable-next-line no-restricted-syntax -- per-provider tool wiring (web-search tool exists only for specific providers)
+			gate: (plugin) => featureProvider(plugin.settings, 'deepResearch') === 'gemini' && hasGeminiKey(plugin),
+			getTools: () => import('../tools/web-tools').then((m) => m.getDeepResearchTools()),
 		},
 		{ name: 'memory', getTools: () => import('../tools/memory-tool').then((m) => m.getMemoryTools()) },
 		{
 			name: 'image',
-			useCase: 'imageGen',
+			// Same reasoning as 'web' and 'deep-research': the route alone isn't
+			// enough. `featureStatus` is the exact condition `LifecycleService`
+			// uses to construct `plugin.imageGeneration`, so gating on it keeps
+			// the two in step — otherwise a route to a provider with no key
+			// registers `generate_image` against a null service and the agent
+			// spends a turn on a tool that can only answer "not available".
+			// It reads the *resolved* key, the same thing `hasGeminiKey` reads
+			// above, so a named-but-unsynced secret closes this gate too.
+			gate: (plugin) => featureStatus(plugin, 'imageGen') === 'ok',
 			getTools: () => import('../tools/image-tools').then((m) => m.getImageTools()),
 		},
 		{ name: 'skill', getTools: () => import('../tools/skill-tools').then((m) => m.getSkillTools()) },
@@ -57,7 +94,7 @@ export class ToolRegistrar {
 	];
 
 	private static activeSources(plugin: ObsidianGemini): ToolSource[] {
-		return ToolRegistrar.CORE_SOURCES.filter((s) => !s.useCase || resolveProvider(plugin.settings, s.useCase) !== null);
+		return ToolRegistrar.CORE_SOURCES.filter((s) => !s.gate || s.gate(plugin));
 	}
 
 	async registerAll(registry: ToolRegistry, logger: Logger, plugin: ObsidianGemini): Promise<void> {

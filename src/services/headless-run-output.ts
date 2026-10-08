@@ -1,5 +1,5 @@
 import { Vault, normalizePath } from 'obsidian';
-import { ensureFolderExists } from '../utils/file-utils';
+import { ensureParentFolderExists } from '../utils/file-utils';
 import { getRawErrorMessage } from '../utils/error-utils';
 import type { Logger } from '../utils/logger';
 
@@ -117,10 +117,7 @@ export interface WriteHeadlessOutputParams {
 export async function writeHeadlessOutput(params: WriteHeadlessOutputParams): Promise<string> {
 	const { vault, outputPath, header, content, folderLabel, logger, retry } = params;
 
-	const parentPath = outputPath.includes('/') ? outputPath.slice(0, outputPath.lastIndexOf('/')) : null;
-	if (parentPath) {
-		await ensureFolderExists(vault, parentPath, folderLabel, logger);
-	}
+	await ensureParentFolderExists(vault, outputPath, folderLabel, logger);
 
 	const fullContent = header + content;
 
@@ -175,4 +172,31 @@ export async function writeHeadlessOutput(params: WriteHeadlessOutputParams): Pr
 export function isAlreadyExistsError(err: unknown): boolean {
 	if (!(err instanceof Error)) return false;
 	return /already exists/i.test(err.message);
+}
+
+/**
+ * Mark a headless output note as incomplete when the turn ended with a
+ * loop-generated notice instead of a real model answer (`fellBack` — model
+ * returned empty twice, or `loopAborted` — the tool-loop detector cut the turn
+ * off; #1268). The note is still written for debugging, but the frontmatter
+ * key plus leading callout mean it can never be mistaken for a real result.
+ *
+ * `header` is the caller's frontmatter block (`---…---\n\n`); the
+ * `incomplete: true` key is inserted before its closing `---`, and the
+ * callout is prepended to the body. Returns `{ header, content }` — pass an
+ * unchanged pair straight through when the run produced a real answer.
+ */
+export function markIncompleteOutput(
+	header: string,
+	content: string,
+	reason: { fellBack?: boolean; loopAborted?: boolean }
+): { header: string; content: string } {
+	const causes: string[] = [];
+	if (reason.fellBack) causes.push('the model returned an empty response twice');
+	if (reason.loopAborted) causes.push('the tool-loop detector aborted the turn');
+	const causeText = causes.join(' and ');
+
+	const markedHeader = header.replace(/\n---\n\n$/, `\nincomplete: true\n---\n\n`);
+	const callout = `> [!warning] Incomplete run\n> This output was written by an automated run that did not complete normally: ${causeText}. The text below is the loop's notice, not a model answer.\n\n`;
+	return { header: markedHeader, content: callout + content };
 }

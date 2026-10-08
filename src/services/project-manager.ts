@@ -8,9 +8,31 @@ import {
 	parseToolPolicyFrontmatter,
 	serializeToolPolicy,
 } from '../types/tool-policy';
+import { isPathInFolder } from '../utils/file-utils';
 
 /** Regex to strip dataview/dataviewjs/bases fenced code blocks from body text */
 const UNSUPPORTED_CODE_BLOCK_RE = /```(?:dataview|dataviewjs|bases?)[\s\S]*?```/g;
+
+/**
+ * Read `frontmatter.tags` as a `string[]`, tolerating the three shapes Obsidian
+ * accepts in YAML: a list, a single bare string, or absent. Non-string list
+ * entries are dropped rather than coerced, so a numeric tag can't be written
+ * back as one.
+ *
+ * Shared by the two writers below because they must agree on what the existing
+ * tags are before one adds `PROJECT_TAG` and the other removes it — a reader
+ * that handled only the list shape in one of them would silently discard a
+ * single-string `tags:` value on that path alone.
+ */
+function readFrontmatterTags(frontmatter: Record<string, unknown>): string[] {
+	if (Array.isArray(frontmatter.tags)) {
+		return frontmatter.tags.filter((t): t is string => typeof t === 'string');
+	}
+	if (typeof frontmatter.tags === 'string') {
+		return [frontmatter.tags];
+	}
+	return [];
+}
 
 /**
  * Discovers, parses, and caches project definitions from the vault.
@@ -35,14 +57,7 @@ export class ProjectManager {
 		const files = this.plugin.app.vault.getMarkdownFiles();
 		for (const file of files) {
 			if (this.isProjectFile(file)) {
-				try {
-					const project = await this.parseProjectFile(file);
-					if (project) {
-						this.projectCache.set(file.path, project);
-					}
-				} catch (error) {
-					this.plugin.logger.warn(`Failed to parse project at ${file.path}:`, error);
-				}
+				await this.cacheParsedProject(file);
 			}
 		}
 
@@ -71,16 +86,7 @@ export class ProjectManager {
 		const file = this.plugin.app.vault.getAbstractFileByPath(filePath);
 		if (!(file instanceof TFile)) return null;
 
-		try {
-			const project = await this.parseProjectFile(file);
-			if (project) {
-				this.projectCache.set(filePath, project);
-			}
-			return project;
-		} catch (error) {
-			this.plugin.logger.warn(`ProjectManager: Failed to parse project at ${filePath}:`, error);
-			return null;
-		}
+		return this.cacheParsedProject(file, filePath);
 	}
 
 	/**
@@ -93,8 +99,8 @@ export class ProjectManager {
 
 		for (const project of this.projectCache.values()) {
 			const root = project.rootPath;
-			// Root '' matches everything; otherwise check prefix with trailing /
-			const isMatch = root === '' ? true : path.startsWith(root + '/') || path === root;
+			// Root '' matches everything; otherwise require root-anchored containment
+			const isMatch = root === '' ? true : isPathInFolder(path, root);
 			if (isMatch && root.length > bestLength) {
 				bestMatch = project;
 				bestLength = root.length;
@@ -137,9 +143,16 @@ export class ProjectManager {
 
 	/**
 	 * Create a new project file with template frontmatter and instructions.
+	 * If `<name>.md` already exists in the folder, the next free `<name> N.md`
+	 * is used instead, and the project's `name` follows the file name.
 	 */
 	async createProject(folderPath: string, name: string): Promise<TFile> {
-		const filePath = normalizePath(`${folderPath}/${name}.md`);
+		const vault = this.plugin.app.vault;
+		let filePath = normalizePath(`${folderPath}/${name}.md`);
+		for (let n = 1; vault.getAbstractFileByPath(filePath); n++) {
+			filePath = normalizePath(`${folderPath}/${name} ${n}.md`);
+		}
+		name = filePath.slice(filePath.lastIndexOf('/') + 1, -'.md'.length);
 
 		const content = `---
 tags:
@@ -162,13 +175,7 @@ Add your project instructions here. This text will be injected into the agent's 
 	 */
 	async convertNoteToProject(file: TFile): Promise<void> {
 		await this.plugin.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
-			// Normalize tags to array (handle string, array, or missing)
-			let tags: string[] = [];
-			if (Array.isArray(frontmatter.tags)) {
-				tags = frontmatter.tags.filter((t): t is string => typeof t === 'string');
-			} else if (typeof frontmatter.tags === 'string') {
-				tags = [frontmatter.tags];
-			}
+			const tags = readFrontmatterTags(frontmatter);
 			if (!tags.includes(PROJECT_TAG)) {
 				tags.push(PROJECT_TAG);
 			}
@@ -185,14 +192,7 @@ Add your project instructions here. This text will be injected into the agent's 
 	 */
 	async removeProject(file: TFile): Promise<void> {
 		await this.plugin.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
-			// Normalize tags to array (handle string or array)
-			let tags: string[] = [];
-			if (Array.isArray(frontmatter.tags)) {
-				tags = frontmatter.tags.filter((t): t is string => typeof t === 'string');
-			} else if (typeof frontmatter.tags === 'string') {
-				tags = [frontmatter.tags];
-			}
-			tags = tags.filter((t: string) => t !== PROJECT_TAG);
+			const tags = readFrontmatterTags(frontmatter).filter((t) => t !== PROJECT_TAG);
 			frontmatter.tags = tags.length > 0 ? tags : undefined;
 			if (frontmatter.tags === undefined) {
 				delete frontmatter.tags;
@@ -299,11 +299,6 @@ Add your project instructions here. This text will be injected into the agent's 
 
 		// Strip unsupported code blocks
 		const instructions = body.replace(UNSUPPORTED_CODE_BLOCK_RE, '').trim();
-
-		// Resolve wikilinks and embeds
-		const contextFiles = this.resolveLinks(cache?.links, file.path);
-		const embedFiles = this.resolveLinks(cache?.embeds, file.path);
-
 		// Normalize the project root so downstream path-prefix checks
 		// (e.g. `file.path.startsWith(rootPath + '/')`) behave consistently.
 		// Vault-root projects are represented as '' so the `projectRoot && ...`
@@ -311,11 +306,34 @@ Add your project instructions here. This text will be injected into the agent's 
 		// erroneously filtering every file against a bare '/'.
 		const rawParent = file.parent?.path ?? '';
 		const rootPath = rawParent === '' || rawParent === '/' ? '' : normalizePath(rawParent);
-
-		return { file, config, rootPath, instructions, contextFiles, embedFiles };
+		return { file, config, rootPath, instructions };
 	}
 
 	// --- Private helpers ---
+
+	/**
+	 * Parse a project file and cache it on success, warning (not throwing) on failure.
+	 *
+	 * The three call sites differ only in the cache key: `getProject` keys on the
+	 * caller-supplied path and uses the return value, while the vault-scan and
+	 * file-change paths key on `file.path` and ignore it.
+	 *
+	 * @param file The project file to parse.
+	 * @param cacheKey Cache key to store the parsed project under; defaults to `file.path`.
+	 * @returns The parsed project, or `null` if the file isn't a project or parsing failed.
+	 */
+	private async cacheParsedProject(file: TFile, cacheKey: string = file.path): Promise<Project | null> {
+		try {
+			const project = await this.parseProjectFile(file);
+			if (project) {
+				this.projectCache.set(cacheKey, project);
+			}
+			return project;
+		} catch (error) {
+			this.plugin.logger.warn(`ProjectManager: Failed to parse project at ${cacheKey}:`, error);
+			return null;
+		}
+	}
 
 	private scheduleRefresh(file: TFile): void {
 		this.cancelPendingRefresh(file.path);
@@ -396,29 +414,9 @@ Add your project instructions here. This text will be injected into the agent's 
 		return Object.keys(overrides).length > 0 ? { overrides } : undefined;
 	}
 
-	private resolveLinks(links: Array<{ link: string }> | undefined, sourcePath: string): TFile[] {
-		if (!links) return [];
-
-		const resolved: TFile[] = [];
-		for (const link of links) {
-			const file = this.plugin.app.metadataCache.getFirstLinkpathDest(link.link, sourcePath);
-			if (file instanceof TFile) {
-				resolved.push(file);
-			}
-		}
-		return resolved;
-	}
-
 	private async onFileCreateOrModify(file: TFile): Promise<void> {
 		if (this.isProjectFile(file)) {
-			try {
-				const project = await this.parseProjectFile(file);
-				if (project) {
-					this.projectCache.set(file.path, project);
-				}
-			} catch (error) {
-				this.plugin.logger.warn(`ProjectManager: Failed to parse project at ${file.path}:`, error);
-			}
+			await this.cacheParsedProject(file);
 		} else {
 			// Tag may have been removed — evict if cached
 			this.projectCache.delete(file.path);

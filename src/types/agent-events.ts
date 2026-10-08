@@ -1,6 +1,6 @@
 import { ChatSession } from './agent';
 import { ToolResult } from '../tools/types';
-import type { UsageMetadata } from '../services/context-manager';
+import type { UsageMetadata } from '../api/interfaces/usage-metadata';
 
 /**
  * Handler priority levels. Lower numbers execute first.
@@ -35,6 +35,7 @@ export interface AgentEventMap {
 
 	/** Individual tool finished executing */
 	toolExecutionComplete: Readonly<{
+		session: ChatSession;
 		toolName: string;
 		args: Record<string, unknown>;
 		result: ToolResult;
@@ -58,6 +59,8 @@ export interface AgentEventMap {
 	 * logger.warn already emitted by the engine.
 	 */
 	toolLoopDetected: Readonly<{
+		/** Session whose tool call was blocked — subscribers key per-session state on it. */
+		sessionId: string;
 		toolName: string;
 		args: Record<string, unknown>;
 		identicalCallCount: number;

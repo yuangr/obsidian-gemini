@@ -50,14 +50,8 @@ export function insertTextAtCursor(element: HTMLElement, text: string): void {
 		// No selection, append to end
 		element.appendChild(doc.createTextNode(text));
 
-		// Move cursor to end - only if we have a selection object
-		if (selection) {
-			const range = doc.createRange();
-			range.selectNodeContents(element);
-			range.collapse(false);
-			selection.removeAllRanges();
-			selection.addRange(range);
-		}
+		// Move cursor to end - moveCursorToEnd no-ops when there is no selection object
+		moveCursorToEnd(element);
 		return;
 	}
 
@@ -81,11 +75,7 @@ export function insertTextAtCursor(element: HTMLElement, text: string): void {
 		element.appendChild(doc.createTextNode(text));
 
 		// Move cursor to end
-		const range = doc.createRange();
-		range.selectNodeContents(element);
-		range.collapse(false);
-		selection.removeAllRanges();
-		selection.addRange(range);
+		moveCursorToEnd(element);
 	}
 }
 
@@ -103,20 +93,4 @@ export function moveCursorToEnd(element: HTMLElement): void {
 		selection.removeAllRanges();
 		selection.addRange(range);
 	}
-}
-
-/**
- * Execute a command in the correct document context.
- * Useful for commands like 'paste', 'copy', etc.
- *
- * This is a last-resort fallback: the sole caller (the agent input paste handler)
- * tries the async Clipboard API (`navigator.clipboard.readText`) first and only
- * falls back here when it is unavailable or throws (e.g. some popout-window
- * contexts). `document.execCommand` is deprecated but remains the only synchronous
- * fallback for those environments, so the deprecation is intentionally suppressed.
- */
-export function execContextCommand(element: HTMLElement, command: string, value?: string): boolean {
-	const { doc } = getDOMContext(element);
-	// eslint-disable-next-line @typescript-eslint/no-deprecated -- last-resort sync fallback when async Clipboard API is unavailable
-	return doc.execCommand(command, false, value);
 }

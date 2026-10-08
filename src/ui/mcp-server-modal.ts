@@ -3,6 +3,7 @@ import { MCPServerConfig, MCP_TRANSPORT_STDIO, MCP_TRANSPORT_HTTP, MCPTransportT
 import { MCPManager } from '../mcp/mcp-manager';
 import { ObsidianOAuthClientProvider } from '../mcp/mcp-oauth-provider';
 import { resolveServerEnv, writeServerEnv } from '../mcp/mcp-secrets';
+import { explainMCPConnectionError } from '../mcp/mcp-errors';
 import { getRawErrorMessage, getRawErrorMessageOr } from '../utils/error-utils';
 import { t } from '../i18n';
 
@@ -127,9 +128,7 @@ export class MCPServerModal extends Modal {
 					.addButton((btn) =>
 						btn
 							.setButtonText(t('mcpServer.oauthClearButton'))
-							// setDestructive() (the recommended replacement) requires Obsidian 1.13.0, above the current minAppVersion 1.11.4; keep setWarning until the floor is raised (#1040).
-							// eslint-disable-next-line @typescript-eslint/no-deprecated -- setDestructive() needs Obsidian 1.13.0, above minAppVersion 1.11.4 (#1040)
-							.setWarning()
+							.setDestructive()
 							.onClick(() => {
 								oauthProvider.clearAll();
 								new Notice(t('mcpServer.oauthClearedNotice'));
@@ -238,7 +237,7 @@ export class MCPServerModal extends Modal {
 					testSetting.setDesc(t('mcpServer.connectedDesc', { count: tools.length }));
 					this.renderDiscoveredTools();
 				} catch (error) {
-					const msg = getRawErrorMessage(error);
+					const msg = explainMCPConnectionError(error) ?? getRawErrorMessage(error);
 					testSetting.setDesc(t('mcpServer.connectionFailedDesc', { message: msg }));
 				} finally {
 					button.setButtonText(t('mcpServer.testButton'));

@@ -4,9 +4,10 @@ import { ToolCategory } from '../types/agent';
 import { ToolClassification } from '../types/tool-policy';
 import { ResearchScope } from '../services/deep-research';
 import { formatLocalDate } from '../utils/format-utils';
-import { sanitizeFileName, ensureFolderExists } from '../utils/file-utils';
+import { sanitizeFileName, ensureParentFolderExists } from '../utils/file-utils';
 import { t } from '../i18n';
 import { getRawErrorMessageOr } from '../utils/error-utils';
+import { STATE_SUBFOLDERS, stateFolderPath } from '../services/state-folder';
 
 /**
  * Deep Research Tool that conducts comprehensive research using Google's Deep Research API
@@ -114,7 +115,7 @@ export class DeepResearchTool implements Tool {
 				// Resolve the output path upfront so the agent knows where to read results.
 				// Falls back to [state-folder]/Background-Tasks/YYYY-MM-DD <topic>.md,
 				// which the deep-research validator now explicitly allows.
-				const backgroundTasksFolder = normalizePath(`${plugin.settings.historyFolder}/Background-Tasks`);
+				const backgroundTasksFolder = stateFolderPath(plugin.settings, STATE_SUBFOLDERS.backgroundTasks);
 				const resolvedOutputFile =
 					outputFile ??
 					normalizePath(`${backgroundTasksFolder}/${formatLocalDate()} ${sanitizeFileName(params.topic)}.md`);
@@ -125,10 +126,7 @@ export class DeepResearchTool implements Tool {
 					if (isCancelled()) return undefined;
 
 					// Ensure the parent folder exists before conductResearch tries to save there.
-					const folder = resolvedOutputFile.includes('/') ? resolvedOutputFile.split('/').slice(0, -1).join('/') : null;
-					if (folder) {
-						await ensureFolderExists(plugin.app.vault, folder, 'output directory', plugin.logger);
-					}
+					await ensureParentFolderExists(plugin.app.vault, resolvedOutputFile, 'output directory', plugin.logger);
 
 					// Poll for cancellation every 2 s and signal the API if the task is cancelled.
 					const cancelPoller = window.setInterval(() => {
@@ -184,11 +182,4 @@ export class DeepResearchTool implements Tool {
 			};
 		}
 	}
-}
-
-/**
- * Get Deep Research tool
- */
-export function getDeepResearchTool(): Tool {
-	return new DeepResearchTool();
 }

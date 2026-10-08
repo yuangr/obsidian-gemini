@@ -1,5 +1,13 @@
-import { ReadFileTool } from '../../../src/tools/vault';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ReadFileTool } from '../../../src/tools/vault/read-file-tool';
 import { ToolExecutionContext } from '../../../src/tools/types';
+import { SvgTooLargeError } from '../../../src/utils/svg-rasterizer';
+
+const { mockRasterizeSvg } = vi.hoisted(() => ({ mockRasterizeSvg: vi.fn() }));
+vi.mock('../../../src/utils/svg-rasterizer', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../../src/utils/svg-rasterizer')>()),
+	rasterizeSvg: mockRasterizeSvg,
+}));
 
 // Mock gemini-utils (needed by file-classification, imported by vault-tools)
 vi.mock('@allenhutchison/gemini-utils/mime', () => ({
@@ -157,9 +165,9 @@ describe('ReadFileTool', () => {
 		const result = await tool.execute({ path: 'nonexistent.md' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data.exists).toBe(false);
-		expect(result.data.path).toBe('nonexistent.md');
-		expect(result.data.message).toContain('does not exist');
+		expect((result.data as any).exists).toBe(false);
+		expect((result.data as any).path).toBe('nonexistent.md');
+		expect((result.data as any).message).toContain('does not exist');
 	});
 
 	it('should not resolve to system folder files via case-insensitive fallback', async () => {
@@ -184,7 +192,7 @@ describe('ReadFileTool', () => {
 		const result = await tool.execute({ path: 'workspace.json' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data.exists).toBe(false);
+		expect((result.data as any).exists).toBe(false);
 	});
 
 	it('should not suggest system folder files', async () => {
@@ -207,10 +215,10 @@ describe('ReadFileTool', () => {
 		const result = await tool.execute({ path: 'workspace' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data.exists).toBe(false);
+		expect((result.data as any).exists).toBe(false);
 		// Suggestions should include the user file but not the .obsidian file
-		expect(result.data.suggestions.join(' ')).toContain('workspace-notes.md');
-		expect(result.data.suggestions.join(' ')).not.toContain('.obsidian');
+		expect((result.data as any).suggestions.join(' ')).toContain('workspace-notes.md');
+		expect((result.data as any).suggestions.join(' ')).not.toContain('.obsidian');
 	});
 
 	it('should list contents when given a folder path', async () => {
@@ -219,12 +227,12 @@ describe('ReadFileTool', () => {
 		const result = await tool.execute({ path: 'folder' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.type).toBe('folder');
-		expect(result.data?.path).toBe('folder');
-		expect(result.data?.name).toBe('folder');
-		expect(result.data?.contents).toBeDefined();
-		expect(result.data?.contents).toHaveLength(1);
-		expect(result.data?.contents[0]).toEqual({
+		expect((result.data as any)?.type).toBe('folder');
+		expect((result.data as any)?.path).toBe('folder');
+		expect((result.data as any)?.name).toBe('folder');
+		expect((result.data as any)?.contents).toBeDefined();
+		expect((result.data as any)?.contents).toHaveLength(1);
+		expect((result.data as any)?.contents[0]).toEqual({
 			name: 'test.md',
 			path: 'test.md',
 			type: 'file',
@@ -247,9 +255,9 @@ describe('ReadFileTool', () => {
 		const result = await tool.execute({ path: 'images/photo.png' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.type).toBe('binary_file');
-		expect(result.data?.mimeType).toBe('image/png');
-		expect(result.data?.size).toBe(4);
+		expect((result.data as any)?.type).toBe('binary_file');
+		expect((result.data as any)?.mimeType).toBe('image/png');
+		expect((result.data as any)?.size).toBe(4);
 		expect(result.inlineData).toHaveLength(1);
 		expect(result.inlineData![0].mimeType).toBe('image/png');
 		expect(result.inlineData![0].base64).toBe(Buffer.from(new Uint8Array(fakeBuffer)).toString('base64'));
@@ -287,7 +295,7 @@ describe('ReadFileTool', () => {
 		const result = await tool.execute({ path: 'audio.webm' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.mimeType).toBe('audio/webm');
+		expect((result.data as any)?.mimeType).toBe('audio/webm');
 		expect(result.inlineData![0].mimeType).toBe('audio/webm');
 	});
 
@@ -306,7 +314,7 @@ describe('ReadFileTool', () => {
 		const result = await tool.execute({ path: 'video.webm' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.mimeType).toBe('video/webm');
+		expect((result.data as any)?.mimeType).toBe('video/webm');
 		expect(result.inlineData![0].mimeType).toBe('video/webm');
 	});
 
@@ -338,8 +346,8 @@ describe('ReadFileTool', () => {
 		const result = await tool.execute({ path: 'views/tasks.base' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.type).toBe('file');
-		expect(result.data?.content).toContain('filters:');
+		expect((result.data as any)?.type).toBe('file');
+		expect((result.data as any)?.content).toContain('filters:');
 		expect(result.inlineData).toBeUndefined();
 	});
 
@@ -356,8 +364,8 @@ describe('ReadFileTool', () => {
 		const result = await tool.execute({ path: 'canvas/ideas.canvas' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data?.type).toBe('file');
-		expect(result.data?.content).toContain('"nodes"');
+		expect((result.data as any)?.type).toBe('file');
+		expect((result.data as any)?.content).toContain('"nodes"');
 		expect(result.inlineData).toBeUndefined();
 	});
 
@@ -376,7 +384,7 @@ describe('ReadFileTool', () => {
 
 		// Should NOT return "Cannot read from system folder" error
 		expect(result.success).toBe(true);
-		expect(result.data?.exists).toBe(false);
+		expect((result.data as any)?.exists).toBe(false);
 		// Contrast with non-agent-session history paths which are hard-blocked
 	});
 
@@ -402,31 +410,60 @@ describe('ReadFileTool', () => {
 		expect(result.error).toContain('Cannot read from system folder');
 	});
 
-	it('should include outgoing links and backlinks when present', async () => {
-		const linkedFile = new TFile();
-		(linkedFile as any).path = 'linked-note.md';
-		(linkedFile as any).name = 'linked-note.md';
-		(linkedFile as any).extension = 'md';
+	it('rasterizes an SVG and reports the converted payload size (#1430)', async () => {
+		const svgFile = new TFile();
+		(svgFile as any).path = 'diagram.svg';
+		(svgFile as any).name = 'diagram.svg';
+		(svgFile as any).extension = 'svg';
+		(svgFile as any).stat = { size: 1000, mtime: Date.now(), ctime: Date.now() };
 
-		const backlinkFile = new TFile();
-		(backlinkFile as any).path = 'referring-note.md';
-		(backlinkFile as any).name = 'referring-note.md';
-		(backlinkFile as any).extension = 'md';
+		mockVault.getAbstractFileByPath.mockReturnValue(svgFile);
+		mockVault.readBinary.mockResolvedValue(new ArrayBuffer(1000));
+		mockRasterizeSvg.mockResolvedValue('UE5HREFUQQ=='); // 7 decoded bytes
 
-		mockVault.getAbstractFileByPath.mockReturnValue(mockFile);
-		mockVault.read.mockResolvedValue('file with links');
-
-		// Override gfile mocks to return non-empty sets
-		mockPlugin.gfile.getUniqueLinks.mockReturnValue(new Set([linkedFile]));
-		mockPlugin.gfile.getBacklinks.mockReturnValue(new Set([backlinkFile]));
-
-		const result = await tool.execute({ path: 'test.md' }, mockContext);
+		const result = await tool.execute({ path: 'diagram.svg' }, mockContext);
 
 		expect(result.success).toBe(true);
-		expect(result.data.outgoingLinks).toHaveLength(1);
-		expect(result.data.outgoingLinks[0]).toBe('[[linked-note.md]]');
-		expect(result.data.backlinks).toHaveLength(1);
-		expect(result.data.backlinks[0]).toBe('[[referring-note.md]]');
+		expect((result.data as any).size).toBe(7); // decoded PNG size, not the 1000-byte source
+		expect(result.inlineData).toEqual([{ base64: 'UE5HREFUQQ==', mimeType: 'image/png' }]);
+		// The budget is the full inline-data limit for the tool path.
+		expect(mockRasterizeSvg).toHaveBeenCalledWith(expect.any(ArrayBuffer), false, 20 * 1024 * 1024);
+	});
+
+	it('rejects an SVG whose rasterized payload exceeds the budget (#1430)', async () => {
+		const svgFile = new TFile();
+		(svgFile as any).path = 'huge.svg';
+		(svgFile as any).name = 'huge.svg';
+		(svgFile as any).extension = 'svg';
+		(svgFile as any).stat = { size: 1000, mtime: Date.now(), ctime: Date.now() };
+
+		mockVault.getAbstractFileByPath.mockReturnValue(svgFile);
+		mockVault.readBinary.mockResolvedValue(new ArrayBuffer(1000));
+		mockRasterizeSvg.mockRejectedValue(new SvgTooLargeError(21 * 1024 * 1024));
+
+		const result = await tool.execute({ path: 'huge.svg' }, mockContext);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe('File too large for inline processing (max 20 MB): huge.svg');
+		expect(result.inlineData).toBeUndefined();
+	});
+
+	it('reports a rasterization failure without inlining anything', async () => {
+		const svgFile = new TFile();
+		(svgFile as any).path = 'broken.svg';
+		(svgFile as any).name = 'broken.svg';
+		(svgFile as any).extension = 'svg';
+		(svgFile as any).stat = { size: 1000, mtime: Date.now(), ctime: Date.now() };
+
+		mockVault.getAbstractFileByPath.mockReturnValue(svgFile);
+		mockVault.readBinary.mockResolvedValue(new ArrayBuffer(1000));
+		mockRasterizeSvg.mockRejectedValue(new Error('Failed to load SVG image'));
+
+		const result = await tool.execute({ path: 'broken.svg' }, mockContext);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('Failed to rasterize SVG for viewing');
+		expect(result.inlineData).toBeUndefined();
 	});
 
 	it('should return error when vault.read() throws', async () => {
@@ -444,6 +481,26 @@ describe('ReadFileTool', () => {
 		expect(result.success).toBe(false);
 		expect(result.error).toContain('Error reading file or folder');
 		expect(result.error).toContain('Disk read failure');
+	});
+
+	it('accepts a bulky source SVG whose rasterized PNG fits the budget (#1434 review)', async () => {
+		const svgFile = new TFile();
+		(svgFile as any).path = 'poster.svg';
+		(svgFile as any).name = 'poster.svg';
+		(svgFile as any).extension = 'svg';
+		(svgFile as any).stat = { size: 21 * 1024 * 1024, mtime: Date.now(), ctime: Date.now() };
+
+		mockVault.getAbstractFileByPath.mockReturnValue(svgFile);
+		// Source SVG is over the 20 MB limit, but the rasterized PNG is tiny —
+		// the source gate no longer applies to SVGs; only the converted payload counts.
+		mockVault.readBinary.mockResolvedValue(new ArrayBuffer(21 * 1024 * 1024));
+		mockRasterizeSvg.mockResolvedValue('AB=='); // 1 decoded byte
+
+		const result = await tool.execute({ path: 'poster.svg' }, mockContext);
+
+		expect(result.success).toBe(true);
+		expect((result.data as any).size).toBe(1);
+		expect(result.inlineData).toEqual([{ base64: 'AB==', mimeType: 'image/png' }]);
 	});
 
 	it('should return progress description with path', () => {

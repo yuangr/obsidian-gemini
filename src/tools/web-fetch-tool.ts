@@ -8,7 +8,28 @@ import TurndownService from 'turndown';
 import { decodeHtmlEntities } from '../utils/html-entities';
 import { createGoogleGenAI } from '../api/providers/gemini/google-genai-factory';
 import { resolveGenerateContentModel } from '../models';
+import { featureModel } from '../api/feature-routing';
 import { getRawErrorMessageOr } from '../utils/error-utils';
+import type { GenerateContentResponse } from '@google/genai';
+
+/**
+ * Concatenate the text parts of a generateContent response.
+ *
+ * Both the URL-context path and the raw-HTML fallback accumulate the same way;
+ * only the request they made and the error they raise on an empty result differ,
+ * so those stay at the call sites.
+ */
+function collectResponseText(result: GenerateContentResponse): string {
+	let text = '';
+	if (result.candidates?.[0]?.content?.parts) {
+		for (const part of result.candidates[0].content.parts) {
+			if (part.text) {
+				text += part.text;
+			}
+		}
+	}
+	return text;
+}
 
 /**
  * Web fetch tool using Google's URL Context feature
@@ -75,10 +96,10 @@ export class WebFetchTool implements Tool {
 
 			// Create a new instance of GoogleGenAI
 			const genAI = createGoogleGenAI(plugin);
-			// Use the same model that's configured for chat for consistency with the
-			// main conversation. URL context runs on generateContent, so an
-			// interactions-only chat model falls back to the bundled default.
-			const modelToUse = resolveGenerateContentModel(plugin.settings.chatModelName);
+			// URL fetch/context rides with the webSearch feature (settings redesign
+			// §2.7). URL context runs on generateContent, so an interactions-only
+			// model falls back to the bundled default.
+			const modelToUse = resolveGenerateContentModel(featureModel(plugin.settings, 'webSearch'));
 
 			// Create a prompt that includes the URL and the query
 			const prompt = `${params.query} for ${params.url}`;
@@ -91,7 +112,6 @@ export class WebFetchTool implements Tool {
 						model: modelToUse,
 						contents: prompt,
 						config: {
-							temperature: plugin.settings.temperature || 0.7,
 							tools: [{ urlContext: {} }],
 						},
 					}),
@@ -101,14 +121,7 @@ export class WebFetchTool implements Tool {
 			plugin.logger.log('Web fetch - received result:', result);
 
 			// Extract text from response
-			let text = '';
-			if (result.candidates?.[0]?.content?.parts) {
-				for (const part of result.candidates[0].content.parts) {
-					if (part.text) {
-						text += part.text;
-					}
-				}
-			}
+			const text = collectResponseText(result);
 
 			if (!text) {
 				return {
@@ -253,9 +266,9 @@ export class WebFetchTool implements Tool {
 			}
 
 			// Now use Gemini to analyze the content (generateContent path — an
-			// interactions-only chat model falls back to the bundled default).
+			// interactions-only model falls back to the bundled default).
 			const genAI = createGoogleGenAI(plugin);
-			const modelToUse = resolveGenerateContentModel(plugin.settings.chatModelName);
+			const modelToUse = resolveGenerateContentModel(featureModel(plugin.settings, 'webSearch'));
 
 			// Create a prompt with the content
 			const prompt = `Based on the following web page content from ${params.url}, ${params.query}\n\nWeb Page Title: ${title}\n\nContent:\n${content}`;
@@ -265,23 +278,13 @@ export class WebFetchTool implements Tool {
 					genAI.models.generateContent({
 						model: modelToUse,
 						contents: prompt,
-						config: {
-							temperature: plugin.settings.temperature || 0.7,
-						},
 					}),
 				undefined,
 				{ operationName: 'WebFetchTool.fallbackGenerateContent', logger: plugin.logger }
 			);
 
 			// Extract text from response
-			let analysisText = '';
-			if (result.candidates?.[0]?.content?.parts) {
-				for (const part of result.candidates[0].content.parts) {
-					if (part.text) {
-						analysisText += part.text;
-					}
-				}
-			}
+			const analysisText = collectResponseText(result);
 
 			if (!analysisText) {
 				return {

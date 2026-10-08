@@ -3,26 +3,25 @@ import { GoogleGenAI } from '@google/genai';
 import { GeminiClient } from '../../../../src/api/providers/gemini/client';
 import type { GeminiClientConfig } from '../../../../src/api/providers/gemini/config';
 import { GeminiPrompts } from '../../../../src/prompts';
-import type { ExtendedModelRequest } from '../../../../src/api/interfaces/model-api';
+import type { ExtendedModelRequest, ToolCall } from '../../../../src/api/interfaces/model-api';
 import { ModelUseCase } from '../../../../src/api/model-use-case';
+import { buildToolHistoryTurns, type ToolCallResultPair } from '../../../../src/agent/agent-loop-helpers';
 
 // Capture every call to `client.models.generateContent` so tests can assert on
 // the params (system instruction, contents, etc.) the SDK sees. vi.hoisted lets
 // us share the spy with the factory while keeping vitest's mock-hoisting safe.
-const { generateContentMock, cachesCreateMock, filesUploadMock, interactionsCreateMock, interactionsService } =
-	vi.hoisted(() => {
+const { generateContentMock, generateContentStreamMock, interactionsCreateMock, interactionsService } = vi.hoisted(
+	() => {
 		return {
 			generateContentMock: vi.fn(),
-			cachesCreateMock: vi.fn().mockResolvedValue({ name: 'cachedContents/test-cache-id' }),
-			filesUploadMock: vi
-				.fn()
-				.mockResolvedValue({ name: 'files/test-file-id', uri: 'https://files.gemini/test-file-id' }),
+			generateContentStreamMock: vi.fn(),
 			interactionsCreateMock: vi.fn(),
 			interactionsService: {
 				create: vi.fn(),
 			},
 		};
-	});
+	}
+);
 // Keep the create spy name the existing tests use.
 interactionsService.create = interactionsCreateMock;
 
@@ -32,13 +31,7 @@ vi.mock('@google/genai', () => ({
 			getModel: vi.fn(),
 			models: {
 				generateContent: generateContentMock,
-				generateContentStream: vi.fn(),
-			},
-			caches: {
-				create: cachesCreateMock,
-			},
-			files: {
-				upload: filesUploadMock,
+				generateContentStream: generateContentStreamMock,
 			},
 			interactions: interactionsService,
 		};
@@ -249,16 +242,20 @@ describe('GeminiClient', () => {
 
 	// Regression coverage for the drag-and-drop / @-mention bug. perTurnContext
 	// carries the rendered content of context-chip files; the GeminiClient
-	// must paste it into the SDK request's `systemInstruction` so the model
-	// can read those files without a redundant tool call. See agent-loop
-	// tests for the follow-up propagation guarantee — this test confirms the
-	// initial-request wiring on the Gemini path.
-	describe('perTurnContext propagation to systemInstruction', () => {
+	// must paste it into the request's `system_instruction` so the model can
+	// read those files without a redundant tool call. See agent-loop tests for
+	// the follow-up propagation guarantee — this test confirms the
+	// initial-request wiring on the Gemini path (the Interactions transport,
+	// the only one the conversational path uses as of the settings redesign).
+	describe('perTurnContext propagation to system_instruction', () => {
 		beforeEach(() => {
-			generateContentMock.mockReset();
-			generateContentMock.mockResolvedValue({
-				candidates: [{ content: { parts: [{ text: 'ok' }] } }],
-				usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+			interactionsCreateMock.mockReset();
+			interactionsCreateMock.mockResolvedValue({
+				id: 'int_pt',
+				status: 'completed',
+				output_text: 'ok',
+				steps: [{ type: 'model_output', content: [{ type: 'text', text: 'ok' }] }],
+				usage: { total_input_tokens: 1, total_output_tokens: 1, total_tokens: 2 },
 			});
 
 			// Stub agentsMemory + skillManager so buildSystemInstruction doesn't NPE.
@@ -267,7 +264,7 @@ describe('GeminiClient', () => {
 			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false } };
 		});
 
-		test('transmits perTurnContext directly as a user message content part', async () => {
+		test('transmits perTurnContext directly as a user input content item', async () => {
 			const renderedContext =
 				'CONTEXT FILES: places.md\n\n==============================\nFile Label: Context File\nFile Name: places.md\n==============================\n\nMachu Picchu, Petra, the Great Wall.';
 
@@ -283,23 +280,23 @@ describe('GeminiClient', () => {
 
 			await client.generateModelResponse(request);
 
-			expect(generateContentMock).toHaveBeenCalledTimes(1);
-			const params = (generateContentMock as Mock).mock.calls[0][0];
+			expect(interactionsCreateMock).toHaveBeenCalledTimes(1);
+			const params = interactionsCreateMock.mock.calls[0][0];
 
 			// System instruction should be static (no perTurnContext!)
-			expect(params.config.systemInstruction).toBeTruthy();
-			expect(params.config.systemInstruction).not.toContain('## Turn Context');
-			expect(params.config.systemInstruction).not.toContain('Machu Picchu, Petra, the Great Wall.');
-			expect(params.config.systemInstruction).toContain('always cite paths');
-			expect(params.config.systemInstruction).toContain('2026-05-09T10:00:00');
+			expect(params.system_instruction).toBeTruthy();
+			expect(params.system_instruction).not.toContain('## Turn Context');
+			expect(params.system_instruction).not.toContain('Machu Picchu, Petra, the Great Wall.');
+			expect(params.system_instruction).toContain('always cite paths');
+			expect(params.system_instruction).toContain('2026-05-09T10:00:00');
 
-			// User contents must contain perTurnContext as a part
-			expect(params.contents).toBeDefined();
-			const userTurn = params.contents.find((turn: any) => turn.role === 'user');
-			expect(userTurn).toBeDefined();
-			expect(userTurn.parts).toHaveLength(2); // Text query + context files
-			expect(userTurn.parts[0].text).toBe('list the places');
-			expect(userTurn.parts[1].text).toBe(renderedContext);
+			// The user input step must contain perTurnContext as its own content item.
+			const userStep = params.input[params.input.length - 1];
+			expect(userStep.type).toBe('user_input');
+			expect(userStep.content).toEqual([
+				{ type: 'text', text: 'list the places' },
+				{ type: 'text', text: renderedContext },
+			]);
 		});
 
 		test('omits perTurnContext when it is empty', async () => {
@@ -310,98 +307,90 @@ describe('GeminiClient', () => {
 				conversationHistory: [],
 			});
 
-			expect(generateContentMock).toHaveBeenCalledTimes(1);
-			const params = (generateContentMock as Mock).mock.calls[0][0];
+			expect(interactionsCreateMock).toHaveBeenCalledTimes(1);
+			const params = interactionsCreateMock.mock.calls[0][0];
 
-			// Should only have the userMessage text part
-			const userTurn = params.contents.find((turn: any) => turn.role === 'user');
-			expect(userTurn).toBeDefined();
-			expect(userTurn.parts).toHaveLength(1);
-			expect(userTurn.parts[0].text).toBe('just chat');
+			const userStep = params.input[params.input.length - 1];
+			expect(userStep.content).toEqual([{ type: 'text', text: 'just chat' }]);
 		});
 	});
 
 	// Per-use-case thinkingLevel (#621): the client maps the ModelUseCase it was
-	// created for to a thinkingConfig.thinkingLevel — but only for Gemini 3.x.
-	// Gemini 2.5 models reject thinkingLevel with a 400 ("Thinking level is not
-	// supported for this model") and take the legacy thinkingBudget instead.
-	// Reasoning persistence (#965) relies on includeThoughts, and the API
-	// rejects sending both knobs — so assert exactly one is present.
+	// created for to generation_config.thinking_level on the Interactions API
+	// (the sole conversational transport as of the settings redesign), which
+	// accepts thinking_level for every thinking-capable model — Gemini 2.5,
+	// 3.x, and thinking-exp alike (unlike `generateContent`, which rejects it
+	// on 2.5/thinking-exp with a 400 and needs the legacy thinkingBudget).
 	describe('per-use-case thinkingLevel', () => {
 		const THINKING_MODEL = 'gemini-3-pro';
 
 		beforeEach(() => {
-			generateContentMock.mockReset();
-			generateContentMock.mockResolvedValue({
-				candidates: [{ content: { parts: [{ text: 'ok' }] } }],
-				usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+			interactionsCreateMock.mockReset();
+			interactionsCreateMock.mockResolvedValue({
+				id: 'int_tl',
+				status: 'completed',
+				output_text: 'ok',
+				steps: [{ type: 'model_output', content: [{ type: 'text', text: 'ok' }] }],
+				usage: { total_input_tokens: 1, total_output_tokens: 1, total_tokens: 2 },
 			});
 		});
 
-		// Captures the thinkingConfig the SDK is handed for a client created with
-		// the given use case against a thinking-capable model.
-		const thinkingConfigFor = async (useCase?: ModelUseCase, model: string = THINKING_MODEL): Promise<any> => {
+		// Captures the generation_config the SDK is handed for a client created
+		// with the given use case against a thinking-capable model.
+		const generationConfigFor = async (useCase?: ModelUseCase, model: string = THINKING_MODEL): Promise<any> => {
 			const client = new GeminiClient(
 				{ apiKey: 'test-api-key', model, useCase },
 				new GeminiPrompts(mockPlugin),
 				mockPlugin
 			);
 			await client.generateModelResponse({ kind: 'base', prompt: 'hi' });
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			return params.config.thinkingConfig;
+			const params = interactionsCreateMock.mock.calls[0][0];
+			return params.generation_config;
 		};
 
 		test.each([
-			[ModelUseCase.COMPLETIONS, 'MINIMAL'],
-			[ModelUseCase.SUMMARY, 'LOW'],
-			[ModelUseCase.REWRITE, 'LOW'],
-			[ModelUseCase.SEARCH, 'MEDIUM'],
-			[ModelUseCase.CHAT, 'HIGH'],
-		])('%s maps to thinkingLevel %s', async (useCase, expectedLevel) => {
-			const thinkingConfig = await thinkingConfigFor(useCase);
-			expect(thinkingConfig.thinkingLevel).toBe(expectedLevel);
-			expect(thinkingConfig.includeThoughts).toBe(true);
-			// Never send both knobs — thinkingLevel only.
-			expect(thinkingConfig.thinkingBudget).toBeUndefined();
+			[ModelUseCase.COMPLETIONS, 'minimal'],
+			[ModelUseCase.SUMMARY, 'low'],
+			[ModelUseCase.REWRITE, 'low'],
+			[ModelUseCase.CHAT, 'high'],
+		])('%s maps to thinking_level %s', async (useCase, expectedLevel) => {
+			const generationConfig = await generationConfigFor(useCase);
+			expect(generationConfig.thinking_level).toBe(expectedLevel);
+			expect(generationConfig.thinking_summaries).toBe('auto');
 		});
 
-		test('defaults to HIGH when no use case is set (e.g. createCustom callers)', async () => {
-			const thinkingConfig = await thinkingConfigFor(undefined);
-			expect(thinkingConfig.thinkingLevel).toBe('HIGH');
-			expect(thinkingConfig.includeThoughts).toBe(true);
-			expect(thinkingConfig.thinkingBudget).toBeUndefined();
+		test('defaults to high when no use case is set (e.g. direct ImageGeneration construction)', async () => {
+			const generationConfig = await generationConfigFor(undefined);
+			expect(generationConfig.thinking_level).toBe('high');
 		});
 
-		// Regression: sending thinkingLevel to a 2.5 model is a guaranteed 400
-		// INVALID_ARGUMENT ("Thinking level is not supported for this model").
+		// The Interactions API is unaffected by the generateContent-only 400 on
+		// 2.5/thinking-exp models — it always sends thinking_level.
 		test.each(['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite', 'thinking-exp-1234'])(
-			'%s gets legacy thinkingBudget, never thinkingLevel',
+			'%s still gets thinking_level via Interactions',
 			async (model) => {
-				const thinkingConfig = await thinkingConfigFor(ModelUseCase.CHAT, model);
-				expect(thinkingConfig.thinkingBudget).toBe(-1);
-				expect(thinkingConfig.includeThoughts).toBe(true);
-				expect(thinkingConfig.thinkingLevel).toBeUndefined();
+				const generationConfig = await generationConfigFor(ModelUseCase.CHAT, model);
+				expect(generationConfig.thinking_level).toBe('high');
 			}
 		);
 
-		test('gemini-3.x variants still get thinkingLevel', async () => {
+		test('gemini-3.x variants get thinking_level', async () => {
 			for (const model of ['gemini-3-flash-preview', 'gemini-3.1-pro-preview', 'gemini-3.5-flash']) {
-				generateContentMock.mockClear();
-				const thinkingConfig = await thinkingConfigFor(ModelUseCase.CHAT, model);
-				expect(thinkingConfig.thinkingLevel).toBe('HIGH');
-				expect(thinkingConfig.thinkingBudget).toBeUndefined();
+				interactionsCreateMock.mockClear();
+				const generationConfig = await generationConfigFor(ModelUseCase.CHAT, model);
+				expect(generationConfig.thinking_level).toBe('high');
 			}
 		});
 
-		test('omits thinkingConfig entirely for non-thinking models', async () => {
+		test('omits thinking_level entirely for non-thinking models', async () => {
 			const client = new GeminiClient(
 				{ apiKey: 'test-api-key', model: 'gemini-pro', useCase: ModelUseCase.CHAT },
 				new GeminiPrompts(mockPlugin),
 				mockPlugin
 			);
 			await client.generateModelResponse({ kind: 'base', prompt: 'hi' });
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			expect(params.config.thinkingConfig).toBeUndefined();
+			const params = interactionsCreateMock.mock.calls[0][0];
+			expect(params.generation_config.thinking_level).toBeUndefined();
 		});
 	});
 
@@ -443,534 +432,15 @@ describe('GeminiClient', () => {
 		});
 
 		test('no-plugin fallback constructs GoogleGenAI with config.apiKey only', () => {
-			// When GeminiClient is constructed without a plugin (e.g. via
-			// ModelClientFactory.createCustom in code paths that don't have one
-			// handy), the helper isn't invoked — the constructor falls back to
-			// using config.apiKey directly and customBaseUrl is unreachable.
+			// When GeminiClient is constructed without a plugin (direct
+			// construction in code paths that don't have one handy, e.g.
+			// ImageGeneration), the helper isn't invoked — the constructor falls
+			// back to using config.apiKey directly and customBaseUrl is
+			// unreachable.
 			const promptsPlugin: any = { logger: mockLogger, settings: {} };
 			new GeminiClient({ apiKey: 'config-only-key', model: 'gemini-pro' }, new GeminiPrompts(promptsPlugin), undefined);
 
 			expect(MockedGoogleGenAI).toHaveBeenCalledWith({ apiKey: 'config-only-key' });
-		});
-	});
-
-	// ──────────────────────────────────────────────────────────────────────
-	// extractModelResponse()
-	// ──────────────────────────────────────────────────────────────────────
-	describe('extractModelResponse()', () => {
-		const extract = (response: any) => (client as any).extractModelResponse(response);
-
-		test('regular text parts are concatenated', () => {
-			const result = extract({
-				candidates: [{ content: { parts: [{ text: 'hello ' }, { text: 'world' }] } }],
-			});
-			expect(result.markdown).toBe('hello world');
-			expect(result.thoughts).toBeUndefined();
-		});
-
-		test('thought parts go to thoughts field', () => {
-			const result = extract({
-				candidates: [{ content: { parts: [{ text: 'thinking...', thought: true }] } }],
-			});
-			expect(result.markdown).toBe('');
-			expect(result.thoughts).toBe('thinking...');
-		});
-
-		test('both thought and regular parts separated correctly', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: {
-							parts: [{ text: 'regular text' }, { text: 'deep thought', thought: true }, { text: ' more text' }],
-						},
-					},
-				],
-			});
-			expect(result.markdown).toBe('regular text more text');
-			expect(result.thoughts).toBe('deep thought');
-		});
-
-		test('usageMetadata mapped from response', () => {
-			const result = extract({
-				candidates: [{ content: { parts: [{ text: 'ok' }] } }],
-				usageMetadata: {
-					promptTokenCount: 10,
-					candidatesTokenCount: 5,
-					totalTokenCount: 15,
-					cachedContentTokenCount: 2,
-				},
-			});
-			expect(result.usageMetadata).toEqual({
-				promptTokenCount: 10,
-				candidatesTokenCount: 5,
-				totalTokenCount: 15,
-				cachedContentTokenCount: 2,
-			});
-		});
-
-		test('tool calls extracted via extractToolCallsFromResponse', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: {
-							parts: [{ functionCall: { name: 'read_file', args: { path: '/a.md' }, id: 'call-1' } }],
-						},
-					},
-				],
-			});
-			expect(result.toolCalls).toEqual([
-				{ name: 'read_file', arguments: { path: '/a.md' }, id: 'call-1', thoughtSignature: undefined },
-			]);
-		});
-
-		test('search grounding extracted via extractRenderedFromResponse', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: { parts: [{ text: 'answer' }] },
-						groundingMetadata: {
-							groundingChunks: [{ web: { uri: 'https://example.com', title: 'Example' } }],
-						},
-					},
-				],
-			});
-			expect(result.rendered).toContain('https://example.com');
-			expect(result.rendered).toContain('Example');
-		});
-
-		test('empty/no candidates -> empty markdown', () => {
-			expect(extract({ candidates: [] }).markdown).toBe('');
-			expect(extract({}).markdown).toBe('');
-			expect(extract({ candidates: [{ content: { parts: [] } }] }).markdown).toBe('');
-		});
-	});
-
-	// ──────────────────────────────────────────────────────────────────────
-	// extractToolCallsFromResponse()
-	// ──────────────────────────────────────────────────────────────────────
-	describe('extractToolCallsFromResponse()', () => {
-		const extract = (response: any) => (client as any).extractToolCallsFromResponse(response);
-
-		test('single functionCall extracted', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: {
-							parts: [{ functionCall: { name: 'read_file', args: { path: '/a.md' } } }],
-						},
-					},
-				],
-			});
-			expect(result).toHaveLength(1);
-			expect(result![0].name).toBe('read_file');
-			expect(result![0].arguments).toEqual({ path: '/a.md' });
-		});
-
-		test('multiple functionCalls', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: {
-							parts: [
-								{ functionCall: { name: 'read_file', args: { path: '/a.md' } } },
-								{ functionCall: { name: 'write_file', args: { path: '/b.md', content: 'hi' } } },
-							],
-						},
-					},
-				],
-			});
-			expect(result).toHaveLength(2);
-			expect(result![0].name).toBe('read_file');
-			expect(result![1].name).toBe('write_file');
-		});
-
-		test('functionCall with thoughtSignature', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: {
-							parts: [
-								{
-									functionCall: { name: 'tool', args: { x: 1 } },
-									thoughtSignature: 'sig123',
-								},
-							],
-						},
-					},
-				],
-			});
-			expect(result![0].thoughtSignature).toBe('sig123');
-		});
-
-		test('functionCall.args defaults to {} when undefined', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: {
-							parts: [{ functionCall: { name: 'no_args' } }],
-						},
-					},
-				],
-			});
-			expect(result![0].arguments).toEqual({});
-		});
-
-		test('no functionCall parts -> undefined', () => {
-			const result = extract({
-				candidates: [{ content: { parts: [{ text: 'just text' }] } }],
-			});
-			expect(result).toBeUndefined();
-		});
-
-		test('no parts -> undefined', () => {
-			expect(extract({ candidates: [{ content: {} }] })).toBeUndefined();
-			expect(extract({})).toBeUndefined();
-		});
-
-		test('functionCall with id preserved', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: {
-							parts: [{ functionCall: { name: 'tool', args: {}, id: 'fc-42' } }],
-						},
-					},
-				],
-			});
-			expect(result![0].id).toBe('fc-42');
-		});
-	});
-
-	// ──────────────────────────────────────────────────────────────────────
-	// extractRenderedFromResponse()
-	// ──────────────────────────────────────────────────────────────────────
-	describe('extractRenderedFromResponse()', () => {
-		const extract = (response: any) => (client as any).extractRenderedFromResponse(response);
-
-		test('no grounding metadata -> empty string', () => {
-			expect(extract({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] })).toBe('');
-		});
-
-		test('empty groundingChunks -> empty string', () => {
-			expect(
-				extract({
-					candidates: [
-						{
-							content: { parts: [{ text: 'ok' }] },
-							groundingMetadata: { groundingChunks: [] },
-						},
-					],
-				})
-			).toBe('');
-		});
-
-		test('web chunks with title and uri -> HTML with links', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: { parts: [{ text: 'ok' }] },
-						groundingMetadata: {
-							groundingChunks: [
-								{ web: { uri: 'https://example.com', title: 'Example Site' } },
-								{ web: { uri: 'https://test.org', title: 'Test Org' } },
-							],
-						},
-					},
-				],
-			});
-			expect(result).toContain('<a href="https://example.com"');
-			expect(result).toContain('Example Site');
-			expect(result).toContain('<a href="https://test.org"');
-			expect(result).toContain('Test Org');
-			expect(result).toContain('search-grounding');
-		});
-
-		test('web chunks without title -> uses URI as text', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: { parts: [{ text: 'ok' }] },
-						groundingMetadata: {
-							groundingChunks: [{ web: { uri: 'https://no-title.com' } }],
-						},
-					},
-				],
-			});
-			expect(result).toContain('>https://no-title.com</a>');
-		});
-
-		test('links carry rel="noopener noreferrer" via the shared renderer', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: { parts: [{ text: 'ok' }] },
-						groundingMetadata: {
-							groundingChunks: [{ web: { uri: 'https://example.com', title: 'Example' } }],
-						},
-					},
-				],
-			});
-			expect(result).toContain('rel="noopener noreferrer"');
-			expect(result).toContain('target="_blank"');
-		});
-
-		test('chunks without a web object are filtered out', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: { parts: [{ text: 'ok' }] },
-						groundingMetadata: {
-							groundingChunks: [{ retrievedContext: { uri: 'https://not-web.example' } }],
-						},
-					},
-				],
-			});
-			expect(result).toBe('');
-		});
-
-		test('web chunks missing a uri are filtered out while valid siblings still render', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: { parts: [{ text: 'ok' }] },
-						groundingMetadata: {
-							groundingChunks: [
-								{ web: { title: 'No URI here' } },
-								{ web: { uri: 'https://valid.example', title: 'Valid' } },
-							],
-						},
-					},
-				],
-			});
-			expect(result).not.toContain('No URI here');
-			expect(result).toContain('<a href="https://valid.example"');
-			expect(result.match(/<li>/g)).toHaveLength(1);
-		});
-
-		test('sanitizes a malicious url/title through the shared hardened renderer (no HTML injection, no javascript: href)', () => {
-			const result = extract({
-				candidates: [
-					{
-						content: { parts: [{ text: 'ok' }] },
-						groundingMetadata: {
-							groundingChunks: [{ web: { uri: 'javascript:alert(1)', title: '<img src=x onerror=alert(1)>' } }],
-						},
-					},
-				],
-			});
-			// Disallowed scheme is neutralized to '#'.
-			expect(result).toContain('href="#"');
-			expect(result).not.toContain('javascript:');
-			// Title is HTML-escaped, so no raw tag survives.
-			expect(result).not.toContain('<img');
-			expect(result).toContain('&lt;img src=x onerror=alert(1)&gt;');
-		});
-
-		test('only the first candidate is considered for grounding metadata', () => {
-			const result = extract({
-				candidates: [
-					{ content: { parts: [{ text: 'ok' }] }, groundingMetadata: { groundingChunks: [] } },
-					{
-						content: { parts: [{ text: 'other' }] },
-						groundingMetadata: {
-							groundingChunks: [{ web: { uri: 'https://second-candidate.example' } }],
-						},
-					},
-				],
-			});
-			expect(result).toBe('');
-		});
-	});
-
-	// ──────────────────────────────────────────────────────────────────────
-	// extractTextFromChunk() and extractThoughtFromChunk()
-	// ──────────────────────────────────────────────────────────────────────
-	describe('extractTextFromChunk()', () => {
-		const extractText = (chunk: any) => (client as any).extractTextFromChunk(chunk);
-
-		test('chunk with regular text parts -> returns text', () => {
-			const result = extractText({
-				candidates: [{ content: { parts: [{ text: 'hello' }, { text: ' world' }] } }],
-			});
-			expect(result).toBe('hello world');
-		});
-
-		test('chunk with thought parts excluded', () => {
-			const result = extractText({
-				candidates: [
-					{
-						content: {
-							parts: [{ text: 'visible' }, { text: 'hidden', thought: true }],
-						},
-					},
-				],
-			});
-			expect(result).toBe('visible');
-		});
-
-		test('chunk with no candidates -> empty string', () => {
-			expect(extractText({})).toBe('');
-			expect(extractText({ candidates: [] })).toBe('');
-		});
-	});
-
-	describe('extractThoughtFromChunk()', () => {
-		const extractThought = (chunk: any) => (client as any).extractThoughtFromChunk(chunk);
-
-		test('chunk with thought parts -> returns thought text', () => {
-			const result = extractThought({
-				candidates: [
-					{
-						content: {
-							parts: [
-								{ text: 'reasoning step 1', thought: true },
-								{ text: ' reasoning step 2', thought: true },
-							],
-						},
-					},
-				],
-			});
-			expect(result).toBe('reasoning step 1 reasoning step 2');
-		});
-
-		test('chunk with no thought parts -> empty string', () => {
-			const result = extractThought({
-				candidates: [{ content: { parts: [{ text: 'regular text' }] } }],
-			});
-			expect(result).toBe('');
-		});
-
-		test('chunk with no candidates -> empty string', () => {
-			expect(extractThought({})).toBe('');
-			expect(extractThought({ candidates: [] })).toBe('');
-		});
-	});
-
-	// ──────────────────────────────────────────────────────────────────────
-	// buildContents() — tested indirectly via generateModelResponse
-	// ──────────────────────────────────────────────────────────────────────
-	describe('buildContents()', () => {
-		const validResponse = {
-			candidates: [{ content: { parts: [{ text: 'ok' }] } }],
-			usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
-		};
-
-		beforeEach(() => {
-			generateContentMock.mockReset();
-			generateContentMock.mockResolvedValue(validResponse);
-			mockPlugin.agentsMemory = { read: vi.fn().mockResolvedValue('') };
-			mockPlugin.skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
-			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false } };
-		});
-
-		test('Content format history ({role, parts}) passed through', async () => {
-			const historyEntry = { role: 'user', parts: [{ text: 'prior question' }] };
-
-			await client.generateModelResponse({
-				prompt: '',
-				userMessage: 'follow up',
-				kind: 'extended',
-				conversationHistory: [historyEntry],
-			});
-
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			// The history entry should appear in contents
-			expect(params.contents).toEqual(
-				expect.arrayContaining([expect.objectContaining({ role: 'user', parts: [{ text: 'prior question' }] })])
-			);
-		});
-
-		test('Internal {role, text} format converted', async () => {
-			await client.generateModelResponse({
-				prompt: '',
-				userMessage: 'new msg',
-				kind: 'extended',
-				conversationHistory: [{ role: 'user', text: 'old msg' }],
-			} as unknown as ExtendedModelRequest);
-
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			expect(params.contents).toEqual(
-				expect.arrayContaining([expect.objectContaining({ role: 'user', parts: [{ text: 'old msg' }] })])
-			);
-		});
-
-		test('Internal {role, message} format converted', async () => {
-			await client.generateModelResponse({
-				prompt: '',
-				userMessage: 'new msg',
-				kind: 'extended',
-				conversationHistory: [{ role: 'assistant', message: 'I helped' }],
-			} as unknown as ExtendedModelRequest);
-
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			expect(params.contents).toEqual(
-				expect.arrayContaining([expect.objectContaining({ role: 'model', parts: [{ text: 'I helped' }] })])
-			);
-		});
-
-		test('model role mapped to "model" in output', async () => {
-			await client.generateModelResponse({
-				prompt: '',
-				userMessage: 'q',
-				kind: 'extended',
-				conversationHistory: [{ role: 'model', text: 'answer' }],
-			} as unknown as ExtendedModelRequest);
-
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			expect(params.contents).toEqual(
-				expect.arrayContaining([expect.objectContaining({ role: 'model', parts: [{ text: 'answer' }] })])
-			);
-		});
-
-		test('userMessage with inline attachments adds inlineData parts', async () => {
-			await client.generateModelResponse({
-				prompt: '',
-				userMessage: 'look at this',
-				kind: 'extended',
-				conversationHistory: [],
-				inlineAttachments: [{ base64: 'abc123', mimeType: 'image/png' }],
-			});
-
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			const lastContent = params.contents[params.contents.length - 1];
-			expect(lastContent.role).toBe('user');
-			expect(lastContent.parts).toEqual(
-				expect.arrayContaining([{ text: 'look at this' }, { inlineData: { mimeType: 'image/png', data: 'abc123' } }])
-			);
-		});
-
-		test('multiple inlineAttachments all reach the request', async () => {
-			await client.generateModelResponse({
-				prompt: '',
-				userMessage: 'see these',
-				kind: 'extended',
-				conversationHistory: [],
-				inlineAttachments: [
-					{ base64: 'inline1', mimeType: 'image/jpeg' },
-					{ base64: 'inline2', mimeType: 'image/gif' },
-				],
-			});
-
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			const lastContent = params.contents[params.contents.length - 1];
-			// Should have text + 2 inlineData parts
-			const inlineDataParts = lastContent.parts.filter((p: any) => 'inlineData' in p);
-			expect(inlineDataParts).toEqual([
-				{ inlineData: { mimeType: 'image/jpeg', data: 'inline1' } },
-				{ inlineData: { mimeType: 'image/gif', data: 'inline2' } },
-			]);
-		});
-
-		test('empty userMessage with no history -> finalContents is empty string', async () => {
-			await client.generateModelResponse({
-				prompt: '',
-				userMessage: '',
-				kind: 'extended',
-				conversationHistory: [],
-			});
-
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			expect(params.contents).toBe('');
 		});
 	});
 
@@ -1025,240 +495,10 @@ describe('GeminiClient', () => {
 		});
 	});
 
-	// ──────────────────────────────────────────────────────────────────────
-	// buildGenerateContentParams() with tools
-	// ──────────────────────────────────────────────────────────────────────
-	describe('buildGenerateContentParams() with tools', () => {
-		beforeEach(() => {
-			generateContentMock.mockReset();
-			generateContentMock.mockResolvedValue({
-				candidates: [{ content: { parts: [{ text: 'ok' }] } }],
-				usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
-			});
-			mockPlugin.agentsMemory = { read: vi.fn().mockResolvedValue('') };
-			mockPlugin.skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
-			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false } };
-		});
-
-		test('availableTools converted to functionDeclarations in config.tools', async () => {
-			const tools = [
-				{
-					name: 'read_file',
-					description: 'Read a file',
-					parameters: {
-						type: 'object' as const,
-						properties: { path: { type: 'string', description: 'File path' } },
-						required: ['path'],
-					},
-				},
-			];
-
-			await client.generateModelResponse({
-				prompt: '',
-				userMessage: 'read that file',
-				kind: 'extended',
-				conversationHistory: [],
-				availableTools: tools,
-			});
-
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			expect(params.config.tools).toBeDefined();
-			expect(params.config.tools[0].functionDeclarations).toEqual([
-				{
-					name: 'read_file',
-					description: 'Read a file',
-					parameters: {
-						type: 'object',
-						properties: { path: { type: 'string', description: 'File path' } },
-						required: ['path'],
-					},
-				},
-			]);
-		});
-
-		test('maxOutputTokens included when set', async () => {
-			// Ensure mockPlugin has customBaseUrl for constructor
-			mockPlugin.settings.customBaseUrl = '';
-
-			// Create a client with maxOutputTokens configured
-			const configWithMaxTokens: GeminiClientConfig = {
-				apiKey: 'test-api-key',
-				model: 'gemini-pro',
-				maxOutputTokens: 4096,
-			};
-			const clientWithTokens = new GeminiClient(configWithMaxTokens, new GeminiPrompts(mockPlugin), mockPlugin);
-
-			await clientWithTokens.generateModelResponse({
-				prompt: '',
-				userMessage: 'hello',
-				kind: 'extended',
-				conversationHistory: [],
-			});
-
-			const params = (generateContentMock as Mock).mock.calls[0][0];
-			expect(params.config.maxOutputTokens).toBe(4096);
-		});
-	});
-
-	describe('Advanced AI Optimizations', () => {
-		describe('Context Caching', () => {
-			test('creates and uses context cache when history exceeds threshold', async () => {
-				mockPlugin.settings.contextCachingEnabled = true;
-				client = new GeminiClient(
-					{
-						apiKey: 'test-api-key',
-						model: 'gemini-pro',
-						sessionId: 'test-session-123',
-					},
-					new GeminiPrompts(mockPlugin),
-					mockPlugin
-				);
-
-				// Create history exceeding 32,768 tokens (approx 131,000 chars)
-				const largeHistory = [
-					{
-						role: 'user',
-						parts: [{ text: 'a'.repeat(140000) }],
-					},
-					{
-						role: 'model',
-						parts: [{ text: 'hello' }],
-					},
-				];
-
-				await client.generateModelResponse({
-					kind: 'extended',
-					userMessage: 'new user message',
-					conversationHistory: largeHistory,
-				} as ExtendedModelRequest);
-
-				// Verify caches.create was called
-				expect(cachesCreateMock).toHaveBeenCalled();
-				const cacheParams = cachesCreateMock.mock.calls[0][0];
-				expect(cacheParams.model).toBe('gemini-pro');
-				expect(cacheParams.config.contents).toHaveLength(2); // Cached prefix: everything except the last turn (which was length 2)
-
-				// Verify generateContent was called with cachedContent
-				expect(generateContentMock).toHaveBeenCalled();
-				const genParams = generateContentMock.mock.calls[0][0];
-				expect(genParams.config.cachedContent).toBe('cachedContents/test-cache-id');
-
-				// Verify cached properties (systemInstruction, tools) were deleted from request config to prevent duplicate errors
-				expect(genParams.config.systemInstruction).toBeUndefined();
-				expect(genParams.config.tools).toBeUndefined();
-
-				// Suffix contains the rest: only the new user message
-				expect(genParams.contents).toHaveLength(1);
-			});
-
-			test('skips caching when history is below threshold', async () => {
-				mockPlugin.settings.contextCachingEnabled = true;
-				client = new GeminiClient(
-					{
-						apiKey: 'test-api-key',
-						model: 'gemini-pro',
-						sessionId: 'test-session-123',
-					},
-					new GeminiPrompts(mockPlugin),
-					mockPlugin
-				);
-
-				const smallHistory = [
-					{
-						role: 'user',
-						parts: [{ text: 'short message' }],
-					},
-				];
-
-				await client.generateModelResponse({
-					kind: 'extended',
-					userMessage: 'hello',
-					conversationHistory: smallHistory,
-				} as ExtendedModelRequest);
-
-				expect(cachesCreateMock).not.toHaveBeenCalled();
-				const genParams = generateContentMock.mock.calls[0][0];
-				expect(genParams.config.cachedContent).toBeUndefined();
-			});
-		});
-
-		describe('Files API', () => {
-			test('uploads binary files via Files API when enabled', async () => {
-				mockPlugin.settings.filesApiEnabled = true;
-				client = new GeminiClient(
-					{
-						apiKey: 'test-api-key',
-						model: 'gemini-pro',
-					},
-					new GeminiPrompts(mockPlugin),
-					mockPlugin
-				);
-
-				await client.generateModelResponse({
-					prompt: '',
-					kind: 'extended',
-					userMessage: 'look at this image',
-					conversationHistory: [],
-					inlineAttachments: [{ base64: 'abc', mimeType: 'image/png' }],
-				});
-
-				// Verify files.upload was called
-				expect(filesUploadMock).toHaveBeenCalled();
-
-				// Verify request part uses fileData instead of inlineData
-				const genParams = generateContentMock.mock.calls[0][0];
-				const userParts = genParams.contents[0].parts;
-				expect(userParts).toContainEqual({
-					fileData: {
-						fileUri: 'https://files.gemini/test-file-id',
-						mimeType: 'image/png',
-					},
-				});
-				expect(userParts).not.toContainEqual(
-					expect.objectContaining({
-						inlineData: expect.any(Object),
-					})
-				);
-			});
-
-			test('falls back to inlineData when Files API is disabled', async () => {
-				mockPlugin.settings.filesApiEnabled = false;
-				client = new GeminiClient(
-					{
-						apiKey: 'test-api-key',
-						model: 'gemini-pro',
-					},
-					new GeminiPrompts(mockPlugin),
-					mockPlugin
-				);
-
-				await client.generateModelResponse({
-					prompt: '',
-					kind: 'extended',
-					userMessage: 'look at this image',
-					conversationHistory: [],
-					inlineAttachments: [{ base64: 'abc', mimeType: 'image/png' }],
-				});
-
-				expect(filesUploadMock).not.toHaveBeenCalled();
-
-				// Verify request part uses inlineData
-				const genParams = generateContentMock.mock.calls[0][0];
-				const userParts = genParams.contents[0].parts;
-				expect(userParts).toContainEqual({
-					inlineData: {
-						data: 'abc',
-						mimeType: 'image/png',
-					},
-				});
-			});
-		});
-	});
-
-	describe('Interactions API transport (useInteractionsApi)', () => {
+	describe('Interactions API transport', () => {
 		const makeInteractionsClient = (extra: Partial<GeminiClientConfig> = {}) =>
 			new GeminiClient(
-				{ apiKey: 'test-api-key', model: 'gemini-3-flash', useInteractionsApi: true, ...extra },
+				{ apiKey: 'test-api-key', model: 'gemini-3-flash', ...extra },
 				new GeminiPrompts(mockPlugin),
 				mockPlugin
 			);
@@ -1300,17 +540,26 @@ describe('GeminiClient', () => {
 				userMessage: 'hi',
 				kind: 'extended',
 				conversationHistory: [],
-				temperature: 0.4,
-				topP: 0.8,
 			});
 
 			const params = interactionsCreateMock.mock.calls[0][0];
 			expect(params.store).toBe(false);
 			expect(params.previous_interaction_id).toBeUndefined();
-			expect(params.generation_config.temperature).toBe(0.4);
-			expect(params.generation_config.top_p).toBe(0.8);
 			// gemini-3-flash supports thinking → lowercase thinking_level for CHAT use case
 			expect(params.generation_config.thinking_level).toBe('high');
+		});
+
+		test('maxOutputTokens threads through as snake_case max_output_tokens', async () => {
+			const client = makeInteractionsClient({ maxOutputTokens: 4096 });
+			await client.generateModelResponse({
+				prompt: '',
+				userMessage: 'hi',
+				kind: 'extended',
+				conversationHistory: [],
+			});
+
+			const params = interactionsCreateMock.mock.calls[0][0];
+			expect(params.generation_config.max_output_tokens).toBe(4096);
 		});
 
 		test('maps tools to flat function declarations', async () => {
@@ -1342,16 +591,30 @@ describe('GeminiClient', () => {
 
 		test('replays history as typed steps incl. function call/result round-trip', async () => {
 			const client = makeInteractionsClient();
+			// Build the history the way production does — via buildToolHistoryTurns
+			// from a ToolCall + ToolCallResultPair — so this fixture cannot diverge
+			// from the shape buildFunctionResponseParts actually emits (#1398: the
+			// old hand-written Content literal carried a functionResponse.id that
+			// no production path ever produced).
+			const conversationHistory = buildToolHistoryTurns({
+				conversationHistory: [{ role: 'user', parts: [{ text: 'read foo.md' }] }],
+				userMessage: '',
+				toolCalls: [{ id: 'c1', name: 'read_file', arguments: { path: 'foo.md' } }],
+				toolResults: [
+					{
+						toolName: 'read_file',
+						toolArguments: { path: 'foo.md' },
+						result: { success: true, data: { content: 'hi' } },
+						id: 'c1',
+						sourceIndex: 0,
+					},
+				],
+			});
 			await client.generateModelResponse({
 				prompt: '',
 				userMessage: 'and now?',
 				kind: 'extended',
-				conversationHistory: [
-					{ role: 'user', parts: [{ text: 'read foo.md' }] },
-					{ role: 'model', parts: [{ functionCall: { id: 'c1', name: 'read_file', args: { path: 'foo.md' } } }] },
-					{ role: 'user', parts: [{ functionResponse: { id: 'c1', name: 'read_file', response: { content: 'hi' } } }] },
-					{ role: 'model', parts: [{ text: 'foo.md says hi' }] },
-				],
+				conversationHistory,
 			});
 
 			const params = interactionsCreateMock.mock.calls[0][0];
@@ -1364,11 +627,71 @@ describe('GeminiClient', () => {
 					name: 'read_file',
 					// Plain string, never a content array — the array form is a
 					// "multimodal function response" that Gemini 2.5 rejects with a 400.
-					result: JSON.stringify({ content: 'hi' }),
+					result: JSON.stringify({ success: true, data: { content: 'hi' } }),
 				},
-				{ type: 'model_output', content: [{ type: 'text', text: 'foo.md says hi' }] },
 				{ type: 'user_input', content: [{ type: 'text', text: 'and now?' }] },
 			]);
+		});
+
+		test('pairs function_result.call_id with function_call.id after a priority reorder (#1398)', async () => {
+			const client = makeInteractionsClient();
+			// The model emitted [delete_file, read_file]; the sort reorders to
+			// [read_file, delete_file] before execution. The replayed history
+			// must still pair each function_result with its own function_call
+			// id — this is exactly the case where name-based pairing breaks
+			// under two same-name calls or cross-name reordering.
+			const toolCalls: ToolCall[] = [
+				{ id: 'call_d1', name: 'delete_file', arguments: { path: 'a.md' } },
+				{ id: 'call_r1', name: 'read_file', arguments: { path: 'b.md' } },
+			];
+			const toolResults: ToolCallResultPair[] = [
+				{
+					toolName: 'read_file',
+					toolArguments: { path: 'b.md' },
+					result: { success: true, data: {} },
+					id: 'call_r1',
+					sourceIndex: 1,
+				},
+				{
+					toolName: 'delete_file',
+					toolArguments: { path: 'a.md' },
+					result: { success: true, data: {} },
+					id: 'call_d1',
+					sourceIndex: 0,
+				},
+			];
+			const conversationHistory = buildToolHistoryTurns({
+				conversationHistory: [{ role: 'user', parts: [{ text: 'read b.md then delete a.md' }] }],
+				userMessage: '',
+				toolCalls,
+				toolResults,
+			});
+			// Sanity: the call parts are in the model's emitted order.
+			const callParts = conversationHistory
+				.flatMap((c) => c.parts)
+				.filter((p): p is NonNullable<typeof p> => p?.functionCall !== undefined);
+			expect(callParts.map((p) => p.functionCall!.id)).toEqual(['call_d1', 'call_r1']);
+
+			await client.generateModelResponse({
+				prompt: '',
+				userMessage: 'done?',
+				kind: 'extended',
+				conversationHistory,
+			});
+
+			const params = interactionsCreateMock.mock.calls[0][0];
+			const results = params.input.filter((s: { type: string }) => s.type === 'function_result');
+			const calls = params.input.filter((s: { type: string }) => s.type === 'function_call');
+			// Every call_id references a function_call id that exists in the same input.
+			for (const r of results) {
+				expect(calls.some((c: { id?: string }) => c.id === r.call_id)).toBe(true);
+			}
+			// ...and the results are realigned onto the model's emitted order, so
+			// the two turns pair up positionally as well as by id (#1499). Before
+			// the realignment these came back in execution order (r1 then d1),
+			// leaving the id as the only thing holding the pairing together.
+			expect(results.map((r: { call_id: string }) => r.call_id)).toEqual(['call_d1', 'call_r1']);
+			expect(calls.map((c: { id?: string }) => c.id)).toEqual(['call_d1', 'call_r1']);
 		});
 
 		test('maps inline image attachments to image content items', async () => {
@@ -1539,6 +862,46 @@ describe('GeminiClient', () => {
 			expect(result.markdown).not.toContain('NEVER');
 		});
 
+		test('cancel() while create is pending aborts the signal passed to the SDK', async () => {
+			// Cancellation during the create-pending window must reach the
+			// transport: the helper's signal rides the create request, so the
+			// in-flight HTTP call stops instead of completing unnoticed.
+			let capturedOptions: { signal?: AbortSignal } | undefined;
+			let resolveCreate: (stream: unknown) => void = () => {};
+			const gate = new Promise((r) => (resolveCreate = r));
+			let resolveStarted: () => void = () => {};
+			const started = new Promise<void>((r) => (resolveStarted = r));
+			interactionsCreateMock.mockImplementation((_params: unknown, options?: { signal?: AbortSignal }) => {
+				capturedOptions = options;
+				resolveStarted();
+				return gate as any;
+			});
+
+			const client = makeInteractionsClient();
+			const stream = client.generateStreamingResponse(
+				{ prompt: '', userMessage: 'hi', kind: 'extended', conversationHistory: [] },
+				() => {}
+			);
+			// Deterministic ordering: wait until interactions.create has actually
+			// begun (mock invoked, gate unresolved), then cancel — otherwise
+			// cancel() races the mock's invocation and the test could pass
+			// without exercising the create-pending window at all.
+			await started;
+			stream.cancel();
+			resolveCreate({
+				async *[Symbol.asyncIterator]() {
+					yield { event_type: 'step.delta', index: 0, delta: { type: 'text', text: ' NEVER' } };
+				},
+				controller: new AbortController(),
+			});
+
+			const result = await stream.complete;
+
+			expect(capturedOptions?.signal).toBeDefined();
+			expect(capturedOptions?.signal?.aborted).toBe(true);
+			expect(result.markdown).toBe(''); // nothing was consumed
+		});
+
 		test('one-shot base requests pass the prompt as input', async () => {
 			const client = makeInteractionsClient();
 			await client.generateModelResponse({ prompt: 'just answer', kind: 'base' } as any);
@@ -1610,17 +973,15 @@ describe('GeminiClient', () => {
 		});
 	});
 
-	describe('interactions-only model routing (useInteractionsApi off)', () => {
+	describe('interactions-only model routing', () => {
 		// gemini-omni-flash-preview is flagged interactionsOnly in the bundled
 		// catalog: generateContent rejects it with a 400 ("This model only
-		// supports Interactions API"), so the client must route it through the
-		// Interactions path even when the transport toggle is off.
+		// supports Interactions API"). generateModelResponse/generateStreamingResponse
+		// always route through Interactions now (the transport toggle is gone), so
+		// this exercises resolveModel's per-request override and generateImage's
+		// own (still generateContent-based) routing around the same flag.
 		const makeClient = (model: string) =>
-			new GeminiClient(
-				{ apiKey: 'test-api-key', model, useInteractionsApi: false },
-				new GeminiPrompts(mockPlugin),
-				mockPlugin
-			);
+			new GeminiClient({ apiKey: 'test-api-key', model }, new GeminiPrompts(mockPlugin), mockPlugin);
 
 		beforeEach(() => {
 			interactionsCreateMock.mockReset();
@@ -1638,10 +999,10 @@ describe('GeminiClient', () => {
 			// Stub the plugin surface buildExtendedSystemInstruction depends on.
 			mockPlugin.agentsMemory = { read: vi.fn().mockResolvedValue('') };
 			mockPlugin.skillManager = { getSkillSummaries: vi.fn().mockResolvedValue([]) };
-			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false }, useInteractionsApi: false };
+			mockPlugin.settings = { userName: 'Tester', ragIndexing: { enabled: false } };
 		});
 
-		test('configured interactions-only model routes via interactions.create despite the toggle being off', async () => {
+		test('configured interactions-only model routes via interactions.create', async () => {
 			const client = makeClient('gemini-omni-flash-preview');
 			const response = await client.generateModelResponse({
 				prompt: '',
@@ -1669,20 +1030,6 @@ describe('GeminiClient', () => {
 			expect(interactionsCreateMock).toHaveBeenCalledTimes(1);
 			expect(generateContentMock).not.toHaveBeenCalled();
 			expect(interactionsCreateMock.mock.calls[0][0].model).toBe('gemini-omni-flash-preview');
-		});
-
-		test('regular model keeps using generateContent when the toggle is off', async () => {
-			const client = makeClient('gemini-flash-latest');
-			const response = await client.generateModelResponse({
-				prompt: '',
-				userMessage: 'hi',
-				kind: 'extended',
-				conversationHistory: [],
-			});
-
-			expect(generateContentMock).toHaveBeenCalledTimes(1);
-			expect(interactionsCreateMock).not.toHaveBeenCalled();
-			expect(response.markdown).toBe('Hello from generateContent');
 		});
 
 		test('generateImage routes an interactions-only image model via interactions.create', async () => {

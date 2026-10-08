@@ -1,8 +1,10 @@
 import { TFile, normalizePath } from 'obsidian';
 import type { ObsidianGemini } from '../types/plugin';
-import { ensureFolderExists } from '../utils/file-utils';
+import { isPathInFolder } from '../utils/file-utils';
+import { validateFeatureSlug } from '../utils/feature-slug';
 import { FeatureToolPolicy } from '../types/tool-policy';
 import { formatToolPolicyYaml } from './feature-policy-yaml';
+import { yamlScalar } from './yaml-scalar';
 import {
 	extractMarkdownBody,
 	migrateLegacyEnabledTools,
@@ -14,16 +16,30 @@ import { FailurePauseTracker, MAX_CONSECUTIVE_FAILURES } from './failure-pause-t
 import { computeNextRunAt } from './scheduled-tasks/schedule';
 import { detectMissedRuns as detectMissedRunsInWindow } from './scheduled-tasks/missed-runs';
 import { submitTask as submitTaskDispatch, type ExecutionDeps } from './scheduled-tasks/execution';
-import type { PendingCatchUp, ScheduledTask, ScheduledTasksState, TaskState } from './scheduled-tasks/types';
+import type {
+	PendingCatchUp,
+	ScheduledTask,
+	ScheduledTaskCreateParams,
+	ScheduledTasksState,
+	ScheduledTaskUpdateParams,
+	TaskState,
+} from './scheduled-tasks/types';
 
 // Re-export the task types and the pure schedule helper from their new module
 // homes so existing import paths (`from '.../scheduled-task-manager'`) keep working.
-export type { PendingCatchUp, ScheduledTask, ScheduledTasksState, TaskState } from './scheduled-tasks/types';
+export type {
+	PendingCatchUp,
+	ScheduledTask,
+	ScheduledTaskCreateParams,
+	ScheduledTasksState,
+	ScheduledTaskUpdateParams,
+	TaskState,
+} from './scheduled-tasks/types';
 export { computeNextRunAt } from './scheduled-tasks/schedule';
+import { STATE_SUBFOLDERS } from './state-folder';
 
 // ─── Folder / file layout ─────────────────────────────────────────────────────
 
-const SCHEDULED_TASKS_FOLDER = 'Scheduled-Tasks';
 const STATE_FILE = 'scheduled-tasks-state.json';
 
 /** Milliseconds between scheduler ticks (60 s). Same cadence as ChatTimer. */
@@ -49,6 +65,8 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 	private tasks = new Map<string, ScheduledTask>();
 	private tickIntervalId: number | null = null;
 	private initialized = false;
+	/** Invalidates asynchronous handlers across initialize/destroy boundaries. */
+	private lifecycleGeneration = 0;
 	private metadataCacheHandler: ((...data: unknown[]) => unknown) | null = null;
 	private vaultCreateHandler: ((...data: unknown[]) => unknown) | null = null;
 	/** Slugs of tasks currently being submitted — prevents double-fire from tick + runNow race. */
@@ -74,7 +92,7 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 
 	constructor(plugin: ObsidianGemini) {
 		super(plugin, {
-			featureFolder: SCHEDULED_TASKS_FOLDER,
+			featureFolder: STATE_SUBFOLDERS.scheduledTasks,
 			stateFileName: STATE_FILE,
 			logPrefix: '[ScheduledTaskManager]',
 			featureNoun: 'task',
@@ -123,51 +141,56 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 	 * with refresh: true so that historyFolder changes are picked up without
 	 * requiring a full plugin restart.
 	 *
-	 * Passing no arguments (or refresh: false) after the first successful
 	 * initialization is a no-op — this prevents the double-init that occurs
 	 * when setup() runs with layoutReady === true and onLayoutReady() fires
 	 * immediately afterwards.
 	 */
 	async initialize(options?: { refresh?: boolean }): Promise<void> {
 		if (this.initialized && !options?.refresh) return;
+		// Refresh keeps `initialized` true, so invalidate the previous lifecycle explicitly.
+		const generation = ++this.lifecycleGeneration;
+		const isCurrent = () => this.lifecycleGeneration === generation;
 		// Cancel any 500 ms defers still waiting from a previous initialization so
 		// stale callbacks cannot fire against the freshly-loaded state.
-		for (const id of this.pendingDefers) {
-			window.clearTimeout(id);
-		}
-		this.pendingDefers.clear();
+		this.cancelPendingDefers();
 		this.recentlyCreated.clear();
 
 		// Unregister previous listeners before re-registering so settings
 		// changes (e.g. historyFolder rename) don't leave stale handlers active.
-		if (this.metadataCacheHandler) {
-			this.plugin.app.metadataCache.off('changed', this.metadataCacheHandler);
-			this.metadataCacheHandler = null;
-		}
-		if (this.vaultCreateHandler) {
-			this.plugin.app.vault.off('create', this.vaultCreateHandler);
-			this.vaultCreateHandler = null;
+		this.detachVaultListeners();
+
+		// Scheduled-Tasks/ and Runs/ are created by FolderInitializer's eager
+		// pass (EAGER_SUBFOLDERS); LifecycleService.setup() guarantees that pass
+		// has run before this refresh, so the manager is the folder's consumer,
+		// not a second creator.
+		await this.loadState(isCurrent);
+		if (isCurrent()) {
+			await this.discoverDefinitions(isCurrent);
 		}
 
-		await ensureFolderExists(this.plugin.app.vault, this.scheduledTasksFolder, 'scheduled tasks', this.plugin.logger);
-		await ensureFolderExists(this.plugin.app.vault, this.runsFolder, 'scheduled task runs', this.plugin.logger);
-		await this.loadState();
-		await this.discoverDefinitions();
+		if (!isCurrent()) {
+			this.plugin.logger.log('[ScheduledTaskManager] Aborting superseded initialization');
+			return;
+		}
 
 		// Re-parse a task definition file whenever the metadata cache updates it
 		// (fires after Obsidian re-indexes the frontmatter, so values are current).
 		this.metadataCacheHandler = (...data: unknown[]) => {
 			const file = data[0];
 			if (!(file instanceof TFile)) return;
-			const prefix = this.scheduledTasksFolder + '/';
-			const runsPrefix = this.runsFolder + '/';
-			if (file.path.startsWith(prefix) && !file.path.startsWith(runsPrefix) && file.extension === 'md') {
+			if (
+				isPathInFolder(file.path, this.scheduledTasksFolder) &&
+				!isPathInFolder(file.path, this.runsFolder) &&
+				file.extension === 'md'
+			) {
 				const slug = file.basename;
 				// Skip if the vault create handler already claimed this slug — it will
 				// parse the file after its 500 ms defer, so we don't need to do it here.
 				if (this.recentlyCreated.has(slug)) return;
 				this.parseTaskFile(file)
 					.then(async (task) => {
+						// The parse may outlive the lifecycle that started it.
+						if (generation !== this.lifecycleGeneration) return;
 						if (task) {
 							const isNew = !this.tasks.has(task.slug);
 							this.tasks.set(task.slug, task);
@@ -201,9 +224,11 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 			const abstractFile = data[0];
 			if (!(abstractFile instanceof TFile)) return;
 			const file = abstractFile;
-			const prefix = this.scheduledTasksFolder + '/';
-			const runsPrefix = this.runsFolder + '/';
-			if (file.path.startsWith(prefix) && !file.path.startsWith(runsPrefix) && file.extension === 'md') {
+			if (
+				isPathInFolder(file.path, this.scheduledTasksFolder) &&
+				!isPathInFolder(file.path, this.runsFolder) &&
+				file.extension === 'md'
+			) {
 				// Claim the slug immediately so the metadataCache 'changed' handler
 				// (which fires before our 500 ms defer) skips this file.
 				this.recentlyCreated.add(file.basename);
@@ -213,11 +238,12 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 				const timerId = window.setTimeout(() => {
 					this.pendingDefers.delete(timerId);
 					this.recentlyCreated.delete(file.basename);
-					// Guard: if the manager was destroyed or re-initialized while the
-					// defer was pending, skip the parse — state has been reset.
-					if (!this.initialized) return;
+					// A pending timer may outlive the lifecycle that scheduled it.
+					if (!this.initialized || this.lifecycleGeneration !== generation) return;
 					this.parseTaskFile(file)
 						.then(async (task) => {
+							// The parse may outlive the lifecycle that scheduled it.
+							if (this.lifecycleGeneration !== generation) return;
 							if (!task) return;
 							// Skip if createTask() already registered this task immediately.
 							if (this.tasks.has(task.slug)) return;
@@ -309,19 +335,19 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 	 * Create a new scheduled task by writing a markdown file to the tasks folder.
 	 * The metadata cache 'create' listener will pick it up within ~500 ms.
 	 */
-	async createTask(params: {
-		slug: string;
-		schedule: string;
-		toolPolicy?: FeatureToolPolicy;
-		outputPath?: string;
-		model?: string;
-		maxIterations?: number;
-		enabled?: boolean;
-		runIfMissed?: boolean;
-		prompt: string;
-	}): Promise<void> {
+	async createTask(params: ScheduledTaskCreateParams): Promise<void> {
 		const slug = params.slug.trim();
 		if (!slug) throw new Error('Task slug cannot be empty');
+		// Same feature-slug contract as hooks (skills differ: leading letter).
+		// Defense-in-depth, not a live hole: the management modal sanitizes
+		// the field before it gets here. Validated at the write boundary so an
+		// invalid value from a programmatic caller can't escape the
+		// Scheduled-Tasks folder — normalizePath collapses separators but does
+		// not resolve `..` — and can't be persisted.
+		const slugCheck = validateFeatureSlug(slug);
+		if (!slugCheck.valid) {
+			throw new Error(`Task slug ${slugCheck.error}`);
+		}
 		if (this.tasks.has(slug)) throw new Error(`A task named "${slug}" already exists`);
 
 		// Validate schedule before touching the vault — computeNextRunAt throws on
@@ -372,19 +398,7 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 	 * Rewrite a task's definition file (frontmatter + prompt body).
 	 * Slug is the stable identifier — renaming is not supported via this method.
 	 */
-	async updateTask(
-		slug: string,
-		params: {
-			schedule?: string;
-			toolPolicy?: FeatureToolPolicy;
-			outputPath?: string;
-			model?: string;
-			maxIterations?: number;
-			enabled?: boolean;
-			runIfMissed?: boolean;
-			prompt?: string;
-		}
-	): Promise<void> {
+	async updateTask(slug: string, params: ScheduledTaskUpdateParams): Promise<void> {
 		const task = this.tasks.get(slug);
 		if (!task) throw new Error(`Scheduled task "${slug}" not found`);
 
@@ -474,25 +488,15 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 	}
 
 	destroy(): void {
+		// Invalidate in-flight parses before clearing state.
+		this.lifecycleGeneration++;
 		if (this.tickIntervalId !== null) {
 			window.clearInterval(this.tickIntervalId);
 			this.tickIntervalId = null;
 		}
-		if (this.metadataCacheHandler) {
-			this.plugin.app.metadataCache.off('changed', this.metadataCacheHandler);
-			this.metadataCacheHandler = null;
-		}
-		if (this.vaultCreateHandler) {
-			this.plugin.app.vault.off('create', this.vaultCreateHandler);
-			this.vaultCreateHandler = null;
-		}
-		// Cancel any 500 ms defers still in flight — their callbacks check
-		// this.initialized before touching state, but clearing here is the
-		// belt-and-suspenders guarantee that no timer fires after teardown.
-		for (const id of this.pendingDefers) {
-			window.clearTimeout(id);
-		}
-		this.pendingDefers.clear();
+		this.detachVaultListeners();
+		// Also stop any defer that has not fired yet.
+		this.cancelPendingDefers();
 		this.tasks.clear();
 		this.state = {};
 		this.recentlyCreated.clear();
@@ -502,7 +506,36 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 
 	// ── Private ──────────────────────────────────────────────────────────────
 
+	/**
+	 * Detach the metadata-cache and vault-create listeners and drop the stored
+	 * references. Both `initialize()` (re-init) and `destroy()` (teardown) need
+	 * this; the two must stay in step, so they share one implementation.
+	 */
+	private detachVaultListeners(): void {
+		if (this.metadataCacheHandler) {
+			this.plugin.app.metadataCache.off('changed', this.metadataCacheHandler);
+			this.metadataCacheHandler = null;
+		}
+		if (this.vaultCreateHandler) {
+			this.plugin.app.vault.off('create', this.vaultCreateHandler);
+			this.vaultCreateHandler = null;
+		}
+	}
+
+	/** Cancel every in-flight `vaultCreateHandler` defer and forget its timer id. */
+	private cancelPendingDefers(): void {
+		for (const id of this.pendingDefers) {
+			window.clearTimeout(id);
+		}
+		this.pendingDefers.clear();
+	}
+
 	protected parseDefinitionFile(file: TFile): Promise<ScheduledTask | null> {
+		// Deliberately permissive about the slug (#1485): validation is a
+		// create-path contract. Existing installs may hold definition files
+		// whose basename predates the rule (e.g. "My Daily Digest.md") —
+		// validating here would silently drop tasks users depend on. New
+		// creates go through validateFeatureSlug in createTask/create.
 		return this.parseTaskFile(file);
 	}
 
@@ -579,7 +612,7 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 		prompt: string;
 	}): string {
 		const lines: string[] = ['---'];
-		lines.push(`schedule: '${params.schedule}'`);
+		lines.push(`schedule: ${yamlScalar(params.schedule)}`);
 
 		const policyLines = formatToolPolicyYaml(params.toolPolicy);
 		if (policyLines) {
@@ -588,11 +621,11 @@ export class ScheduledTaskManager extends FileBackedFeatureManager<ScheduledTask
 
 		const defaultOutputPath = params.slug && normalizePath(`${this.runsFolder}/${params.slug}/{date}.md`);
 		if (params.outputPath && params.outputPath !== defaultOutputPath) {
-			lines.push(`outputPath: '${params.outputPath}'`);
+			lines.push(`outputPath: ${yamlScalar(params.outputPath)}`);
 		}
 
 		if (params.model) {
-			lines.push(`model: '${params.model}'`);
+			lines.push(`model: ${yamlScalar(params.model)}`);
 		}
 		if (params.maxIterations !== undefined) {
 			lines.push(`maxIterations: ${params.maxIterations}`);

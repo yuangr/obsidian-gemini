@@ -24,6 +24,7 @@ vi.mock('obsidian', () => ({
 
 vi.mock('../../src/utils/file-utils', () => ({
 	ensureFolderExists: vi.fn().mockResolvedValue(undefined),
+	ensureParentFolderExists: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../src/utils/format-utils', () => ({
@@ -75,7 +76,6 @@ function successfulLoopResult(markdown = 'Done.'): AgentLoopResult {
 		markdown,
 		history: [],
 		cancelled: false,
-		retried: false,
 		fellBack: false,
 		exhausted: false,
 		loopAborted: false,
@@ -130,15 +130,23 @@ function createMockPlugin(opts: { existingPaths?: string[]; createBehaviour?: Va
 	return {
 		logger: { log: vi.fn(), debug: vi.fn(), error: vi.fn(), warn: vi.fn() },
 		settings: {
-			chatModelName: 'gemini-2.0-flash',
+			features: {
+				chat: { provider: 'gemini', model: 'gemini-2.0-flash' },
+				summary: { provider: 'gemini', model: '' },
+				completions: { provider: 'gemini', model: '' },
+				rewrite: { provider: 'gemini', model: '' },
+				webSearch: { provider: 'gemini', model: '' },
+				deepResearch: { provider: 'gemini', model: '' },
+				rag: { provider: 'gemini', model: '' },
+				imageGen: { provider: 'gemini', model: '' },
+			},
 			summaryFrontmatterKey: 'summary',
-			temperature: 1,
-			topP: 0.95,
 		},
 		sessionManager: {
+			releaseSession: vi.fn(),
 			createAgentSession: vi.fn().mockResolvedValue({
 				id: 'session-1',
-				title: 'Hook: test-hook',
+				title: 'Hook - test-hook',
 				created: new Date(),
 				context: { enabledTools: [], requireConfirmation: [] },
 				modelConfig: {},
@@ -826,6 +834,41 @@ describe('HookRunner agent-task: cancelled during loop', () => {
 
 		const result = await runner.run();
 		expect(result).toBeUndefined();
+	});
+});
+
+// ─── Agent-task: notice runs are marked incomplete (#1268) ───────────────────
+
+describe('HookRunner agent-task: notice runs marked incomplete', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it.each([
+		['loopAborted', { fellBack: false, loopAborted: true }, 'tool-loop detector aborted the turn'],
+		['fellBack', { fellBack: true, loopAborted: false }, 'the model returned an empty response twice'],
+	])('marks the output note incomplete on %s', async (_label, flags, causeText) => {
+		const generateModelResponse = vi.fn().mockResolvedValue({
+			markdown: '',
+			toolCalls: [{ name: 'some_tool', arguments: {} }],
+		});
+		(ModelClientFactory.createChatModel as any).mockReturnValue({ generateModelResponse });
+		mockAgentLoopRun.mockResolvedValue({
+			...successfulLoopResult('Loop notice text.'),
+			...flags,
+		});
+
+		const plugin = createMockPlugin();
+		const hook = makeHook();
+		const runner = new HookRunner(plugin as any, makeContext(hook));
+
+		const outputPath = await runner.run();
+
+		expect(outputPath).toBeDefined();
+		const written = plugin.__create.mock.calls[0][1] as string;
+		expect(written).toMatch(/incomplete: true/);
+		expect(written).toContain(causeText);
+		expect(written).toContain('Loop notice text.');
 	});
 });
 

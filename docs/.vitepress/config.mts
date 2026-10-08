@@ -34,6 +34,8 @@ export default defineConfig({
 					items: [
 						{ text: 'Introduction', link: '/guide/getting-started' },
 						{ text: 'Ollama (Local Models)', link: '/guide/ollama-setup' },
+						{ text: 'OpenAI', link: '/guide/openai-setup' },
+						{ text: 'Anthropic (Claude)', link: '/guide/anthropic-setup' },
 						{ text: 'FAQ', link: '/guide/faq' },
 					],
 				},
@@ -60,7 +62,6 @@ export default defineConfig({
 					text: 'Reference',
 					items: [
 						{ text: 'Settings', link: '/reference/settings' },
-						{ text: 'Advanced Settings', link: '/reference/advanced-settings' },
 						{ text: 'Provider Capabilities', link: '/reference/provider-capabilities' },
 						{ text: 'Loop Detection', link: '/reference/loop-detection' },
 						{ text: 'Eval Suite', link: '/reference/evals' },

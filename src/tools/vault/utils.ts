@@ -2,7 +2,7 @@ import { TFile, TFolder, normalizePath } from 'obsidian';
 import type { TAbstractFile } from 'obsidian';
 import type { ObsidianGemini } from '../../types/plugin';
 import type { ToolResult } from '../types';
-import { shouldExcludePathForPlugin as shouldExcludePath } from '../../utils/file-utils';
+import { isPathInFolder, shouldExcludePathForPlugin as shouldExcludePath } from '../../utils/file-utils';
 
 /**
  * System-folder guard shared by the write/destructive vault tools. Returns a
@@ -20,13 +20,65 @@ export function guardExcludedPath(normalizedPath: string, plugin: ObsidianGemini
  * scope when it is not inside a protected system folder (the plugin state folder
  * or `.obsidian`) and — when a project is active — it lives under `projectRoot`.
  *
- * The `projectRoot + '/'` boundary is load-bearing: without the trailing slash a
- * `projectRoot` of `Foo` would spuriously match `Foobar/note.md`.
+ * The root-anchored boundary is load-bearing: a plain prefix test with a
+ * `projectRoot` of `Foo` would spuriously match `Foobar/note.md`. `isPathInFolder`
+ * is what supplies it (#1402); `file` is always a `TFile`, so its extra
+ * `path === folder` arm is unreachable here.
  */
 export function isFileInAgentScope(file: TFile, plugin: ObsidianGemini, projectRoot: string | undefined): boolean {
 	if (shouldExcludePath(file.path, plugin)) return false;
-	if (projectRoot && !file.path.startsWith(projectRoot + '/')) return false;
+	if (projectRoot && !isPathInFolder(file.path, projectRoot)) return false;
 	return true;
+}
+
+/**
+ * Project-boundary predicate for the parameterized discovery tools
+ * (`list_files`, `vault_semantic_search`). The two search tools hard-filter
+ * candidates through `isFileInAgentScope`; these two resolve a
+ * model-supplied path argument against the project-root default first, then
+ * ask here whether the resolved path may be used. A path outside the active
+ * project root is a boundary violation (#1506) — callers return an explicit
+ * error so the model learns the boundary exists instead of silently
+ * operating outside it.
+ *
+ * An empty/falsy `projectRoot` means no boundary: either no project is
+ * active, or the project sits at the vault root (`ProjectManager` normalizes
+ * that root to `''`, and the falsy guard is what keeps a vault-root project
+ * from filtering everything). A falsy `path` is the vault root and is
+ * therefore outside any non-empty root.
+ */
+export function isPathInProjectScope(path: string | undefined, projectRoot: string | undefined): boolean {
+	if (!projectRoot) return true;
+	if (!path) return false;
+	// Reject `..` traversal segments before the prefix test. `isPathInFolder`
+	// is a plain string check, so `projects/app/../private` would pass a
+	// `projects/app` prefix even though it resolves outside the boundary;
+	// `normalizePath` collapses slashes but does not resolve `..` (see
+	// `validateGeneratedOutputPath`). Vault paths are canonical — a real
+	// folder never contains `..` — so a traversal segment is by definition
+	// not a path inside the project.
+	if (path.split('/').includes('..')) return false;
+	return isPathInFolder(path, projectRoot);
+}
+
+/**
+ * Model-facing statement of the discovery scope rule for the active project,
+ * folded into the `projectInstructions` system-prompt section (#1506). The
+ * gate above enforces the boundary; this tells the model it exists, so the
+ * model stops being the only party unaware of it. A vault-root project
+ * (`rootPath: ''`) imposes no folder boundary, and the statement says so
+ * rather than implying a restriction.
+ */
+export function projectScopeStatement(projectRoot: string): string {
+	const tools = '`list_files`, `find_files_by_name`, `find_files_by_content`, and `vault_semantic_search`';
+	if (!projectRoot) {
+		return `The active project's root is the vault root, so file discovery tools (${tools}) can operate anywhere in the vault.`;
+	}
+	return (
+		`The active project's root folder is \`${projectRoot}\`. File discovery tools (${tools}) ` +
+		'only operate inside this folder — a path outside it is rejected with an error. Read and write tools ' +
+		'can still access files anywhere in the vault when the user explicitly references them.'
+	);
 }
 
 /**
@@ -50,6 +102,7 @@ export interface VaultFileEntry {
 	path: string;
 	type: 'file' | 'folder';
 	size: number | undefined;
+	// wiring:keep — serialized into the directory-listing tool result the model consumes (JSON payload; no code reader by design)
 	modified: number | undefined;
 }
 

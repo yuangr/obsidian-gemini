@@ -1,5 +1,6 @@
 import type { Content, Part } from '@google/genai';
 import type { ToolCall } from '../api/interfaces/model-api';
+import { ToolClassification } from '../types/tool-policy';
 import type { ToolResult } from '../tools/types';
 
 /**
@@ -14,76 +15,102 @@ import type { ToolResult } from '../tools/types';
  * A tool call paired with its execution result. Carries the original args
  * alongside so emitters that need both (e.g. agent event bus) get a single
  * record instead of having to zip two arrays.
+ *
+ * `id` is the model-assigned tool-call correlation id (present on Interactions
+ * `function_call` steps and OpenAI tool calls; absent on plain generateContent).
+ * Carried through so the replayed `functionResponse` part can reference the
+ * same id the `functionCall` part emitted — the Interactions API pairs a
+ * result to its call by `call_id`, and OpenAI by `tool_call_id` (#1398).
  */
 export interface ToolCallResultPair {
 	toolId?: string;
 	toolName: string;
 	toolArguments: Record<string, unknown>;
 	result: ToolResult;
+	id?: string;
+	/**
+	 * Position of this call in the `toolCalls` array that will be replayed as
+	 * the model turn — i.e. the model's **emitted** order, not the executed
+	 * (sorted) order this result came back in.
+	 *
+	 * `sortToolCallsByPriority` reorders a batch so reads run before
+	 * writes/deletes (#1424), so execution order and emitted order differ
+	 * exactly when the batch mixes classifications out of priority order. The
+	 * replayed model turn keeps the model's emitted order, so the responses
+	 * have to be mapped back onto it or a `read_file` result answers a
+	 * `delete_file` call (#1499). Required — a producer that can't say where
+	 * the call came from can't have its result paired correctly.
+	 *
+	 * Stamp it **before** sorting, and hand `buildToolHistoryTurns` the same
+	 * array the indices were stamped from.
+	 */
+	sourceIndex: number;
 }
 
 /**
- * Tool execution priority. Reads run before writes, writes before deletes —
- * so a model that emits "delete A" and "read A" in the same response can't
- * lose data to the race. Lower number = earlier execution.
+ * A tool call tagged with its position in the model's emitted array.
  *
- * Grouped by classification (band gaps make it obvious where a new tool slots
- * in by category): READS 1–19, EXTERNAL 20–29, WRITES 30–39, DESTRUCTIVE 40+.
- * Unknown tools fall to the END of the EXTERNAL band (29) — safer than after
- * deletes, since most unknown tools added later will be reads or writes, and
- * if it really is destructive the explicit entry should be added.
- *
- * When adding a new tool, add it here too. Any READ-classified tool MUST sort
- * before write_file (30) to satisfy the reads-before-writes invariant.
+ * `name` is duplicated at the top level so an entry can be fed straight to
+ * `sortToolCallsByPriority`, and `sourceIndex` is stamped **before** the sort
+ * so execution order maps back to emitted order without depending on object
+ * identity surviving the sort (which is invisible to a reader and breaks
+ * silently the first time the batch is mapped or cloned).
  */
-const TOOL_PRIORITY: Record<string, number> = {
-	// ── READS (1–19) ────────────────────────────────────────────────────────
-	read_file: 1,
-	list_files: 2,
-	find_files_by_name: 3,
-	find_files_by_content: 4,
-	get_workspace_state: 5,
-	read_memory: 6,
-	recall_sessions: 7,
-	vault_semantic_search: 8,
-	activate_skill: 9,
-	// ── EXTERNAL (20–29) ────────────────────────────────────────────────────
-	google_search: 20,
-	fetch_url: 21,
-	deep_research: 22,
-	google_maps: 23,
-	// ── WRITES (30–39) ──────────────────────────────────────────────────────
-	write_file: 30,
-	create_folder: 31,
-	update_frontmatter: 32,
-	append_content: 33,
-	update_memory: 34,
-	create_skill: 35,
-	edit_skill: 36,
-	generate_image: 37,
-	// ── DESTRUCTIVE (40+) ───────────────────────────────────────────────────
-	move_file: 40,
-	delete_file: 41,
-};
+export interface IndexedToolCall {
+	name: string;
+	call: ToolCall;
+	sourceIndex: number;
+}
+
+/** Tag each call with its position in the model's emitted array, pre-sort. */
+export function indexToolCalls(toolCalls: ToolCall[]): IndexedToolCall[] {
+	return toolCalls.map((call, sourceIndex) => ({ name: call.name, call, sourceIndex }));
+}
 
 /**
- * Default priority for tools not in TOOL_PRIORITY — bottom of the EXTERNAL
- * band so unknowns run after all known reads but before any known writes or
- * destructive operations. Conservative choice: if a future tool is added but
- * its priority entry is forgotten, it still won't race destructive ops.
+ * Execution-priority band for a tool classification. Reads run before
+ * external calls, external before writes, writes before deletes — so a model
+ * that emits "delete A" and "read A" in the same response can't lose data to
+ * the race (#1424). The band is derived from the classification every tool
+ * already declares, so a new tool can't silently sort into the wrong band.
+ * Lower number = earlier execution.
  */
-const UNKNOWN_TOOL_PRIORITY = 29;
+export function classificationToPriority(c: ToolClassification): number {
+	switch (c) {
+		case ToolClassification.READ:
+			return 10;
+		case ToolClassification.EXTERNAL:
+			return 20;
+		case ToolClassification.WRITE:
+			return 30;
+		case ToolClassification.DESTRUCTIVE:
+			return 40;
+	}
+}
 
 /**
  * Sort tool calls so reads execute before writes/deletes.
- * Stable: equal-priority calls retain their original relative order.
+ *
+ * Priority comes from each tool's declared classification via `resolve`; the
+ * map is injected so this module stays pure and registry-free. Within a band
+ * the sort is stable — calls keep the model's emitted order — which is safe:
+ * cross-tool ordering inside a band (e.g. a write's parent folder) is handled
+ * by the tools themselves, not by sort order. A name the resolver can't
+ * resolve falls to the END of the EXTERNAL band (29) — after all known reads,
+ * before any known write/destructive — the same conservative fallback the old
+ * hand-maintained map used.
  */
-export function sortToolCallsByPriority<T extends { name: string }>(toolCalls: T[]): T[] {
-	return [...toolCalls].sort((a, b) => {
-		const pa = TOOL_PRIORITY[a.name] ?? UNKNOWN_TOOL_PRIORITY;
-		const pb = TOOL_PRIORITY[b.name] ?? UNKNOWN_TOOL_PRIORITY;
-		return pa - pb;
-	});
+export function sortToolCallsByPriority<T extends { name: string }>(
+	toolCalls: T[],
+	resolve: (name: string) => ToolClassification | undefined
+): T[] {
+	return [...toolCalls].sort((a, b) => resolvePriority(a.name, resolve) - resolvePriority(b.name, resolve));
+}
+
+/** Band for a resolvable name; the EXTERNAL-band fallback (29) otherwise. */
+function resolvePriority(name: string, resolve: (name: string) => ToolClassification | undefined): number {
+	const classification = resolve(name);
+	return classification === undefined ? 29 : classificationToPriority(classification);
 }
 
 /**
@@ -128,6 +155,10 @@ export function buildFunctionResponseParts(toolResults: ToolCallResultPair[]): P
 					name: tr.toolName,
 					...(tr.toolId && { id: tr.toolId }),
 					response: resultWithoutInlineData,
+					// Reference the id the functionCall part emitted, so
+					// Interactions `call_id` and OpenAI `tool_call_id` pair the
+					// result to its own call rather than by name (#1398).
+					...(tr.id && { id: tr.id }),
 				},
 			},
 		];
@@ -140,6 +171,61 @@ export function buildFunctionResponseParts(toolResults: ToolCallResultPair[]): P
 		}
 		return parts;
 	});
+}
+
+/**
+ * Response text recorded for a call the batch never ran.
+ *
+ * `executeToolBatch` stops at the first cancellation check, so a cancelled
+ * batch returns fewer results than it was given calls. Every provider requires
+ * one response per call — an unpaired `functionCall` is what breaks a resumed
+ * session — so the unanswered calls get this synthetic failure rather than
+ * being dropped from the replayed turn. Model-facing, so it stays English.
+ */
+export const TOOL_CALL_NOT_EXECUTED_ERROR = 'Tool execution cancelled before this call ran';
+
+/**
+ * Map a batch's results back onto the model's emitted call order.
+ *
+ * The returned array is positionally aligned with `toolCalls`: entry `i` is
+ * the response to `toolCalls[i]`. Results land by their `sourceIndex` (stamped
+ * pre-sort, so the priority sort can't scramble the pairing), and any call the
+ * batch never reached gets a synthetic cancelled response so the model turn
+ * and the response turn always carry the same number of parts in the same
+ * order (#1499).
+ *
+ * `unplaced` is unreachable from `executeToolBatch` — it stamps one in-range,
+ * unique index per result. It exists so a malformed batch degrades to
+ * "appended at the end" rather than silently losing a real tool result.
+ */
+function alignResultsToCalls(toolCalls: ToolCall[], toolResults: ToolCallResultPair[]): ToolCallResultPair[] {
+	const slots: (ToolCallResultPair | undefined)[] = toolCalls.map(() => undefined);
+	const unplaced: ToolCallResultPair[] = [];
+
+	for (const result of toolResults) {
+		const i = result.sourceIndex;
+		if (Number.isInteger(i) && i >= 0 && i < slots.length && slots[i] === undefined) {
+			slots[i] = result;
+		} else {
+			unplaced.push(result);
+		}
+	}
+
+	const aligned = slots.map((slot, i) => slot ?? synthesizeUnrunResult(toolCalls[i], i));
+	return unplaced.length > 0 ? [...aligned, ...unplaced] : aligned;
+}
+
+/** The stand-in response for a call the batch never executed. */
+function synthesizeUnrunResult(toolCall: ToolCall, sourceIndex: number): ToolCallResultPair {
+	return {
+		toolName: toolCall.name,
+		toolArguments: toolCall.arguments || {},
+		result: { success: false, error: TOOL_CALL_NOT_EXECUTED_ERROR },
+		sourceIndex,
+		// Keep the correlation id so the synthetic response pairs with its own
+		// call on the id-carrying providers too (#1398).
+		...(toolCall.id && { id: toolCall.id }),
+	};
 }
 
 /**
@@ -157,6 +243,19 @@ export function buildFunctionResponseParts(toolResults: ToolCallResultPair[]): P
  * Use this whenever building the history for a follow-up request after the
  * model emits tool calls. Both UI and headless callers must produce the
  * same shape or the API will reject or misinterpret the request.
+ *
+ * **This function owns the call/response pairing invariant.** The model turn
+ * is replayed from `toolCalls` verbatim — so each `thoughtSignature` stays
+ * attached to the call that produced it — and the results are realigned onto
+ * that order by `sourceIndex` before the response parts are built. The two
+ * arrays are therefore never assumed to be parallel, which is the assumption
+ * the priority sort quietly broke (#1499): whatever order execution returned
+ * results in, each response comes back opposite its own call.
+ *
+ * The contract callers owe in return: `toolCalls` must be the same array the
+ * `sourceIndex` values were stamped from (the model's emitted array — see
+ * `indexToolCalls`), not the sorted one. `AgentLoop` stamps pre-sort and
+ * replays the emitted array for exactly that reason.
  */
 export function buildToolHistoryTurns(args: {
 	conversationHistory: Content[];
@@ -182,7 +281,7 @@ export function buildToolHistoryTurns(args: {
 		userParts.push({ text: perTurnContext });
 	}
 
-	const responseParts = buildFunctionResponseParts(toolResults);
+	const responseParts = buildFunctionResponseParts(alignResultsToCalls(toolCalls, toolResults));
 	if (appendText && appendText.trim()) {
 		responseParts.push({ text: appendText });
 	}

@@ -6,6 +6,19 @@ import {
 } from '../../src/services/context-manager';
 import { ModelClientFactory, ModelUseCase } from '../../src/api';
 
+/**
+ * Build a settings fixture with the given features routed to the given
+ * providers, on top of a base settings object. Mirrors the pre-redesign
+ * `provider` + `providerOverrides` shape these tests used to build directly.
+ */
+function routedSettings(base: any, routes: Record<string, string>): any {
+	const features = { ...(base.features ?? {}) };
+	for (const [feature, provider] of Object.entries(routes)) {
+		features[feature] = { provider, model: '' };
+	}
+	return { ...base, defaultProvider: routes.chat ?? base.defaultProvider, features };
+}
+
 // Mock @google/genai
 const mockCountTokens = vi.fn();
 const mockGenerateContent = vi.fn();
@@ -54,9 +67,11 @@ describe('ContextManager', () => {
 			apiKey: 'test-api-key',
 			logger: mockLogger,
 			settings: {
-				provider: 'gemini',
+				defaultProvider: 'gemini',
 				contextCompactionThreshold: 20,
-				chatModelName: 'gemini-2.5-flash',
+				features: {
+					chat: { provider: 'gemini', model: 'gemini-2.5-flash' },
+				},
 			},
 			getModelManager: vi.fn().mockReturnValue({}),
 		};
@@ -168,6 +183,66 @@ describe('ContextManager', () => {
 		});
 	});
 
+	test('should log reasoning tokens when the provider reports them (#1437)', () => {
+		contextManager.updateUsageMetadata({
+			promptTokenCount: 10000,
+			totalTokenCount: 11000,
+			thoughtsTokenCount: 2500,
+		});
+
+		expect(mockLogger.log).toHaveBeenCalledWith(expect.stringContaining('thoughts=2500'));
+	});
+
+	test('should not log a thoughts segment when the provider omits reasoning tokens', () => {
+		contextManager.updateUsageMetadata({
+			promptTokenCount: 10000,
+			totalTokenCount: 11000,
+		});
+
+		expect(mockLogger.log).toHaveBeenCalledWith(expect.not.stringContaining('thoughts='));
+	});
+
+	test('should surface reasoning tokens through getTokenUsage for the readout', async () => {
+		contextManager.updateUsageMetadata({
+			promptTokenCount: 10000,
+			totalTokenCount: 11000,
+			thoughtsTokenCount: 2500,
+		});
+
+		const usage = await contextManager.getTokenUsage('gemini-2.5-flash');
+		expect(usage.thoughtsTokens).toBe(2500);
+	});
+
+	test('should omit thoughtsTokens from the readout when the provider does not report them', async () => {
+		contextManager.updateUsageMetadata({
+			promptTokenCount: 10000,
+			totalTokenCount: 11000,
+		});
+
+		const usage = await contextManager.getTokenUsage('gemini-2.5-flash');
+		expect(usage.thoughtsTokens).toBeUndefined();
+	});
+
+	test('should preserve the full consumed field set of UsageMetadata (drift guard, #1437)', () => {
+		// The shared UsageMetadata type is the contract between API producers
+		// (gemini, ollama, openai clients) and this consumer. If a producer adds
+		// a field this consumer's cache doesn't round-trip, or a consumer starts
+		// reading one the producers stopped sending, that divergence must fail
+		// here rather than type-check silently through structural compatibility.
+		const sample = {
+			promptTokenCount: 1,
+			candidatesTokenCount: 2,
+			totalTokenCount: 3,
+			cachedContentTokenCount: 4,
+			thoughtsTokenCount: 5,
+		};
+		contextManager.updateUsageMetadata(sample);
+		// The log line reads prompt/total/cached/thoughts; getTokenUsage reads
+		// prompt/cached/thoughts. Together they touch every declared field.
+		expect(mockLogger.log).toHaveBeenCalledWith(expect.stringContaining('prompt=1, total=3, cached=4'));
+		expect(mockLogger.log).toHaveBeenCalledWith(expect.stringContaining('thoughts=5'));
+	});
+
 	describe('setUsageMetadata', () => {
 		test('should force-set metadata even if lower than cached', async () => {
 			contextManager.updateUsageMetadata({ promptTokenCount: 50000, totalTokenCount: 60000 });
@@ -228,7 +303,7 @@ describe('ContextManager', () => {
 				]);
 			const plugin = {
 				...mockPlugin,
-				settings: { ...mockPlugin.settings, provider: 'ollama' },
+				settings: routedSettings(mockPlugin.settings, { chat: 'ollama' }),
 				getModelManager: vi.fn().mockReturnValue({
 					getOllamaModelsService: () => ({ getRuntimeContextLength, getModels }),
 				}),
@@ -303,7 +378,7 @@ describe('ContextManager', () => {
 			await withOllamaModelRegistered(async () => {
 				const plugin = {
 					...mockPlugin,
-					settings: { ...mockPlugin.settings, provider: 'ollama' },
+					settings: routedSettings(mockPlugin.settings, { chat: 'ollama' }),
 					getModelManager: vi.fn().mockReturnValue({
 						getOllamaModelsService: () => ({
 							getRuntimeContextLength: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')),
@@ -389,7 +464,7 @@ describe('ContextManager', () => {
 			const ollamaPlugin = {
 				...mockPlugin,
 				apiKey: '',
-				settings: { ...mockPlugin.settings, provider: 'ollama' },
+				settings: routedSettings(mockPlugin.settings, { chat: 'ollama' }),
 			};
 			const ollamaCtx = new ContextManager(ollamaPlugin, mockLogger);
 
@@ -417,7 +492,7 @@ describe('ContextManager', () => {
 			try {
 				const mixedPlugin = {
 					...mockPlugin,
-					settings: { ...mockPlugin.settings, provider: 'ollama', providerOverrides: { summary: 'gemini' } },
+					settings: routedSettings(mockPlugin.settings, { chat: 'ollama', summary: 'gemini' }),
 				};
 				const ctx = new ContextManager(mixedPlugin, mockLogger);
 				const contents = [{ role: 'user', parts: [{ text: 'hello world' }] }];
@@ -448,7 +523,7 @@ describe('ContextManager', () => {
 				const ollamaPlugin = {
 					...mockPlugin,
 					apiKey: 'test-api-key',
-					settings: { ...mockPlugin.settings, provider: 'ollama' },
+					settings: routedSettings(mockPlugin.settings, { chat: 'ollama' }),
 				};
 				const ctx = new ContextManager(ollamaPlugin, mockLogger);
 
@@ -464,7 +539,7 @@ describe('ContextManager', () => {
 			const ollamaPlugin = {
 				...mockPlugin,
 				apiKey: '',
-				settings: { ...mockPlugin.settings, provider: 'ollama' },
+				settings: routedSettings(mockPlugin.settings, { chat: 'ollama' }),
 			};
 			const ollamaCtx = new ContextManager(ollamaPlugin, mockLogger);
 			const contents = [{ role: 'user', parts: [{ text: 'a'.repeat(400) }] }];
@@ -483,7 +558,7 @@ describe('ContextManager', () => {
 			const ollamaPlugin = {
 				...mockPlugin,
 				apiKey: '',
-				settings: { ...mockPlugin.settings, provider: 'ollama' },
+				settings: routedSettings(mockPlugin.settings, { chat: 'ollama' }),
 			};
 			const ollamaCtx = new ContextManager(ollamaPlugin, mockLogger);
 			const contents = [{ role: 'user', parts: [{ text: 'a'.repeat(400) }] }];
@@ -500,7 +575,7 @@ describe('ContextManager', () => {
 			const ollamaPlugin = {
 				...mockPlugin,
 				apiKey: '',
-				settings: { ...mockPlugin.settings, provider: 'ollama' },
+				settings: routedSettings(mockPlugin.settings, { chat: 'ollama' }),
 			};
 			const ollamaCtx = new ContextManager(ollamaPlugin, mockLogger);
 
@@ -509,6 +584,26 @@ describe('ContextManager', () => {
 			expect(() => ollamaCtx.updateUsageMetadata({ promptTokenCount: 100 }, 'never-estimated')).not.toThrow();
 			expect(() => ollamaCtx.updateUsageMetadata({ totalTokenCount: 100 }, 'llama3.2')).not.toThrow();
 			expect(() => ollamaCtx.updateUsageMetadata({ promptTokenCount: 100 })).not.toThrow();
+		});
+
+		// #1508 review: `this.ai` is constructed whenever Gemini serves *any*
+		// feature, so a naive "unknown model -> default to Gemini" fallback would
+		// send chat history to Gemini's countTokens even though chat itself is
+		// off. Chat routed to 'none' must estimate locally instead.
+		test('chat routed to none: estimates locally even when Gemini serves another feature', async () => {
+			const noneChatPlugin = {
+				...mockPlugin,
+				settings: routedSettings(mockPlugin.settings, { chat: 'none', rag: 'gemini' }),
+			};
+			const ctx = new ContextManager(noneChatPlugin, mockLogger);
+
+			const result = await ctx.countTokens('some-unrecognized-model', [
+				{ role: 'user', parts: [{ text: 'hello world' }] },
+			]);
+
+			expect(result).toBeGreaterThan(0);
+			expect(mockCountTokens).not.toHaveBeenCalled();
+			expect(mockLogger.log).toHaveBeenCalledWith(expect.stringContaining('countTokens (estimate)'));
 		});
 	});
 
@@ -768,7 +863,7 @@ describe('ContextManager', () => {
 			try {
 				const mixedPlugin = {
 					...mockPlugin,
-					settings: { ...mockPlugin.settings, provider: 'gemini', providerOverrides: { summary: 'ollama' } },
+					settings: routedSettings(mockPlugin.settings, { chat: 'gemini', summary: 'ollama' }),
 				};
 				const ctx = new ContextManager(mixedPlugin, mockLogger);
 				ctx.updateUsageMetadata({ promptTokenCount: 250_000, totalTokenCount: 300_000 });
@@ -820,26 +915,35 @@ describe('ContextManager', () => {
 		});
 
 		test('handles empty Gemini summary result with fallback message', async () => {
-			contextManager.updateUsageMetadata({
-				promptTokenCount: 250_000,
-				totalTokenCount: 300_000,
-			});
-			mockCountTokens.mockResolvedValue({ totalTokens: 50_000 });
-			// Return empty summary from generateContent
-			mockGenerateContent.mockResolvedValue({
-				candidates: [{ content: { parts: [{ text: '' }] } }],
-			});
+			// Summarization goes through ModelClientFactory.createFromPlugin(...,
+			// ModelUseCase.SUMMARY), not a direct SDK call — stub the factory to
+			// return an empty response, same as the other factory-routed tests above.
+			const factorySpy = vi
+				.spyOn(ModelClientFactory, 'createFromPlugin')
+				.mockReturnValue({ generateModelResponse: vi.fn().mockResolvedValue({ markdown: '' }) });
 
-			const history = Array.from({ length: 20 }, (_, i) => ({
-				role: i % 2 === 0 ? 'user' : 'model',
-				parts: [{ text: `Message ${i}` }],
-			}));
+			try {
+				contextManager.updateUsageMetadata({
+					promptTokenCount: 250_000,
+					totalTokenCount: 300_000,
+				});
+				mockCountTokens.mockResolvedValue({ totalTokens: 50_000 });
 
-			const result = await contextManager.prepareHistory(history, 'gemini-2.5-flash');
+				const history = Array.from({ length: 20 }, (_, i) => ({
+					role: i % 2 === 0 ? 'user' : 'model',
+					parts: [{ text: `Message ${i}` }],
+				}));
 
-			expect(result.wasCompacted).toBe(true);
-			expect(result.summaryText).toContain('could not be summarized');
-			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Summary generation returned empty result'));
+				const result = await contextManager.prepareHistory(history, 'gemini-2.5-flash');
+
+				expect(result.wasCompacted).toBe(true);
+				expect(result.summaryText).toContain('could not be summarized');
+				expect(mockLogger.warn).toHaveBeenCalledWith(
+					expect.stringContaining('Summary generation returned empty result')
+				);
+			} finally {
+				factorySpy.mockRestore();
+			}
 		});
 
 		test('handles Gemini summary with no candidates gracefully', async () => {
@@ -976,14 +1080,14 @@ describe('ContextManager', () => {
 		describe('Ollama calibration seeding', () => {
 			// prepareHistory() is the entry point called before every outgoing
 			// request. Its normal (no-compaction-needed) paths don't call
-			// countTokens(), so they must still seed the pending Ollama estimate
-			// themselves or calibrateOllamaRatio() never has anything to
+			// countTokens(), so they must still seed the pending estimate
+			// themselves or calibrateEstimatedRatio() never has anything to
 			// calibrate against on ordinary turns (see #707 review feedback).
 			function buildOllamaContext() {
 				const ollamaPlugin = {
 					...mockPlugin,
 					apiKey: '',
-					settings: { ...mockPlugin.settings, provider: 'ollama' },
+					settings: routedSettings(mockPlugin.settings, { chat: 'ollama' }),
 				};
 				return new ContextManager(ollamaPlugin, mockLogger);
 			}
@@ -1032,6 +1136,56 @@ describe('ContextManager', () => {
 				ollamaCtx.updateUsageMetadata({ promptTokenCount: Math.round(baselineEstimate / 4) }, 'llama3.2');
 				const recalibratedEstimate = await ollamaCtx.countTokens('llama3.2', history);
 				expect(recalibratedEstimate).toBeLessThan(baselineEstimate);
+			});
+		});
+
+		// The estimate-and-calibrate path is selected by capability (no
+		// `nativeTokenCount`), not by provider — OpenAI-compatible servers take it
+		// too. These guard against the guard narrowing back to Ollama-only, and
+		// against the Ollama-specific naming/logging returning (#1287).
+		describe('calibration for non-Ollama estimated providers', () => {
+			function buildOpenAIContext() {
+				const openaiPlugin = {
+					...mockPlugin,
+					apiKey: '',
+					settings: routedSettings(mockPlugin.settings, { chat: 'openai' }),
+				};
+				return new ContextManager(openaiPlugin, mockLogger);
+			}
+
+			test('calibrates a model served by an estimate-only non-Ollama provider', async () => {
+				const openaiCtx = buildOpenAIContext();
+				const history = [
+					{ role: 'user', parts: [{ text: 'a'.repeat(400) }] },
+					{ role: 'model', parts: [{ text: 'Hi!' }] },
+				];
+
+				// Baseline under a never-seeded model name, so only prepareHistory()
+				// can seed calibration for the model under test.
+				const baselineEstimate = await openaiCtx.countTokens('gpt-test-baseline', history);
+
+				await openaiCtx.prepareHistory(history, 'gpt-test');
+
+				// Real response reports far fewer tokens than the default ratio predicted.
+				openaiCtx.updateUsageMetadata({ promptTokenCount: Math.round(baselineEstimate / 2) }, 'gpt-test');
+				const recalibratedEstimate = await openaiCtx.countTokens('gpt-test', history);
+				expect(recalibratedEstimate).toBeLessThan(baselineEstimate);
+			});
+
+			test('logs calibration without naming Ollama', async () => {
+				const openaiCtx = buildOpenAIContext();
+				const history = [{ role: 'user', parts: [{ text: 'a'.repeat(400) }] }];
+
+				await openaiCtx.prepareHistory(history, 'gpt-test');
+				openaiCtx.updateUsageMetadata({ promptTokenCount: 50 }, 'gpt-test');
+
+				const calibrationLogs = mockLogger.debug.mock.calls
+					.map((args: any[]) => String(args[0]))
+					.filter((message: string) => message.includes('Calibrated'));
+
+				expect(calibrationLogs).toHaveLength(1);
+				expect(calibrationLogs[0]).toContain('Calibrated estimated chars/token for gpt-test');
+				expect(calibrationLogs[0]).not.toContain('Ollama');
 			});
 		});
 	});

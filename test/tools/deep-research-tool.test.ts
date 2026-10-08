@@ -1,4 +1,4 @@
-import { DeepResearchTool, getDeepResearchTool } from '../../src/tools/deep-research-tool';
+import { DeepResearchTool } from '../../src/tools/deep-research-tool';
 import { ToolExecutionContext } from '../../src/tools/types';
 import { ToolCategory } from '../../src/types/agent';
 import { TFile } from 'obsidian';
@@ -25,6 +25,7 @@ const mockEnsureFolderExists = vi.fn().mockResolvedValue(undefined);
 vi.mock('../../src/utils/file-utils', async () => ({
 	...(await vi.importActual<any>('../../src/utils/file-utils')),
 	ensureFolderExists: (...args: any[]) => mockEnsureFolderExists(...args),
+	ensureParentFolderExists: vi.fn().mockResolvedValue(undefined),
 	sanitizeFileName: (name: string) =>
 		name
 			.replace(/[\\/:*?"<>|]/g, '-')
@@ -285,7 +286,7 @@ describe('DeepResearchTool', () => {
 			const result = await tool.execute({ topic: 'Test', outputFile: 'research-report' }, mockContext);
 
 			expect(result.success).toBe(true);
-			expect(result.data.outputFile).toBe('research-report.md');
+			expect((result.data as any).outputFile).toBe('research-report.md');
 			expect(mockContext.session.context.contextFiles).toContain(mockFile);
 		});
 
@@ -370,8 +371,8 @@ describe('DeepResearchTool', () => {
 			);
 
 			expect(result.success).toBe(true);
-			expect(result.data.taskId).toBe('bg-task-1');
-			expect(result.data.output_file).toBe('reports/ai-ethics.md');
+			expect((result.data as any).taskId).toBe('bg-task-1');
+			expect((result.data as any).output_file).toBe('reports/ai-ethics.md');
 			// conductResearch is NOT called synchronously — it runs inside the submitted callback
 			expect(mockDeepResearch.conductResearch).not.toHaveBeenCalled();
 		});
@@ -390,7 +391,9 @@ describe('DeepResearchTool', () => {
 			const result = await tool.execute({ topic: 'Test Topic', background: true }, mockContext);
 
 			expect(result.success).toBe(true);
-			expect(result.data.output_file).toMatch(/^gemini-scribe\/Background-Tasks\/\d{4}-\d{2}-\d{2} Test Topic\.md$/);
+			expect((result.data as any).output_file).toMatch(
+				/^gemini-scribe\/Background-Tasks\/\d{4}-\d{2}-\d{2} Test Topic\.md$/
+			);
 		});
 
 		it('truncates long topic in the BackgroundTaskManager label', async () => {
@@ -456,23 +459,6 @@ describe('DeepResearchTool', () => {
 			expect(result.success).toBe(true);
 			expect(result.data).toHaveProperty('report');
 			expect(mockBackgroundTaskManager.submit).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('getDeepResearchTool', () => {
-		it('should return DeepResearchTool instance', () => {
-			const tool = getDeepResearchTool();
-
-			expect(tool).toBeInstanceOf(DeepResearchTool);
-			expect(tool.name).toBe('deep_research');
-		});
-
-		it('should return a new instance each time', () => {
-			const tool1 = getDeepResearchTool();
-			const tool2 = getDeepResearchTool();
-
-			expect(tool1).not.toBe(tool2);
-			expect(tool1.name).toBe(tool2.name);
 		});
 	});
 });

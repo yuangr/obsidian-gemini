@@ -1,6 +1,6 @@
 import { App, TFile } from 'obsidian';
 import type { ObsidianGemini } from '../types/plugin';
-import { resolveOutputPath, writeHeadlessOutput } from './headless-run-output';
+import { resolveOutputPath, writeHeadlessOutput, markIncompleteOutput } from './headless-run-output';
 import { formatLocalDate } from '../utils/format-utils';
 import { GeminiSummary } from '../summary';
 import { SelectionRewriter } from '../rewrite-selection';
@@ -45,10 +45,10 @@ export class HookRunner {
 	private async runAgentTask(isCancelled: () => boolean): Promise<string | undefined> {
 		const { hook } = this.ctx;
 
-		const finalText = await runHeadlessAgentTurn(
+		const turn = await runHeadlessAgentTurn(
 			this.plugin,
 			{
-				sessionLabel: `Hook: ${hook.slug}`,
+				sessionLabel: `Hook - ${hook.slug}`,
 				logPrefix: '[HookRunner]',
 				subjectNoun: 'Hook',
 				subjectName: hook.slug,
@@ -65,33 +65,22 @@ export class HookRunner {
 		);
 
 		// `undefined` means the run was cancelled mid-turn — nothing to write.
-		if (finalText === undefined) return undefined;
+		if (turn === undefined) return undefined;
 
 		if (isCancelled()) return undefined;
 		if (!hook.outputPath) return undefined;
-		if (!finalText) return undefined;
+		if (!turn.text) return undefined;
 
 		const outputPath = this.resolveOutputPath();
-		await this.writeOutput(outputPath, finalText);
+		await this.writeOutput(outputPath, turn.text, turn.notice);
 		return outputPath;
 	}
 
 	// ── summarize action ─────────────────────────────────────────────────────
 
 	private async runSummarize(isCancelled: () => boolean): Promise<string | undefined> {
-		if (isCancelled()) return undefined;
-		const file = this.resolveTriggerFile();
+		const file = this.resolveMarkdownTriggerFile('summarize', isCancelled);
 		if (!file) return undefined;
-		// Existing summary feature only supports markdown — non-md fires are a
-		// silent no-op rather than a failure, so a hook with a broad pathGlob
-		// that catches images doesn't pollute the failure counter.
-		if (file.extension !== 'md') {
-			this.plugin.logger.log(
-				`[HookRunner] Hook "${this.ctx.hook.slug}" — summarize: skipping non-markdown file ${file.path}`
-			);
-			return undefined;
-		}
-		if (isCancelled()) return undefined;
 		const summarizer = this.plugin.summarizer ?? new GeminiSummary(this.plugin);
 		await summarizer.summarizeFile(file);
 		// summarize writes back to frontmatter on the original file rather
@@ -103,16 +92,8 @@ export class HookRunner {
 	// ── rewrite action ───────────────────────────────────────────────────────
 
 	private async runRewrite(isCancelled: () => boolean): Promise<string | undefined> {
-		if (isCancelled()) return undefined;
-		const file = this.resolveTriggerFile();
+		const file = this.resolveMarkdownTriggerFile('rewrite', isCancelled);
 		if (!file) return undefined;
-		if (file.extension !== 'md') {
-			this.plugin.logger.log(
-				`[HookRunner] Hook "${this.ctx.hook.slug}" — rewrite: skipping non-markdown file ${file.path}`
-			);
-			return undefined;
-		}
-		if (isCancelled()) return undefined;
 		const instructions = renderPrompt(this.ctx.hook.prompt, this.promptVars());
 		const rewriter = new SelectionRewriter(this.plugin);
 		await rewriter.rewriteFile(file, instructions);
@@ -168,6 +149,32 @@ export class HookRunner {
 		return undefined;
 	}
 
+	/**
+	 * Shared preamble for the markdown-only actions (summarize, rewrite): honour
+	 * cancellation on both sides of the lookup, resolve the trigger file, and skip
+	 * non-markdown fires.
+	 *
+	 * The summary and rewrite features only support markdown — a non-md fire is a
+	 * silent no-op rather than a failure, so a hook with a broad pathGlob that
+	 * catches images doesn't pollute the failure counter.
+	 *
+	 * Returns `undefined` when the caller should skip (cancelled, file gone, or
+	 * not markdown); the skip reason is logged here.
+	 */
+	private resolveMarkdownTriggerFile(action: string, isCancelled: () => boolean): TFile | undefined {
+		if (isCancelled()) return undefined;
+		const file = this.resolveTriggerFile();
+		if (!file) return undefined;
+		if (file.extension !== 'md') {
+			this.plugin.logger.log(
+				`[HookRunner] Hook "${this.ctx.hook.slug}" — ${action}: skipping non-markdown file ${file.path}`
+			);
+			return undefined;
+		}
+		if (isCancelled()) return undefined;
+		return file;
+	}
+
 	private resolveTriggerFile(): TFile | undefined {
 		// `file-deleted` hooks don't have a TFile to act on (the file is
 		// gone). Skip silently rather than fail. The agent-task path
@@ -198,13 +205,24 @@ export class HookRunner {
 		});
 	}
 
-	private async writeOutput(outputPath: string, content: string): Promise<void> {
+	private async writeOutput(
+		outputPath: string,
+		content: string,
+		notice?: { fellBack?: boolean; loopAborted?: boolean }
+	): Promise<void> {
 		const ranAt = new Date().toISOString();
-		const header =
+		let header =
 			`---\nhook: ${JSON.stringify(this.ctx.hook.slug)}\n` +
 			`triggered_by: ${JSON.stringify(this.ctx.filePath)}\n` +
 			`trigger: ${JSON.stringify(this.ctx.trigger)}\n` +
 			`ran_at: ${JSON.stringify(ranAt)}\n---\n\n`;
+		let body = content;
+
+		// A loop-generated notice (empty-twice fallback or loop-detector abort)
+		// must never read as the run's real result — mark the note instead (#1268).
+		if (notice) {
+			({ header, content: body } = markIncompleteOutput(header, body, notice));
+		}
 
 		// Two concurrent hook fires can independently choose the same candidate
 		// path (resolve-unique + vault.create is non-atomic), so use the shared
@@ -214,7 +232,7 @@ export class HookRunner {
 			vault: this.plugin.app.vault,
 			outputPath,
 			header,
-			content,
+			content: body,
 			folderLabel: 'hook output folder',
 			logger: this.plugin.logger,
 			retry: { limit: 8, label: '[HookRunner]', outputNoun: 'hook output' },

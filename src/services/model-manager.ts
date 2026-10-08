@@ -3,31 +3,41 @@ import * as modelsModule from '../models';
 import {
 	GeminiModel,
 	ModelProvider,
-	ModelUpdateResult,
-	getUpdatedModelSettings,
+	getUpdatedFeatureRoutes,
 	DEFAULT_GEMINI_MODELS,
+	isModelEligibleForRole,
 } from '../models';
-import { activeProviders, resolveProviderOrDefault } from '../api/provider-routing';
+import { activeProviders, featureProvider } from '../api/feature-routing';
 import type { ObsidianGeminiSettings } from '../types/settings';
 import { ModelListProvider, RefreshResult } from './model-list-provider';
 import { OllamaModelsService } from './ollama-models-service';
-import { ParameterValidationService, ParameterRanges } from './parameter-validation';
+import { OpenAIModelsService } from './openai-models-service';
+import { AnthropicModelsService } from './anthropic-models-service';
 
 export interface ModelUpdateOptions {
 	forceRefresh?: boolean;
-	preserveUserCustomizations?: boolean;
+}
+
+export interface ModelUpdateOutcome {
+	updatedSettings: ObsidianGeminiSettings;
+	settingsChanged: boolean;
+	changedSettingsInfo: string[];
 }
 
 export class ModelManager {
 	private plugin: ObsidianGemini;
 	private listProvider: ModelListProvider;
 	private ollamaModelsService: OllamaModelsService;
+	private openaiModelsService: OpenAIModelsService;
+	private anthropicModelsService: AnthropicModelsService;
 	private static staticModels: GeminiModel[] = [...DEFAULT_GEMINI_MODELS];
 
 	constructor(plugin: ObsidianGemini) {
 		this.plugin = plugin;
 		this.listProvider = new ModelListProvider(plugin);
 		this.ollamaModelsService = new OllamaModelsService(plugin);
+		this.openaiModelsService = new OpenAIModelsService(plugin);
+		this.anthropicModelsService = new AnthropicModelsService(plugin);
 	}
 
 	/**
@@ -39,20 +49,26 @@ export class ModelManager {
 	 * right models in each row (#704).
 	 */
 	async getAvailableModels(options: ModelUpdateOptions = {}, provider?: ModelProvider): Promise<GeminiModel[]> {
-		const target = provider ?? resolveProviderOrDefault(this.plugin.settings, 'chat');
-		if (target === 'ollama') {
-			return this.ollamaModelsService.getModels(options.forceRefresh);
+		// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
+		const target = provider ?? featureProvider(this.plugin.settings, 'chat') ?? 'gemini';
+		// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
+		if (target === 'gemini') {
+			return this.listProvider.getTextModels();
 		}
-		return this.listProvider.getTextModels();
+		return (await this.getProviderModelsService(target).getModels(options.forceRefresh)).filter((m) =>
+			isModelEligibleForRole(m, 'chat')
+		);
 	}
 
 	/**
-	 * Get image generation models. Only Gemini serves image generation today
-	 * (`capabilities.imageGen`), so this is always the Gemini list; the picker is
-	 * hidden entirely when no provider is routed to image generation.
+	 * Get image-generation models for the provider serving that feature.
 	 */
-	async getImageGenerationModels(): Promise<GeminiModel[]> {
-		return this.listProvider.getImageModels();
+	async getImageGenerationModels(provider?: ModelProvider): Promise<GeminiModel[]> {
+		// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
+		const target = provider ?? featureProvider(this.plugin.settings, 'imageGen') ?? 'gemini';
+		// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
+		if (target === 'gemini') return this.listProvider.getImageModels();
+		return (await this.getProviderModelsService(target).getModels()).filter((m) => isModelEligibleForRole(m, 'image'));
 	}
 
 	/**
@@ -66,14 +82,17 @@ export class ModelManager {
 		const providers = activeProviders(this.plugin.settings);
 		const models: GeminiModel[] = [];
 
+		// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
 		if (providers.includes('gemini')) {
 			models.push(...this.listProvider.getModels());
 		}
-		if (providers.includes('ollama')) {
+		for (const provider of providers) {
+			// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
+			if (provider === 'gemini') continue;
 			try {
-				models.push(...(await this.ollamaModelsService.getModels(forceRefresh)));
+				models.push(...(await this.getProviderModelsService(provider).getModels(forceRefresh)));
 			} catch (error) {
-				this.plugin.logger.warn('[ModelManager] Could not load Ollama models:', error);
+				this.plugin.logger.warn(`[ModelManager] Could not load ${provider} models:`, error);
 			}
 		}
 		return models;
@@ -87,9 +106,24 @@ export class ModelManager {
 	}
 
 	/**
+	 * The model-list service for a provider whose list is fetched on demand
+	 * (everything but Gemini, whose list comes from `getListProvider()`).
+	 */
+	getProviderModelsService(
+		// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
+		provider: Exclude<ModelProvider, 'gemini'>
+	): OllamaModelsService | OpenAIModelsService | AnthropicModelsService {
+		// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
+		if (provider === 'ollama') return this.ollamaModelsService;
+		// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
+		if (provider === 'openai') return this.openaiModelsService;
+		return this.anthropicModelsService;
+	}
+
+	/**
 	 * Update the global GEMINI_MODELS list from every active provider and fix any stale settings.
 	 */
-	async updateModels(options: ModelUpdateOptions = {}): Promise<ModelUpdateResult<ObsidianGeminiSettings>> {
+	async updateModels(options: ModelUpdateOptions = {}): Promise<ModelUpdateOutcome> {
 		const allModels = await this.collectActiveModels(options.forceRefresh);
 		const previousModels = this.getCurrentGeminiModels();
 
@@ -97,7 +131,12 @@ export class ModelManager {
 
 		if (hasChanges) {
 			this.updateGlobalModelsList(allModels);
-			return getUpdatedModelSettings(this.plugin.settings);
+			const result = getUpdatedFeatureRoutes(this.plugin.settings.features, this.plugin.settings.providerModelMemory);
+			return {
+				updatedSettings: { ...this.plugin.settings, features: result.features, providerModelMemory: result.memory },
+				settingsChanged: result.changed,
+				changedSettingsInfo: result.info,
+			};
 		}
 
 		return {
@@ -117,6 +156,7 @@ export class ModelManager {
 		// configuration can resolve models for both at once.
 		this.updateGlobalModelsList(await this.collectActiveModels());
 
+		// eslint-disable-next-line no-restricted-syntax -- provider-specific service selection inside the model manager; cleared as #703 lands
 		if (activeProviders(this.plugin.settings).includes('gemini')) {
 			// Start non-blocking remote fetch for updates
 			this.listProvider.startRemoteFetch();
@@ -151,54 +191,6 @@ export class ModelManager {
 	 */
 	static getStaticModels(): GeminiModel[] {
 		return [...ModelManager.staticModels];
-	}
-
-	/**
-	 * Full model list (text + image) for the parameter helpers. Temperature/topP
-	 * are chat-request parameters, so the ranges come from the chat provider's
-	 * models rather than the union — mixing in another provider's metadata would
-	 * widen the range beyond what chat actually accepts.
-	 */
-	private async getModelsForActiveProvider(): Promise<GeminiModel[]> {
-		if (resolveProviderOrDefault(this.plugin.settings, 'chat') === 'ollama') {
-			return this.ollamaModelsService.getModels();
-		}
-		return this.listProvider.getModels();
-	}
-
-	/**
-	 * Get parameter ranges based on available models.
-	 */
-	async getParameterRanges(): Promise<ParameterRanges> {
-		return ParameterValidationService.getParameterRanges(await this.getModelsForActiveProvider());
-	}
-
-	/**
-	 * Validate parameter values against model capabilities.
-	 */
-	async validateParameters(
-		temperature: number,
-		topP: number
-	): Promise<{
-		temperature: { isValid: boolean; adjustedValue?: number; warning?: string };
-		topP: { isValid: boolean; adjustedValue?: number; warning?: string };
-	}> {
-		const models = await this.getModelsForActiveProvider();
-		return {
-			temperature: ParameterValidationService.validateTemperature(temperature, undefined, models),
-			topP: ParameterValidationService.validateTopP(topP, undefined, models),
-		};
-	}
-
-	/**
-	 * Get parameter display information for settings UI.
-	 */
-	async getParameterDisplayInfo(): Promise<{
-		temperature: string;
-		topP: string;
-		hasModelData: boolean;
-	}> {
-		return ParameterValidationService.getParameterDisplayInfo(await this.getModelsForActiveProvider());
 	}
 
 	/**

@@ -6,10 +6,10 @@ Gemini Scribe has experimental support for the [Model Context Protocol (MCP)](ht
 
 Gemini Scribe supports two transport types for connecting to MCP servers:
 
-| Transport | Description                                                        | Platform      |
-| --------- | ------------------------------------------------------------------ | ------------- |
-| **Stdio** | Spawns a local process and communicates via stdin/stdout           | Desktop only  |
-| **HTTP**  | Connects to a remote server via HTTP with Server-Sent Events (SSE) | All platforms |
+| Transport | Description                                                         | Platform      |
+| --------- | ------------------------------------------------------------------- | ------------- |
+| **Stdio** | Spawns a local process and communicates via stdin/stdout            | Desktop only  |
+| **HTTP**  | Connects to a remote server using the MCP Streamable HTTP transport | All platforms |
 
 ::: tip
 HTTP transport works on mobile devices (iOS and Android), making it possible to use MCP servers from anywhere. Stdio transport requires the ability to spawn processes and is limited to desktop (Windows, macOS, Linux).
@@ -25,7 +25,7 @@ When you connect an MCP server to Gemini Scribe, its tools appear alongside the 
 
 ### Prerequisites
 
-- A Google AI API key configured in the plugin
+- A working model provider configured in the plugin (Gemini, Ollama, OpenAI, or Anthropic) so the agent can drive tool calls
 - An MCP server to connect to (see [Finding Servers](#finding-servers) below)
 - For **stdio** servers: Desktop platform (Windows, macOS, Linux) with the server installed locally
 - For **HTTP** servers: A running MCP server accessible via URL
@@ -34,16 +34,16 @@ When you connect an MCP server to Gemini Scribe, its tools appear alongside the 
 
 1. Open Obsidian Settings
 2. Navigate to **Gemini Scribe** settings
-3. Enable **Show advanced settings** if you haven't already — the **MCP servers** section only appears once it's on
-4. Scroll to the **MCP servers** section
-5. Toggle **Enable MCP servers** on
-6. Click **Add server**
-7. Select the **Transport** type:
+3. Open the **MCP servers** page — a top-level row, no toggle needed to reveal it
+4. Click **Add server**
+5. Select the **Transport** type:
    - **Stdio (local process)**: Enter the command, arguments, and optional environment variables
    - **HTTP (remote server)**: Enter the server URL
-8. Click **Test connection** to verify and discover available tools
-9. Configure tool trust settings (see below)
-10. Click **Save**
+6. Click **Test connection** to verify and discover available tools
+7. Configure tool trust settings (see below)
+8. Click **Save**
+
+There is no separate "Enable MCP servers" toggle — an empty server list means MCP is off, and adding your first server turns it on.
 
 ### Tool Trust
 
@@ -110,6 +110,8 @@ OAuth tokens persist across Obsidian restarts. To clear stored credentials, clic
 The OAuth callback runs a temporary local server on port 8095. Ensure this port is available. The authorization flow times out after 2 minutes.
 :::
 
+On first connection, Gemini Scribe registers itself with the server's sign-in service using the local callback address `http://127.0.0.1:8095/callback`. The server must allow this kind of local ("loopback") callback address, which the OAuth standard for desktop apps expects.
+
 ### Environment Variables
 
 Stdio servers can be configured with environment variables. These are useful for passing API keys, paths, or other configuration to the server process.
@@ -140,11 +142,11 @@ Browse the [MCP Server Registry](https://github.com/modelcontextprotocol/servers
 
 When an MCP server is connected:
 
-1. **Stdio**: The plugin spawns the server process with the configured command and arguments. **HTTP**: The plugin connects to the server URL via HTTP.
+1. **Stdio**: The plugin spawns the server process with the configured command and arguments. **HTTP**: The plugin sends MCP requests to the server URL using Streamable HTTP. If the server requires sign-in, the plugin runs the OAuth flow first and then reconnects.
 2. It queries the server for its list of tools via the MCP protocol
 3. Each tool is registered in the plugin's tool system with a namespaced name (`mcp__<server>__<tool>`)
 4. When the agent calls a tool, the plugin forwards the request to the MCP server and returns the result
-5. The confirmation flow works the same as built-in tools — untrusted tools require approval
+5. The confirmation flow works the same as built-in tools — untrusted tools require approval. Each tool's **classification** (which permission preset and safety band it lands in) defaults to _external_; if the server declares a tool with the MCP `destructiveHint` annotation, the tool is classified **destructive** and is gated (and execution-ordered) as strictly as the built-in delete tools. The plugin only ever makes MCP tools _stricter_ based on server hints — never more permissive — since those hints come from an untrusted party
 
 ## Troubleshooting
 
@@ -163,10 +165,14 @@ When an MCP server is connected:
 - Ensure the URL includes the correct path (e.g., `/mcp`)
 - Enable Debug mode in settings for detailed error messages
 
+**Sign-in (OAuth) is blocked with a web page instead of an OAuth response**
+
+If connecting shows a message that the server's sign-in step failed and the reply was a web page, the server's sign-in service returned an HTML error page (often "403 Forbidden") instead of a proper OAuth response. That page usually comes from a firewall in front of the server, and Gemini Scribe's transport is not the cause. A common trigger is a firewall rule that rejects the local callback address `http://127.0.0.1:8095/callback`. This can only be fixed on the server's side, so contact the server's operator and ask them to allow loopback callback addresses for sign-in.
+
 **No tools show up**
 
 - Click **Test connection** in the server settings to re-discover tools
-- Verify **Enable MCP servers** is toggled on
+- Verify the server's `enabled` flag is on and it appears in the MCP servers list
 - Check that the server's tools are compatible (MCP v1 tools)
 
 **Tools fail to execute**

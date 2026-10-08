@@ -40,14 +40,49 @@ export interface RetryOptions {
 	logger?: Logger;
 	/** Optional function to determine if an error is retryable (default: retry all errors) */
 	isRetryable?: (error: unknown) => boolean;
+	/**
+	 * Optional cancellation hook. Checked before every attempt and again as soon as an attempt
+	 * fails, so a cancelled operation aborts without logging a spurious retry warning.
+	 * When unset, the retry loop behaves exactly as it does without cancellation support.
+	 */
+	shouldAbort?: () => boolean;
+	/** Error to throw when `shouldAbort` returns true (default: `${operationName} was cancelled`) */
+	abortError?: () => Error;
 }
 
 /**
  * Sleep for a specified number of milliseconds
  */
 function sleep(ms: number): Promise<void> {
-	// eslint-disable-next-line obsidianmd/prefer-window-timers -- shared with tests running in node environment
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/** How often an in-flight backoff sleep re-checks the abort hook (ms). */
+const ABORT_POLL_INTERVAL_MS = 100;
+
+/**
+ * Sleep for `ms`, but cut the wait short when `shouldAbort` turns true — a
+ * cancellation that arrives during a backoff wait rejects immediately instead
+ * of stalling until the sleep elapses (#1448). Checked via polling at
+ * ABORT_POLL_INTERVAL so the hook-based contract (a flag, not an AbortSignal)
+ * keeps working; with no `shouldAbort`, this is exactly `sleep(ms)`.
+ *
+ * Returns whether the sleep completed uninterrupted (`false` = aborted).
+ */
+async function sleepInterruptibly(ms: number, shouldAbort?: () => boolean): Promise<boolean> {
+	if (!shouldAbort || ms <= ABORT_POLL_INTERVAL_MS) {
+		await sleep(ms);
+		return true;
+	}
+
+	let elapsed = 0;
+	while (elapsed < ms) {
+		if (shouldAbort()) return false;
+		const slice = Math.min(ABORT_POLL_INTERVAL_MS, ms - elapsed);
+		await sleep(slice);
+		elapsed += slice;
+	}
+	return true;
 }
 
 /**
@@ -89,13 +124,24 @@ export async function executeWithRetry<T>(
 	config: RetryConfig = DEFAULT_RETRY_CONFIG,
 	options: RetryOptions
 ): Promise<T> {
-	const { operationName, logger, isRetryable = isRetryableApiError } = options;
+	const { operationName, logger, isRetryable = isRetryableApiError, shouldAbort, abortError } = options;
+	const makeAbortError = () => abortError?.() ?? new Error(`${operationName} was cancelled`);
 	let lastError: Error | undefined;
 
 	for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
+		if (shouldAbort?.()) {
+			throw makeAbortError();
+		}
+
 		try {
 			return await operation();
 		} catch (error) {
+			// An abort takes precedence over the failure it races with: report the cancellation
+			// rather than logging a retry warning for a stream the caller already gave up on.
+			if (shouldAbort?.()) {
+				throw makeAbortError();
+			}
+
 			lastError = error as Error;
 
 			// Check if error is retryable
@@ -121,7 +167,13 @@ export async function executeWithRetry<T>(
 				error
 			);
 
-			await sleep(backoffDelay);
+			// Cut the backoff short when cancelled: without this, a cancellation
+			// arriving during the sleep is only observed when the sleep elapses —
+			// up to the 60s delay cap — leaving the caller's promise pending and
+			// the cancellation notice delayed (#1448).
+			if (!(await sleepInterruptibly(backoffDelay, shouldAbort))) {
+				throw makeAbortError();
+			}
 		}
 	}
 

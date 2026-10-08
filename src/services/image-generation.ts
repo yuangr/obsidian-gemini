@@ -1,29 +1,22 @@
 import type { ObsidianGemini } from '../types/plugin';
 import { Notice, App, MarkdownView, Modal, Setting, TextAreaComponent, TFile, normalizePath } from 'obsidian';
-import { BaseModelRequest, GeminiClient, ModelClientFactory } from '../api';
+import { BaseModelRequest, type ImageGenerationApi, ModelClientFactory } from '../api';
 import { GeminiPrompts } from '../prompts';
+import { resolveFeatureModel } from '../models';
 import { getErrorMessage, getRawErrorMessageOr } from '../utils/error-utils';
-import { ensureFolderExists, isPathInFolder } from '../utils/file-utils';
+import { ensureParentFolderExists, validateGeneratedOutputPath } from '../utils/file-utils';
 import { t } from '../i18n';
+import { STATE_SUBFOLDERS, stateFolderPath } from './state-folder';
 
 export class ImageGeneration {
 	private plugin: ObsidianGemini;
-	private client: GeminiClient;
+	private client: ImageGenerationApi;
 	private prompts: GeminiPrompts;
 
 	constructor(plugin: ObsidianGemini) {
 		this.plugin = plugin;
 		this.prompts = new GeminiPrompts(plugin);
-		this.client = new GeminiClient(
-			{
-				apiKey: plugin.apiKey,
-				temperature: plugin.settings.temperature,
-				topP: plugin.settings.topP,
-				streamingEnabled: false,
-			},
-			this.prompts,
-			plugin
-		);
+		this.client = ModelClientFactory.createImageGenerationClient(plugin);
 	}
 
 	/**
@@ -64,7 +57,7 @@ export class ImageGeneration {
 		taskManager.submit('image-generation', label, async (isCancelled) => {
 			if (isCancelled()) return undefined;
 
-			const base64Data = await this.client.generateImage(prompt, this.plugin.settings.imageModelName);
+			const base64Data = await this.client.generateImage(prompt, resolveFeatureModel(this.plugin.settings, 'imageGen'));
 			if (isCancelled()) return undefined;
 
 			const imagePath = await this.saveImageToVault(base64Data, prompt);
@@ -88,7 +81,7 @@ export class ImageGeneration {
 	): Promise<void> {
 		try {
 			new Notice(t('notice.image.generating'));
-			const base64Data = await this.client.generateImage(prompt, this.plugin.settings.imageModelName);
+			const base64Data = await this.client.generateImage(prompt, resolveFeatureModel(this.plugin.settings, 'imageGen'));
 			const imagePath = await this.saveImageToVault(base64Data, prompt);
 			activeView.editor.replaceRange(`![[${imagePath}]]`, cursor);
 			new Notice(t('notice.image.inserted'));
@@ -157,7 +150,7 @@ export class ImageGeneration {
 	async generateImage(prompt: string, outputPath?: string): Promise<string> {
 		try {
 			// Generate the image
-			const base64Data = await this.client.generateImage(prompt, this.plugin.settings.imageModelName);
+			const base64Data = await this.client.generateImage(prompt, resolveFeatureModel(this.plugin.settings, 'imageGen'));
 
 			// Save the image to vault
 			return await this.saveImageToVault(base64Data, prompt, outputPath);
@@ -226,7 +219,7 @@ export class ImageGeneration {
 	 */
 	async resolveDefaultOutputPath(prompt: string): Promise<string> {
 		const filename = this.buildDefaultFilename(prompt);
-		const backgroundTasksFolder = normalizePath(`${this.plugin.settings.historyFolder}/Background-Tasks`);
+		const backgroundTasksFolder = stateFolderPath(this.plugin.settings, STATE_SUBFOLDERS.backgroundTasks);
 		return normalizePath(`${backgroundTasksFolder}/${filename}`);
 	}
 
@@ -259,49 +252,31 @@ export class ImageGeneration {
 	 * Always returns a path ending with ".png" since the code always writes PNG bytes.
 	 */
 	private validateOutputPath(outputPath: string): string {
-		const normalized = normalizePath(outputPath);
-
-		// Reject directory-only paths (empty or trailing slash)
-		if (!normalized || normalized.endsWith('/')) {
-			throw new Error(`Output path must include a filename: "${outputPath}"`);
-		}
-
-		// Reject vault-escaping paths (normalizePath does not resolve ..)
-		if (normalized.startsWith('..') || normalized.split('/').includes('..')) {
-			throw new Error(`Output path escapes the vault: "${outputPath}"`);
-		}
-
-		// Reject paths inside the Obsidian configuration directory (default
-		// `.obsidian`, but the user may have renamed it). Root-anchored, matching
-		// deep-research's write-path validator.
-		if (isPathInFolder(normalized, this.plugin.app.vault.configDir)) {
-			throw new Error(`Output path cannot be inside the Obsidian configuration folder: "${outputPath}"`);
-		}
-
-		// Always ensure the file ends with .png — the code always writes PNG bytes.
-		// Rewrite extension before the state-folder check so the validated path
-		// matches what will actually be written (e.g. "Background-Tasks" bare →
-		// "Background-Tasks.png", which is outside the allowed subfolder).
-		const dotIndex = normalized.lastIndexOf('.');
-		const slashIndex = normalized.lastIndexOf('/');
-		const hasExtension = dotIndex > slashIndex + 1;
-		const normalizedFilePath = hasExtension ? normalized.slice(0, dotIndex) + '.png' : normalized + '.png';
-
-		// Reject paths inside the plugin state folder, except for the canonical
-		// Background-Tasks/ subfolder which is the designated output location.
-		const historyFolder = this.plugin.settings.historyFolder;
-		if (historyFolder) {
-			const normalizedHistoryFolder = normalizePath(historyFolder);
-			const backgroundTasksFolder = normalizePath(`${normalizedHistoryFolder}/Background-Tasks`);
-			const insideStateFolder =
-				normalizedFilePath === normalizedHistoryFolder || normalizedFilePath.startsWith(normalizedHistoryFolder + '/');
-			const insideBackgroundTasks = normalizedFilePath.startsWith(backgroundTasksFolder + '/');
-			if (insideStateFolder && !insideBackgroundTasks) {
-				throw new Error(`Output path cannot be inside the plugin state folder: "${outputPath}"`);
-			}
-		}
-
-		return normalizedFilePath;
+		// The reject set is shared with deep-research's write path via
+		// `validateGeneratedOutputPath` (#1401); the `.png` rewrite below is the
+		// only part that is genuinely this validator's own.
+		return validateGeneratedOutputPath(outputPath, {
+			configDir: this.plugin.app.vault.configDir,
+			historyFolder: this.plugin.settings.historyFolder,
+			allowedSubfolder: STATE_SUBFOLDERS.backgroundTasks,
+			// Always ensure the file ends with .png — the code always writes PNG
+			// bytes. The helper applies this before the state-folder check so the
+			// validated path matches what will actually be written (e.g. a bare
+			// "Background-Tasks" → "Background-Tasks.png", which is outside the
+			// allowed subfolder and must still be rejected).
+			rewriteFileName: (normalized) => {
+				const dotIndex = normalized.lastIndexOf('.');
+				const slashIndex = normalized.lastIndexOf('/');
+				const hasExtension = dotIndex > slashIndex + 1;
+				return hasExtension ? normalized.slice(0, dotIndex) + '.png' : normalized + '.png';
+			},
+			messages: {
+				'missing-filename': (path) => `Output path must include a filename: "${path}"`,
+				'vault-escape': (path) => `Output path escapes the vault: "${path}"`,
+				'config-folder': (path) => `Output path cannot be inside the Obsidian configuration folder: "${path}"`,
+				'state-folder': (path) => `Output path cannot be inside the plugin state folder: "${path}"`,
+			},
+		});
 	}
 
 	/**
@@ -335,10 +310,7 @@ export class ImageGeneration {
 
 			// Ensure the parent folder exists before writing — createBinary will fail
 			// if any intermediate directory in the path is missing.
-			const parentPath = resolvedPath.includes('/') ? resolvedPath.slice(0, resolvedPath.lastIndexOf('/')) : null;
-			if (parentPath) {
-				await ensureFolderExists(this.plugin.app.vault, parentPath, 'image output folder', this.plugin.logger);
-			}
+			await ensureParentFolderExists(this.plugin.app.vault, resolvedPath, 'image output folder', this.plugin.logger);
 		} else {
 			resolvedPath = await this.resolveDefaultOutputPath(prompt);
 		}

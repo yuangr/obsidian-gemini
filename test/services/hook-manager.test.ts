@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TFile as MockTFile } from 'obsidian';
 import { HookManager, renderPrompt, type Hook } from '../../src/services/hook-manager';
 import { PolicyPreset } from '../../src/types/tool-policy';
+import { load as parseYaml } from 'js-yaml';
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ vi.mock('../../src/utils/file-utils', async (importOriginal) => ({
 	ensureFolderExists: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../src/services/skill-manager', () => ({
+vi.mock('../../src/utils/frontmatter-offset', () => ({
 	findFrontmatterEndOffset: vi.fn().mockReturnValue(undefined),
 }));
 
@@ -206,6 +207,20 @@ describe('HookManager CRUD', () => {
 		await expect(manager.createHook({ ...baseCreateParams, slug: 'a--b' })).rejects.toThrow(/lowercase/);
 	});
 
+	it('rejects a createHook trigger or action that is not a recognised value', async () => {
+		// `createHook` is exported, so an untyped caller can reach it with a bad
+		// literal. Writing it would produce a definition file the parser refuses
+		// to load — a hook that exists on disk and never appears in the UI.
+		const plugin = createPluginWithVaultStore();
+		const manager = newManager(plugin);
+
+		await expect(manager.createHook({ ...baseCreateParams, trigger: 'file-exploded' as any })).rejects.toThrow(
+			/trigger/
+		);
+		await expect(manager.createHook({ ...baseCreateParams, action: 'transmogrify' as any })).rejects.toThrow(/action/);
+		expect(plugin.__files.size).toBe(0);
+	});
+
 	it('rejects duplicate slugs', async () => {
 		const plugin = createPluginWithVaultStore();
 		const manager = newManager(plugin);
@@ -251,7 +266,7 @@ describe('HookManager CRUD', () => {
 		});
 
 		const content = plugin.__files.get('gemini-scribe/Hooks/summarise.md');
-		expect(content).toContain('pathGlob: "Daily/**/*.md"');
+		expect(content).toContain("pathGlob: 'Daily/**/*.md'");
 		expect(content).toContain('debounceMs: 7500');
 		expect(content).toContain('cooldownMs: 60000');
 		expect(content).toContain('maxRunsPerHour: 12');
@@ -264,9 +279,9 @@ describe('HookManager CRUD', () => {
 		// trust on subsequent loads.
 		expect(content).not.toContain('enabledTools');
 		expect(content).toContain('enabledSkills:');
-		expect(content).toContain('  - index-files');
-		expect(content).toContain('model: "gemini-2.5-flash-lite"');
-		expect(content).toContain('outputPath: "Hooks/Runs/{slug}/{date}.md"');
+		expect(content).toContain("  - 'index-files'");
+		expect(content).toContain("model: 'gemini-2.5-flash-lite'");
+		expect(content).toContain("outputPath: 'Hooks/Runs/{slug}/{date}.md'");
 		expect(content).toContain('enabled: false');
 		expect(content).toContain('desktopOnly: false');
 	});
@@ -325,11 +340,107 @@ describe('HookManager CRUD', () => {
 
 		const content = plugin.__files.get('gemini-scribe/Hooks/summarise.md');
 		expect(content).toContain('Updated prompt for {{filePath}}');
-		expect(content).toContain('model: "gemini-2.5-pro"');
+		expect(content).toContain("model: 'gemini-2.5-pro'");
 
 		const hook = manager.getHooks().find((h) => h.slug === 'summarise');
 		expect(hook?.model).toBe('gemini-2.5-pro');
 		expect(hook?.prompt).toContain('Updated prompt');
+	});
+
+	it('updateHook clears every optional field the edit form empties', async () => {
+		// Regression guard for #1315: the merge ladder used `??` for most
+		// fields, so the management modal's `|| undefined` payload silently
+		// restored the previous value instead of clearing it. Only `toolPolicy`
+		// and `maxIterations` honoured an explicit `undefined`; now all of them
+		// do, because the HOOK_FIELDS table merges by key presence.
+		const plugin = createPluginWithVaultStore();
+		const manager = newManager(plugin);
+		await manager.createHook({
+			...baseCreateParams,
+			action: 'command',
+			commandId: 'editor:save-file',
+			pathGlob: 'Daily/**/*.md',
+			model: 'gemini-2.5-flash',
+			outputPath: 'Hooks/Runs/{slug}/{date}.md',
+			maxRunsPerHour: 12,
+			maxIterations: 4,
+			focusFile: true,
+			toolPolicy: { preset: PolicyPreset.READ_ONLY },
+		});
+
+		// Exactly what hook-management-modal.ts sends when the user empties
+		// each control: the key is present, its value is undefined.
+		await manager.updateHook('summarise', {
+			pathGlob: undefined,
+			model: undefined,
+			outputPath: undefined,
+			maxRunsPerHour: undefined,
+			maxIterations: undefined,
+			commandId: undefined,
+			focusFile: undefined,
+			toolPolicy: undefined,
+		});
+
+		const hook = manager.getHooks().find((h) => h.slug === 'summarise');
+		expect(hook?.pathGlob).toBeUndefined();
+		expect(hook?.model).toBeUndefined();
+		expect(hook?.outputPath).toBeUndefined();
+		expect(hook?.maxRunsPerHour).toBeUndefined();
+		expect(hook?.maxIterations).toBeUndefined();
+		expect(hook?.commandId).toBeUndefined();
+		expect(hook?.focusFile).toBeUndefined();
+		expect(hook?.toolPolicy).toBeUndefined();
+
+		// And the cleared values are gone from disk, not just from memory.
+		const content = plugin.__files.get('gemini-scribe/Hooks/summarise.md');
+		expect(content).not.toContain('pathGlob');
+		expect(content).not.toContain('model:');
+		expect(content).not.toContain('outputPath');
+		expect(content).not.toContain('maxRunsPerHour');
+		expect(content).not.toContain('maxIterations');
+		expect(content).not.toContain('commandId');
+		expect(content).not.toContain('focusFile');
+		expect(content).not.toContain('toolPolicy');
+	});
+
+	it('updateHook leaves untouched fields alone', async () => {
+		const plugin = createPluginWithVaultStore();
+		const manager = newManager(plugin);
+		await manager.createHook({
+			...baseCreateParams,
+			pathGlob: 'Daily/**/*.md',
+			model: 'gemini-2.5-flash',
+			maxRunsPerHour: 12,
+		});
+
+		// Only `enabled` is in the payload — everything else must survive.
+		await manager.updateHook('summarise', { enabled: false });
+
+		const hook = manager.getHooks().find((h) => h.slug === 'summarise');
+		expect(hook?.enabled).toBe(false);
+		expect(hook?.pathGlob).toBe('Daily/**/*.md');
+		expect(hook?.model).toBe('gemini-2.5-flash');
+		expect(hook?.maxRunsPerHour).toBe(12);
+		expect(hook?.prompt).toBe('Summarise {{filePath}}.');
+	});
+
+	it('updateHook keeps trigger and action when a caller passes them as undefined', async () => {
+		// `HookUpdateParams` is a Partial, so an explicit `undefined` reaches the
+		// merge. Clearing either would write a file with no `trigger:` line,
+		// which the parser rejects — the hook would vanish on the next reload.
+		const plugin = createPluginWithVaultStore();
+		const manager = newManager(plugin);
+		await manager.createHook(baseCreateParams);
+
+		await manager.updateHook('summarise', { trigger: undefined, action: undefined, model: 'gemini-2.5-pro' });
+
+		const hook = manager.getHooks().find((h) => h.slug === 'summarise');
+		expect(hook?.trigger).toBe('file-modified');
+		expect(hook?.action).toBe('agent-task');
+
+		const content = plugin.__files.get('gemini-scribe/Hooks/summarise.md');
+		expect(content).toContain("trigger: 'file-modified'");
+		expect(content).toContain("action: 'agent-task'");
 	});
 
 	it('updateHook throws when the hook is unknown', async () => {
@@ -749,7 +860,127 @@ describe('HookManager serializeHook – edge cases via createHook', () => {
 
 		const content = plugin.__files.get('gemini-scribe/Hooks/fm-hook.md');
 		expect(content).toContain('frontmatterFilter:');
-		expect(content).toContain('  type: "journal"');
+		expect(content).toContain("  'type': 'journal'");
+	});
+
+	// ── #1352: every free-text field goes through the shared scalar emitter ──
+	//
+	// The regression these pin is silent loss, not a visible error: a raw value
+	// carrying `'` terminates the scalar early and a raw key carrying `: `
+	// nests a map, either of which makes the whole block unparseable — and
+	// because the block is read back through `metadataCache`, an unparseable
+	// block makes the hook vanish from the manager rather than fail loudly.
+	// `yaml-scalar.test.ts` proves the emitter's escaping round-trips; these
+	// prove each field actually reaches it.
+	const HOSTILE = `a'b"c: d`;
+
+	// The regression net #1352 asked for, and the one that would have caught
+	// #1347 before it shipped: serialize a definition whose free-text fields all
+	// carry hostile characters, parse the emitted frontmatter with the parser
+	// Obsidian actually uses, and assert every field comes back unchanged.
+	it('round-trips every free-text field through a real YAML parse', async () => {
+		const plugin = createPluginWithVaultStore();
+		const manager = newManager(plugin);
+		const nasty = `a'b"c: d`;
+		const multiline = `line1\nline2`;
+		await manager.createHook({
+			slug: 'round-trip',
+			trigger: 'file-modified',
+			action: 'agent-task',
+			prompt: 'Do stuff',
+			pathGlob: nasty,
+			model: nasty,
+			outputPath: multiline,
+			commandId: `#lead\ttab`,
+			enabledSkills: [nasty, multiline, '*alias'],
+			frontmatterFilter: { [nasty]: nasty, [multiline]: 'v', plain: true },
+		});
+
+		const content = plugin.__files.get('gemini-scribe/Hooks/round-trip.md') as string;
+		const frontmatter = content.split('---\n')[1];
+		const parsed = parseYaml(frontmatter) as Record<string, any>;
+
+		expect(parsed.pathGlob).toBe(nasty);
+		expect(parsed.model).toBe(nasty);
+		expect(parsed.outputPath).toBe(multiline);
+		expect(parsed.commandId).toBe(`#lead\ttab`);
+		expect(parsed.enabledSkills).toEqual([nasty, multiline, '*alias']);
+		expect(parsed.frontmatterFilter).toEqual({ [nasty]: nasty, [multiline]: 'v', plain: true });
+	});
+
+	it('quotes every free-text string field, including hostile values', async () => {
+		const plugin = createPluginWithVaultStore();
+		const manager = newManager(plugin);
+		await manager.createHook({
+			slug: 'hostile',
+			trigger: 'file-modified',
+			action: 'agent-task',
+			prompt: 'Do stuff',
+			pathGlob: HOSTILE,
+			model: HOSTILE,
+			outputPath: HOSTILE,
+			commandId: HOSTILE,
+			enabledSkills: [HOSTILE],
+			frontmatterFilter: { [HOSTILE]: HOSTILE },
+		});
+
+		const content = plugin.__files.get('gemini-scribe/Hooks/hostile.md') as string;
+		// `'` doubled, `"` and `: ` harmless inside a single-quoted scalar.
+		const quoted = `'a''b"c: d'`;
+		expect(content).toContain(`pathGlob: ${quoted}`);
+		expect(content).toContain(`model: ${quoted}`);
+		expect(content).toContain(`outputPath: ${quoted}`);
+		expect(content).toContain(`commandId: ${quoted}`);
+		// Sequence item and map key — the two sites that had no quoting at all.
+		expect(content).toContain(`  - ${quoted}`);
+		expect(content).toContain(`  ${quoted}: ${quoted}`);
+
+		// Nothing leaked through raw. Every occurrence of the value in the
+		// frontmatter block must be inside a quoted scalar.
+		const frontmatter = content.split('---')[1];
+		expect(frontmatter).not.toContain(`${HOSTILE}`);
+	});
+
+	it('keeps a non-string frontmatterFilter value typed', async () => {
+		const plugin = createPluginWithVaultStore();
+		const manager = newManager(plugin);
+		await manager.createHook({
+			slug: 'typed-filter',
+			trigger: 'file-modified',
+			action: 'agent-task',
+			prompt: 'Do stuff',
+			frontmatterFilter: { published: true, count: 3 },
+		});
+
+		// The emitter is a *string* emitter; quoting a boolean here would make
+		// `matchesFrontmatterFilter` compare `'true'` against `true` and never
+		// match, so non-string values stay on JSON.stringify.
+		const content = plugin.__files.get('gemini-scribe/Hooks/typed-filter.md') as string;
+		expect(content).toContain("  'published': true");
+		expect(content).toContain("  'count': 3");
+	});
+
+	it('survives a toggle cycle without corrupting a hostile filter key', async () => {
+		const plugin = createPluginWithVaultStore();
+		const manager = newManager(plugin);
+		await manager.createHook({
+			slug: 'toggle-hostile',
+			trigger: 'file-modified',
+			action: 'agent-task',
+			prompt: 'Do stuff',
+			frontmatterFilter: { [HOSTILE]: 'x' },
+		});
+
+		// The reported failure path: one enable/disable click rewrites the file
+		// through serializeHook, which used to emit the key raw.
+		await manager.toggleHook('toggle-hostile', false);
+
+		const content = plugin.__files.get('gemini-scribe/Hooks/toggle-hostile.md') as string;
+		expect(content).toContain(`  'a''b"c: d': 'x'`);
+		expect(content).toContain('enabled: false');
+		expect(manager.getHooks().find((h) => h.slug === 'toggle-hostile')?.frontmatterFilter).toEqual({
+			[HOSTILE]: 'x',
+		});
 	});
 
 	it('serialises commandId line', async () => {
@@ -764,7 +995,7 @@ describe('HookManager serializeHook – edge cases via createHook', () => {
 		});
 
 		const content = plugin.__files.get('gemini-scribe/Hooks/cmd-hook.md');
-		expect(content).toContain('commandId: "editor:save-file"');
+		expect(content).toContain("commandId: 'editor:save-file'");
 	});
 
 	it('does NOT serialise maxRunsPerHour when set to 0', async () => {
@@ -1206,7 +1437,7 @@ describe('HookManager discoverHooks via initialize()', () => {
 	});
 
 	it('skips agent-task hooks with no prompt body', async () => {
-		const { findFrontmatterEndOffset } = await import('../../src/services/skill-manager');
+		const { findFrontmatterEndOffset } = await import('../../src/utils/frontmatter-offset');
 		(findFrontmatterEndOffset as any).mockReturnValueOnce(0);
 
 		const plugin = makeDiscoveryPlugin([

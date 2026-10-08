@@ -53,6 +53,33 @@ skill for depth):
 - `app.workspace.openLinkText()` for clickable links in views
 - Always use normalized paths and the metadata cache.
 
+## Path containment goes through `src/utils/file-utils.ts`
+
+Never hand-roll `path.startsWith(folder + '/')` or `path === folder || path.startsWith(folder + '/')`
+— call `isPathInFolder(path, folder)`. For "is this a system path the plugin must not touch", call
+`shouldExcludePath()` / `shouldExcludePathForPlugin()` rather than re-deriving the `configDir` +
+state-folder pair. These predicates are a live fix surface (#1372, #1374); an inline copy silently
+misses every correction to them. If a site genuinely needs _strict descendant_ semantics (the folder
+itself excluded), say so in a comment explaining why — that is a real distinction, not a shorthand.
+
+A `no-restricted-syntax` ESLint entry backs this up mechanically, with two selectors for the two
+shapes the pattern takes in `src/` (`src/utils/file-utils.ts`, which owns the predicates, is exempt
+from both):
+
+1. any `.startsWith()` whose argument is a concatenation — `p.startsWith(folder + '/')`;
+2. any local initialized to a `+ '/'` concatenation — `const prefix = folder + '/'` (#1482).
+
+The second exists because hoisting the concatenation one line up evades the first entirely: the
+call's argument is then an Identifier, and a selector cannot follow the binding back to the
+declarator. `npm run lint` was green with three such sites present before it landed. Building the
+prefix by hand is the thing to stop, so the fix is at the use site either way — call
+`isPathInFolder(path, folder)`.
+
+A deliberate strict-descendant site takes a line-scoped
+`// eslint-disable-next-line no-restricted-syntax -- <why strict descendant>` — the description is
+the comment the rule already asks for, so the disable and the rule agree. Both selectors sit under
+the same rule, so that per-rule disable keeps working unchanged.
+
 ## Plugin type surface — never import `main.ts`
 
 Reference the plugin only through the leaf interface:
@@ -63,6 +90,118 @@ New service handles on the plugin class must be mirrored in `src/types/plugin-se
 module both import — never import the manager back. See `invariants.md` for the acyclic-graph rule.
 `ToolExecutionContext.plugin` is already typed `ObsidianGemini` — use `context.plugin` directly,
 no cast.
+
+### There is no public API barrel
+
+The plugin ships as a release ZIP through the Obsidian community-plugin registry — it is never
+`npm publish`ed — so it exposes no extension API and there is nothing for a `src/index.ts` barrel
+to serve. That barrel was deleted in #1356 along with `package.json`'s `types` and `exports` keys
+(`main: "main.js"` stays — the Obsidian loader needs it). Don't reintroduce any of the three:
+knip treats a package's `types`/`exports` entry as a program entry point, so a barrel re-exporting
+internal symbols marks every one of them reachable and silently exempts them from the
+CI-blocking `npm run knip` check (#1294). The barrel also held the one standing exception to the
+rule above — `export { default as ObsidianGeminiPlugin } from './main'` — which went with it, so
+the never-import-`main.ts` rule now has no exceptions at all. If an extension API ever becomes a
+goal, it needs a real consumer that keeps it honest (a type-only test that imports every exported
+symbol), plus a decision about what the published artifact actually is — not an entry-point
+declaration pointing at an untracked build output.
+
+**Nothing marks an export reachable except a real caller.** knip's CI-blocking report is the
+dead-code gate, and every exemption mechanism in it has the same failure mode: a declaration,
+rather than a caller, makes an export look live, so dead surface lands and stays green. Three
+mechanisms have been exploited in this repo:
+
+- **Entry-point declarations**: the `types`/`exports` barrel above (#1294/#1356).
+- **`test/**` imports**: a test-only caller is not a production caller (#1493).
+- **JSDoc tags**: `@public`/`@beta`/`@alias` make knip skip the reachability check outright
+  (`isAlwaysIgnored` short-circuits before any caller search — the `tags` config key cannot
+  counteract it) (#1522, #1525). This repo is never `npm publish`ed, so it has no legitimate
+  use for any of them; ESLint's `no-tags-as-reachability` rule (in `eslint.config.mjs`) fails
+  the diff that adds one.
+
+The general rule knip's CI workflow states as its escape hatch still holds, with the tag rule
+added: intentional surface knip can't see belongs in `knip.json` — but a knip.json `ignore` is
+itself a declaration, not a caller, so it needs the same justification written next to it. If
+knip reports an export, delete it or give it a caller; don't tag it or ignore it.
+
+## Derive entity parameter types — don't re-list fields
+
+For a vault-backed entity managed through `FileBackedFeatureManager` (`Hook`, `ScheduledTask`, …),
+the manager's create/update parameter types must be **derived** from the entity interface, never
+written out field by field:
+
+```ts
+type EntityDefaultedField = 'enabled' | …; // fields the manager fills in when omitted
+export type EntityCreateParams = Omit<Entity, 'filePath' | EntityDefaultedField> &
+	Partial<Pick<Entity, EntityDefaultedField>>;
+export type EntityUpdateParams = Partial<Omit<EntityCreateParams, 'slug'>>;
+```
+
+A management modal builds its save payload **once** as `Omit<EntityCreateParams, 'slug'>` and
+passes that same object to both save branches, spreading the identity field into the create call —
+`{ slug: this.form.slug, ...params }` — rather than writing one object literal per branch.
+
+The reason is that nothing fails loudly when you don't. A hand-written param type still compiles
+when the entity gains a field, so the compiler cannot tell you the new field is unsettable through
+create/update, or that one save branch dropped it. The gap surfaces only when a user sets the field
+in the UI and it doesn't persist, or sets it on create and loses it on edit — and neither
+`npm run knip` nor `npm run lint:cycles` can see it (#1273, #1314, #1322).
+
+Reference implementations, both on `master`: `src/services/hook-types.ts` (`HookCreateParams` /
+`HookUpdateParams`) with `src/ui/hook-management-modal.ts`, and
+`src/services/scheduled-tasks/types.ts` (`ScheduledTaskCreateParams` /
+`ScheduledTaskUpdateParams`) with `src/ui/scheduler-management-modal.ts`. A third entity family
+should copy that shape, not re-list its fields.
+
+Two violation shapes are greppable, for reviewers and future audit runs:
+
+- a create/update parameter type that lists entity fields without deriving them (no `Omit<` over
+  the entity), and
+- a management modal with two field-list object literals inside a create/update `if`.
+
+This governs entity params specifically. Parameter types for non-entity APIs (tool params, request
+builders) are often better hand-written — the rule doesn't reach them.
+
+## Wiring interfaces carry only what is read
+
+When you add a field to a context, callback, or capability interface (`SendContext`,
+`UICallbacks`, `AgentViewContext` — aliased `ToolsContext` at its `agent-view.ts` import,
+`ProviderCapabilities`, …), wire it to a consumer in the same change. Don't populate a field
+speculatively for a caller that doesn't exist yet: `npm run knip` resolves exported symbols, not
+per-field reachability through an object literal, and both the interface and the method the field
+targets are live — so a field can be born dead and stay dead indefinitely with every check green.
+The reverse holds too: when you remove the last reader of a field, remove the field and its
+population site in the same change. Otherwise the field stays reader-less, and whatever it fed —
+a modal, a handler — can be left unreachable with every check still green (#1301's orphaned
+170-line modal).
+
+**Event-bus caveat — a public runtime bus has readers a source scan cannot enumerate.** The same
+rule applied to `AgentEventMap` (event names are string keys, invisible to knip and the
+typechecker) produced a false "dead wiring" scan in #1500: `turnError` has no `on()` anywhere in
+`src/`, but the eval harness subscribes to the same bus at runtime from outside the tree
+(`evals/lib/collector.mjs`, `evals/lib/turn-waiter.mjs` — terminal-event detection and scoring
+depend on it). "No `.on()` in `src/`" is therefore **not** proof an event is unread; before
+deleting an event or an emit, check `evals/` and any external consumer. The `toolLoopDetected`
+half of #1500 was a genuine zero-reader case and got a subscriber; `turnError` was load-bearing
+out of tree.
+
+## A guard applies at every call site of the operation
+
+When you add or change a guard, budget check, or settings gate on an operation, apply it at
+**every** call site that performs that operation in the same change — or move the operation behind
+a single helper that owns the check. Enumerate the call sites by grepping the API you are gating
+(`generateStreamingResponse`, `vault.create`, the rasterizer entry point) rather than assuming the
+one in front of you is the only one. Nothing is duplicated in this defect and no field is
+reader-less, so the two rules above don't reach it: the check is simply **absent** at the sibling,
+which lint, knip, madge and the full suite all pass over.
+
+Recognise the shape by its instances: the post-rasterize attachment budget check landed at one of
+three SVG call sites (#1430); the two background-output write-path validators forked, leaving
+deep-research without the vault-escape guard (#1401); `settings.streamingEnabled` was read on both
+initial-request call sites in `agent-view-send.ts` but not on the follow-up in
+`agent-view-tools.ts`, so a tool-calling turn streamed every post-tool response with the toggle off
+(#1496). The reviewable question a diff has to answer is "which call sites does this gate, and
+which did you check?"
 
 ## Platform guards
 

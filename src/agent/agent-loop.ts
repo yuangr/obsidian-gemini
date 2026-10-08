@@ -9,12 +9,15 @@ import type { CustomPrompt } from '../prompts/types';
 import type { IConfirmationProvider, IToolHostView, ToolExecutionContext, ToolResult } from '../tools/types';
 import { generateToolDescription } from '../utils/text-generation';
 import { getRawErrorMessageOr } from '../utils/error-utils';
+import { t } from '../i18n';
 import {
 	sortToolCallsByPriority,
+	indexToolCalls,
 	buildToolHistoryTurns,
 	formatBudgetReminder,
 	formatBudgetExtension,
 	type ToolCallResultPair,
+	type IndexedToolCall,
 } from './agent-loop-helpers';
 import { TurnBudget } from './turn-budget';
 import {
@@ -55,8 +58,6 @@ export interface AgentLoopHooks {
 	 * then "Thinking…").
 	 */
 	onFollowUpRequestStart?(): void | Promise<void>;
-	/** Fired when the loop falls into the empty-response retry path. */
-	onEmptyResponseRetry?(): void | Promise<void>;
 	/**
 	 * Fired when an intermediate follow-up response carries model reasoning but
 	 * continues to another tool batch (i.e. the model "thought" before deciding
@@ -177,8 +178,6 @@ export interface AgentLoopResult {
 	history: Content[];
 	/** True if cancellation interrupted the loop. */
 	cancelled: boolean;
-	/** True if the empty-response retry was triggered. */
-	retried: boolean;
 	/**
 	 * True if even the retry returned empty and `markdown` is the fallback
 	 * message listing executed tools. Caller should display but not persist.
@@ -343,11 +342,18 @@ export class AgentLoop {
 				}
 			}
 
-			// Sort and execute this batch
-			const sortedToolCalls = sortToolCallsByPriority(currentToolCalls);
+			// Sort and execute this batch. Priority comes from each tool's declared
+			// classification (#1424); a name missing from the registry sorts into the
+			// EXTERNAL fallback band and is logged so a missing registration
+			// surfaces instead of silently mis-sorting.
+			// Each call is tagged with its emitted position *before* the sort, so
+			// `buildToolHistoryTurns` can map the results back onto the model's
+			// own turn order no matter how the sort rearranged execution (#1499).
+			const sortedEntries = this.sortBatchForExecution(plugin, currentToolCalls);
+			const sortedToolCalls = sortedEntries.map((entry) => entry.call);
 			await this.safeHook('onToolBatchStart', plugin, () => hooks?.onToolBatchStart?.(sortedToolCalls, iterations));
 			iterations++;
-			const toolResults = await this.executeToolBatch(sortedToolCalls, toolContext, options);
+			const toolResults = await this.executeToolBatch(sortedEntries, toolContext, options);
 
 			// Count any loop-detector fires in this batch against the turn budget.
 			// If the model has triggered the detector too many times in this turn,
@@ -356,20 +362,18 @@ export class AgentLoop {
 			for (const tr of toolResults) {
 				if (tr.result.loopDetected) loopFireCount++;
 			}
-			if (loopFireCount >= AGENT_LOOP_ABORT_THRESHOLD) {
-				plugin.logger.warn(
-					`[AgentLoop] Aborting turn: tool loop detector fired ${loopFireCount} times ` +
-						`(threshold ${AGENT_LOOP_ABORT_THRESHOLD})`
-				);
-				const updatedHistory = buildToolHistoryTurns({
-					conversationHistory,
-					userMessage,
-					perTurnContext,
-					toolCalls: currentToolCalls,
-					toolResults,
-				});
-				return this.loopAbortedResult(updatedHistory, iterations, loopFireCount);
-			}
+
+			// Escalation checks after the batch: loop-detector threshold and
+			// stopOnToolError. Either can end the turn here.
+			const escalation = this.checkBatchEscalations(plugin, toolResults, {
+				conversationHistory,
+				userMessage,
+				perTurnContext,
+				toolCalls: currentToolCalls,
+				loopFireCount,
+				iterations,
+			});
+			if (escalation) return escalation;
 
 			// Emit toolChainComplete so subscribers (accessed-files tracker, etc.) see this batch.
 			await this.safeEmit(plugin, 'toolChainComplete', {
@@ -404,127 +408,44 @@ export class AgentLoop {
 				})
 			);
 
-			let updatedHistory = buildToolHistoryTurns({
+			const postBatch = await this.buildPostBatchHistory(plugin, isCancelled, hooks, {
 				conversationHistory,
 				userMessage,
 				perTurnContext,
 				toolCalls: currentToolCalls,
 				toolResults,
-				appendText: budgetNotice,
+				budgetNotice,
+				loopStartIndex,
+				modelName,
 			});
-
-			if (isCancelled()) {
-				return this.cancelledResult(updatedHistory, iterations);
+			if (postBatch.cancelled) {
+				return this.cancelledResult(postBatch.history, iterations);
 			}
-
-			// Compact history if this batch pushed us over the token threshold —
-			// long tool chains otherwise grow `updatedHistory` unbounded across
-			// iterations. Only turns strictly before `loopStartIndex` are eligible,
-			// so the current tool chain's functionCall/thoughtSignature turns are
-			// never summarized away. Gated internally on cached token usage, so
-			// this is a no-op on most iterations. See #662.
-			const compactionResult = await plugin.contextManager.prepareHistory(updatedHistory, modelName, {
-				protectFromIndex: loopStartIndex,
-			});
-			if (compactionResult.wasCompacted) {
-				plugin.contextManager.setUsageMetadata({
-					promptTokenCount: compactionResult.estimatedTokens,
-					totalTokenCount: compactionResult.estimatedTokens,
-				});
-				// Summarization replaced the protected prefix with a 2-entry
-				// summary — shift the boundary left by however many entries were
-				// shed so it still points at the same logical (post-compaction)
-				// start of this tool chain on subsequent iterations.
-				loopStartIndex -= updatedHistory.length - compactionResult.compactedHistory.length;
-				await this.safeHook('onMidLoopCompaction', plugin, () =>
-					hooks?.onMidLoopCompaction?.({
-						estimatedTokens: compactionResult.estimatedTokens,
-						summaryText: compactionResult.summaryText,
-					})
-				);
-			}
-			updatedHistory = compactionResult.compactedHistory;
-
-			// prepareHistory can spend real time (token counting, an LLM
-			// summarization call) — re-check cancellation before scheduling the
-			// follow-up request so a stop during compaction doesn't sneak out
-			// another model call.
-			if (isCancelled()) {
-				return this.cancelledResult(updatedHistory, iterations);
-			}
+			// Summarization may have shed the protected prefix — the boundary shifts
+			// so it still points at the same logical (post-compaction) start of this
+			// tool chain on subsequent iterations.
+			loopStartIndex = postBatch.loopStartIndex;
+			let updatedHistory = postBatch.history;
 
 			// Follow-up: ask the model what to do next given the tool results
-			await this.safeHook('onFollowUpRequestStart', plugin, () => hooks?.onFollowUpRequestStart?.());
-
-			const followUpRequest = buildFollowUpRequest({
-				plugin,
-				currentSession: session,
+			const outcome = await this.requestFollowUp(plugin, session, hooks, {
 				updatedHistory,
+				perTurn,
 				customPrompt,
 				projectRootPath,
 				featureToolPolicy,
 				headless,
-				...perTurn,
+				toolResults,
+				modelName,
+				createModel,
 			});
 
-			const modelApi = createModel();
-			let followUpResponse: ModelResponse;
-
-			if (hooks?.onFollowUpChunk && modelApi.generateStreamingResponse) {
-				// Streaming follow-up: fire hook per text chunk so the UI can render
-				// tokens as they arrive instead of showing a progress bar then a dump.
-				// Only create the live container when there is actual text to show —
-				// an intermediate tool-continuation turn may produce no text at all.
-				let accText = '';
-				let accThoughts = '';
-				const stream = modelApi.generateStreamingResponse(followUpRequest, (chunk: StreamChunk) => {
-					if (chunk.thought) accThoughts += chunk.thought;
-					if (chunk.text) {
-						accText += chunk.text;
-						void this.safeHook('onFollowUpChunk', plugin, () => hooks?.onFollowUpChunk?.({ text: chunk.text }));
-					}
-				});
-				// Expose the in-flight stream so a mid-stream Stop can cancel token
-				// generation immediately rather than waiting for stream.complete to
-				// settle; clear it (null) once the stream resolves or throws.
-				await this.safeHook('onFollowUpStreamReady', plugin, () => hooks?.onFollowUpStreamReady?.(stream));
-				try {
-					followUpResponse = await stream.complete;
-				} finally {
-					await this.safeHook('onFollowUpStreamReady', plugin, () => hooks?.onFollowUpStreamReady?.(null));
-				}
-				// Prefer the completed response's text; fall back to the accumulated
-				// streaming text when the response object arrives empty.
-				if (!followUpResponse.markdown?.trim() && accText.trim()) {
-					followUpResponse = { ...followUpResponse, markdown: accText };
-				}
-				if (!followUpResponse.thoughts?.trim() && accThoughts.trim()) {
-					followUpResponse = { ...followUpResponse, thoughts: accThoughts };
-				}
-			} else {
-				followUpResponse = await modelApi.generateModelResponse(followUpRequest);
-			}
-
-			if (followUpResponse.usageMetadata) {
-				await this.safeEmit(plugin, 'apiResponseReceived', {
-					usageMetadata: followUpResponse.usageMetadata,
-					modelName,
-				});
-			}
-
-			if (followUpResponse.toolCalls && followUpResponse.toolCalls.length > 0) {
-				// Surface intermediate reasoning (the "why I'm calling these tools"
-				// thinking) so the caller can persist a reasoning-only turn before
-				// the next tool batch runs.
-				if (followUpResponse.thoughts?.trim()) {
-					await this.safeHook('onModelReasoning', plugin, () => hooks?.onModelReasoning?.(followUpResponse.thoughts!));
-				}
-
+			if (outcome.toolCalls && outcome.toolCalls.length > 0) {
 				// Continue iterating with the new tool calls.
 				if (isCancelled()) {
 					return this.cancelledResult(updatedHistory, iterations);
 				}
-				currentToolCalls = followUpResponse.toolCalls;
+				currentToolCalls = outcome.toolCalls;
 				conversationHistory = updatedHistory;
 				// Both are now embedded in `updatedHistory`; clearing them stops the
 				// next iteration from splicing a duplicate user/context turn.
@@ -534,48 +455,32 @@ export class AgentLoop {
 			}
 
 			// Terminal: model returned text (or empty)
-			if (followUpResponse.markdown && followUpResponse.markdown.trim()) {
+			if (outcome.markdown && outcome.markdown.trim()) {
 				return this.makeResult({
-					markdown: followUpResponse.markdown,
-					thoughts: followUpResponse.thoughts?.trim() ? followUpResponse.thoughts : undefined,
+					markdown: outcome.markdown,
+					thoughts: outcome.thoughts?.trim() ? outcome.thoughts : undefined,
 					history: updatedHistory,
 					iterations,
 				});
 			}
 
-			// Empty response — try once with a simpler prompt that excludes tools.
-			plugin.logger.warn('[AgentLoop] Model returned empty response after tool execution');
-
+			// Empty response — retry once with a simpler prompt that excludes tools.
 			if (isCancelled()) {
 				return this.cancelledResult(updatedHistory, iterations);
 			}
-
-			await this.safeHook('onEmptyResponseRetry', plugin, () => hooks?.onEmptyResponseRetry?.());
-
-			const retryRequest = buildRetryRequest({
-				plugin,
-				currentSession: session,
+			const retry = await this.retryAfterEmpty(plugin, session, {
 				updatedHistory,
+				perTurn,
 				customPrompt,
-				...perTurn,
+				toolResults,
+				modelName,
+				createModel,
 			});
-
-			const retryModelApi = createModel();
-			const retryResponse = await retryModelApi.generateModelResponse(retryRequest);
-
-			if (retryResponse.usageMetadata) {
-				await this.safeEmit(plugin, 'apiResponseReceived', {
-					usageMetadata: retryResponse.usageMetadata,
-					modelName,
-				});
-			}
-
-			if (retryResponse.markdown && retryResponse.markdown.trim()) {
+			if (retry) {
 				return this.makeResult({
-					markdown: retryResponse.markdown,
-					thoughts: retryResponse.thoughts?.trim() ? retryResponse.thoughts : undefined,
+					markdown: retry.markdown,
+					thoughts: retry.thoughts?.trim() ? retry.thoughts : undefined,
 					history: updatedHistory,
-					retried: true,
 					iterations,
 				});
 			}
@@ -585,7 +490,6 @@ export class AgentLoop {
 			return this.makeResult({
 				markdown: buildEmptyResponseMessage(toolResults, plugin),
 				history: updatedHistory,
-				retried: true,
 				fellBack: true,
 				iterations,
 			});
@@ -594,6 +498,316 @@ export class AgentLoop {
 		// No initial tool calls at all — degenerate case the caller shouldn't hit
 		// (they'd have used the initial response directly). Return a no-op result.
 		return this.makeResult({ markdown: '', history: conversationHistory, iterations: 0 });
+	}
+
+	/**
+	 * Sort one batch of tool calls into execution priority order.
+	 *
+	 * Priority comes from each tool's declared classification (#1424); a name
+	 * missing from the registry sorts into the EXTERNAL fallback band and is
+	 * logged so a missing registration surfaces instead of silently mis-sorting.
+	 * Each call is tagged with its emitted position *before* the sort, so
+	 * `buildToolHistoryTurns` can map the results back onto the model's
+	 * own turn order no matter how the sort rearranged execution (#1499).
+	 */
+	private sortBatchForExecution(plugin: ObsidianGemini, toolCalls: ToolCall[]): IndexedToolCall[] {
+		const unresolvable = new Set<string>();
+		const sortedEntries = sortToolCallsByPriority(indexToolCalls(toolCalls), (name) => {
+			const classification = plugin.toolRegistry?.getTool(name)?.classification;
+			if (classification === undefined) unresolvable.add(name);
+			return classification;
+		});
+		for (const name of unresolvable) {
+			plugin.logger.warn(`[AgentLoop] Tool "${name}" is not in the registry; sorting it before writes.`);
+		}
+		return sortedEntries;
+	}
+
+	/**
+	 * Post-batch escalation checks. Returns a terminal {@link AgentLoopResult}
+	 * when the turn must end after this batch, or `null` to continue iterating.
+	 *
+	 * Two escalations, in order:
+	 * - Loop-detector fires this turn reached `AGENT_LOOP_ABORT_THRESHOLD` — the
+	 *   "please try a different approach" hint isn't working and continuing just
+	 *   burns tokens/time.
+	 * - `stopOnToolError` (default true) — end the turn when a tool call in the
+	 *   batch failed instead of feeding the failure back and letting the model
+	 *   keep going. The failure is already recorded in the results and history —
+	 *   the caller sees it and can retry. Restores the pre-#1388 semantics whose
+	 *   only reader was removed in the same change that extracted the batch
+	 *   wrapper (#1388, #1563). Loop-detector fires are excluded: they have
+	 *   their own escalation above, and letting this setting absorb them would
+	 *   replace the count-based abort with a first-failure abort.
+	 */
+	private checkBatchEscalations(
+		plugin: ObsidianGemini,
+		toolResults: ToolCallResultPair[],
+		state: {
+			conversationHistory: Content[];
+			userMessage: string;
+			perTurnContext: string | undefined;
+			toolCalls: ToolCall[];
+			loopFireCount: number;
+			iterations: number;
+		}
+	): AgentLoopResult | null {
+		if (state.loopFireCount >= AGENT_LOOP_ABORT_THRESHOLD) {
+			plugin.logger.warn(
+				`[AgentLoop] Aborting turn: tool loop detector fired ${state.loopFireCount} times ` +
+					`(threshold ${AGENT_LOOP_ABORT_THRESHOLD})`
+			);
+			const updatedHistory = buildToolHistoryTurns({
+				conversationHistory: state.conversationHistory,
+				userMessage: state.userMessage,
+				perTurnContext: state.perTurnContext,
+				toolCalls: state.toolCalls,
+				toolResults,
+			});
+			return this.loopAbortedResult(updatedHistory, state.iterations, state.loopFireCount);
+		}
+
+		// stopOnToolError (default true).
+		const stopOnToolError = plugin.settings.stopOnToolError !== false;
+		// Loop-detector fires are excluded (see doc comment above).
+		if (stopOnToolError && toolResults.some((tr) => !tr.result.success && !tr.result.loopDetected)) {
+			plugin.logger.warn('[AgentLoop] Ending turn: a tool call failed and stopOnToolError is enabled');
+			const updatedHistory = buildToolHistoryTurns({
+				conversationHistory: state.conversationHistory,
+				userMessage: state.userMessage,
+				perTurnContext: state.perTurnContext,
+				toolCalls: state.toolCalls,
+				toolResults,
+			});
+			return this.makeResult({
+				markdown: t('agent.toolFailedStop', {
+					tool: toolResults.find((tr) => !tr.result.success && !tr.result.loopDetected)?.toolName ?? '',
+				}),
+				history: updatedHistory,
+				iterations: state.iterations,
+			});
+		}
+
+		return null;
+	}
+
+	/**
+	 * Build the tool-response turn for the batch just executed, then run mid-loop
+	 * compaction over it. Returns the post-compaction history and the shifted
+	 * `loopStartIndex`, or `{ cancelled: true, history }` when cancellation fired
+	 * at either boundary (before compaction, or after — `prepareHistory` can
+	 * spend real time on token counting / an LLM summarization call).
+	 */
+	private async buildPostBatchHistory(
+		plugin: ObsidianGemini,
+		isCancelled: () => boolean,
+		hooks: AgentLoopHooks | undefined,
+		state: {
+			conversationHistory: Content[];
+			userMessage: string;
+			perTurnContext: string | undefined;
+			toolCalls: ToolCall[];
+			toolResults: ToolCallResultPair[];
+			budgetNotice: string | undefined;
+			loopStartIndex: number;
+			modelName: string;
+		}
+	): Promise<
+		{ cancelled: true; history: Content[] } | { cancelled: false; history: Content[]; loopStartIndex: number }
+	> {
+		let updatedHistory = buildToolHistoryTurns({
+			conversationHistory: state.conversationHistory,
+			userMessage: state.userMessage,
+			perTurnContext: state.perTurnContext,
+			toolCalls: state.toolCalls,
+			toolResults: state.toolResults,
+			appendText: state.budgetNotice,
+		});
+
+		if (isCancelled()) {
+			return { cancelled: true, history: updatedHistory };
+		}
+
+		// Compact history if this batch pushed us over the token threshold —
+		// long tool chains otherwise grow `updatedHistory` unbounded across
+		// iterations. Only turns strictly before `loopStartIndex` are eligible,
+		// so the current tool chain's functionCall/thoughtSignature turns are
+		// never summarized away. Gated internally on cached token usage, so
+		// this is a no-op on most iterations. See #662.
+		const compactionResult = await plugin.contextManager.prepareHistory(updatedHistory, state.modelName, {
+			protectFromIndex: state.loopStartIndex,
+		});
+		let loopStartIndex = state.loopStartIndex;
+		if (compactionResult.wasCompacted) {
+			plugin.contextManager.setUsageMetadata({
+				promptTokenCount: compactionResult.estimatedTokens,
+				totalTokenCount: compactionResult.estimatedTokens,
+			});
+			// Summarization replaced the protected prefix with a 2-entry
+			// summary — shift the boundary left by however many entries were
+			// shed so it still points at the same logical (post-compaction)
+			// start of this tool chain on subsequent iterations.
+			loopStartIndex -= updatedHistory.length - compactionResult.compactedHistory.length;
+			await this.safeHook('onMidLoopCompaction', plugin, () =>
+				hooks?.onMidLoopCompaction?.({
+					estimatedTokens: compactionResult.estimatedTokens,
+					summaryText: compactionResult.summaryText,
+				})
+			);
+		}
+		updatedHistory = compactionResult.compactedHistory;
+
+		// prepareHistory can spend real time (token counting, an LLM
+		// summarization call) — re-check cancellation before scheduling the
+		// follow-up request so a stop during compaction doesn't sneak out
+		// another model call.
+		if (isCancelled()) {
+			return { cancelled: true, history: updatedHistory };
+		}
+
+		return { cancelled: false, history: updatedHistory, loopStartIndex };
+	}
+
+	/**
+	 * Make the follow-up model request after a tool batch: streaming (hook per
+	 * chunk) when the caller registered `onFollowUpChunk` and the client supports
+	 * it, non-streaming otherwise. Emits `apiResponseReceived` and the
+	 * intermediate `onModelReasoning` hook when the response carries tool calls.
+	 */
+	private async requestFollowUp(
+		plugin: ObsidianGemini,
+		session: ChatSession,
+		hooks: AgentLoopHooks | undefined,
+		state: {
+			updatedHistory: Content[];
+			perTurn?: PerTurnContext;
+			customPrompt?: CustomPrompt;
+			projectRootPath?: string;
+			featureToolPolicy?: FeatureToolPolicy;
+			headless?: boolean;
+			toolResults: ToolCallResultPair[];
+			modelName: string;
+			createModel: () => ModelApi;
+		}
+	): Promise<ModelResponse> {
+		const { updatedHistory, perTurn, customPrompt, modelName, createModel } = state;
+
+		// Follow-up: ask the model what to do next given the tool results
+		await this.safeHook('onFollowUpRequestStart', plugin, () => hooks?.onFollowUpRequestStart?.());
+
+		const followUpRequest = buildFollowUpRequest({
+			plugin,
+			currentSession: session,
+			updatedHistory,
+			customPrompt,
+			projectRootPath: state.projectRootPath,
+			featureToolPolicy: state.featureToolPolicy,
+			headless: state.headless,
+			...perTurn,
+		});
+
+		const modelApi = createModel();
+		let followUpResponse: ModelResponse;
+
+		if (hooks?.onFollowUpChunk && modelApi.generateStreamingResponse) {
+			// Streaming follow-up: fire hook per text chunk so the UI can render
+			// tokens as they arrive instead of showing a progress bar then a dump.
+			// Only create the live container when there is actual text to show —
+			// an intermediate tool-continuation turn may produce no text at all.
+			let accText = '';
+			let accThoughts = '';
+			const stream = modelApi.generateStreamingResponse(followUpRequest, (chunk: StreamChunk) => {
+				if (chunk.thought) accThoughts += chunk.thought;
+				if (chunk.text) {
+					accText += chunk.text;
+					void this.safeHook('onFollowUpChunk', plugin, () => hooks?.onFollowUpChunk?.({ text: chunk.text }));
+				}
+			});
+			// Expose the in-flight stream so a mid-stream Stop can cancel token
+			// generation immediately rather than waiting for stream.complete to
+			// settle; clear it (null) once the stream resolves or throws.
+			await this.safeHook('onFollowUpStreamReady', plugin, () => hooks?.onFollowUpStreamReady?.(stream));
+			try {
+				followUpResponse = await stream.complete;
+			} finally {
+				await this.safeHook('onFollowUpStreamReady', plugin, () => hooks?.onFollowUpStreamReady?.(null));
+			}
+			// Prefer the completed response's text; fall back to the accumulated
+			// streaming text when the response object arrives empty.
+			if (!followUpResponse.markdown?.trim() && accText.trim()) {
+				followUpResponse = { ...followUpResponse, markdown: accText };
+			}
+			if (!followUpResponse.thoughts?.trim() && accThoughts.trim()) {
+				followUpResponse = { ...followUpResponse, thoughts: accThoughts };
+			}
+		} else {
+			followUpResponse = await modelApi.generateModelResponse(followUpRequest);
+		}
+
+		if (followUpResponse.usageMetadata) {
+			await this.safeEmit(plugin, 'apiResponseReceived', {
+				usageMetadata: followUpResponse.usageMetadata,
+				modelName,
+			});
+		}
+
+		if (followUpResponse.toolCalls && followUpResponse.toolCalls.length > 0) {
+			// Surface intermediate reasoning (the "why I'm calling these tools"
+			// thinking) so the caller can persist a reasoning-only turn before
+			// the next tool batch runs.
+			if (followUpResponse.thoughts?.trim()) {
+				await this.safeHook('onModelReasoning', plugin, () => hooks?.onModelReasoning?.(followUpResponse.thoughts!));
+			}
+		}
+
+		return followUpResponse;
+	}
+
+	/**
+	 * Empty follow-up response — retry once with a simpler prompt that excludes
+	 * tools. Returns the retry response's text/thoughts when it produced content,
+	 * or `null` when the retry was also empty (the caller falls back to the
+	 * executed-tools summary).
+	 */
+	private async retryAfterEmpty(
+		plugin: ObsidianGemini,
+		session: ChatSession,
+		state: {
+			updatedHistory: Content[];
+			perTurn?: PerTurnContext;
+			customPrompt?: CustomPrompt;
+			toolResults: ToolCallResultPair[];
+			modelName: string;
+			createModel: () => ModelApi;
+		}
+	): Promise<{ markdown: string; thoughts?: string } | null> {
+		plugin.logger.warn('[AgentLoop] Model returned empty response after tool execution');
+
+		const retryRequest = buildRetryRequest({
+			plugin,
+			currentSession: session,
+			updatedHistory: state.updatedHistory,
+			customPrompt: state.customPrompt,
+			...state.perTurn,
+		});
+
+		const retryModelApi = state.createModel();
+		const retryResponse = await retryModelApi.generateModelResponse(retryRequest);
+
+		if (retryResponse.usageMetadata) {
+			await this.safeEmit(plugin, 'apiResponseReceived', {
+				usageMetadata: retryResponse.usageMetadata,
+				modelName: state.modelName,
+			});
+		}
+
+		if (retryResponse.markdown && retryResponse.markdown.trim()) {
+			return {
+				markdown: retryResponse.markdown,
+				thoughts: retryResponse.thoughts?.trim() ? retryResponse.thoughts : undefined,
+			};
+		}
+		return null;
 	}
 
 	/**
@@ -632,7 +846,7 @@ export class AgentLoop {
 	}
 
 	/**
-	 * Assemble an {@link AgentLoopResult}, defaulting the five status flags to
+	 * Assemble an {@link AgentLoopResult}, defaulting the four status flags to
 	 * `false` so each terminal path only spells out the flags that are true for
 	 * it. Every return site — including {@link cancelledResult} and
 	 * {@link loopAbortedResult} — routes through here so the default flag block
@@ -643,7 +857,6 @@ export class AgentLoop {
 	): AgentLoopResult {
 		return {
 			cancelled: false,
-			retried: false,
 			fellBack: false,
 			exhausted: false,
 			loopAborted: false,
@@ -657,9 +870,7 @@ export class AgentLoop {
 
 	private loopAbortedResult(history: Content[], iterations: number, fireCount: number): AgentLoopResult {
 		return this.makeResult({
-			markdown:
-				`The agent kept retrying the same tool call (loop detector fired ${fireCount} times). ` +
-				'Stopping this turn to prevent a runaway loop. Try rephrasing your request or starting a new session.',
+			markdown: t('agent.loopAborted', { count: fireCount }),
 			history,
 			loopAborted: true,
 			iterations,
@@ -667,11 +878,11 @@ export class AgentLoop {
 	}
 
 	private async executeToolBatch(
-		sortedToolCalls: ToolCall[],
+		sortedToolCalls: IndexedToolCall[],
 		toolContext: ToolExecutionContext,
 		options: AgentLoopOptions
 	): Promise<ToolCallResultPair[]> {
-		const { plugin, isCancelled, hooks, confirmationProvider } = options;
+		const { plugin, session, isCancelled, hooks, confirmationProvider } = options;
 		const results: ToolCallResultPair[] = [];
 
 		if (isCancelled()) {
@@ -680,29 +891,29 @@ export class AgentLoop {
 		}
 
 		// Split tool calls into parallelizable and serial (confirmation-requiring or write/destructive)
-		const parallelCalls: ToolCall[] = [];
-		const serialCalls: ToolCall[] = [];
+		const parallelCalls: IndexedToolCall[] = [];
+		const serialCalls: IndexedToolCall[] = [];
 
-		for (const toolCall of sortedToolCalls) {
-			const tool = plugin.toolRegistry.getTool(toolCall.name);
+		for (const indexedCall of sortedToolCalls) {
+			const tool = plugin.toolRegistry.getTool(indexedCall.name);
 			if (!tool) {
 				// Let the execution engine handle the missing tool error serially
-				serialCalls.push(toolCall);
+				serialCalls.push(indexedCall);
 				continue;
 			}
 
 			const needsConfirmation =
 				(typeof plugin.toolRegistry?.requiresConfirmation === 'function'
-					? plugin.toolRegistry.requiresConfirmation(toolCall.name, toolContext.featureToolPolicy)
-					: false) && !confirmationProvider.isToolAllowedWithoutConfirmation(toolCall.name);
+					? plugin.toolRegistry.requiresConfirmation(indexedCall.name, toolContext.featureToolPolicy)
+					: false) && !confirmationProvider.isToolAllowedWithoutConfirmation(indexedCall.name);
 
 			const isReadOrExternal =
 				tool.classification === ToolClassification.READ || tool.classification === ToolClassification.EXTERNAL;
 
 			if (isReadOrExternal && !needsConfirmation) {
-				parallelCalls.push(toolCall);
+				parallelCalls.push(indexedCall);
 			} else {
-				serialCalls.push(toolCall);
+				serialCalls.push(indexedCall);
 			}
 		}
 
@@ -711,13 +922,15 @@ export class AgentLoop {
 			plugin.logger.log(
 				`[AgentLoop] Executing ${parallelCalls.length} tools in parallel: ${parallelCalls.map((c) => c.name).join(', ')}`
 			);
-			const parallelPromises = parallelCalls.map(async (toolCall) => {
+			const parallelPromises = parallelCalls.map(async ({ call: toolCall, sourceIndex }) => {
 				if (isCancelled()) {
 					return {
 						toolId: toolCall.id,
 						toolName: toolCall.name,
 						toolArguments: toolCall.arguments || {},
 						result: { success: false, error: 'Cancelled' },
+						sourceIndex,
+						...(toolCall.id && { id: toolCall.id }),
 					};
 				}
 
@@ -751,6 +964,7 @@ export class AgentLoop {
 					);
 
 					await this.safeEmit(plugin, 'toolExecutionComplete', {
+						session,
 						toolName: toolCall.name,
 						args: toolCall.arguments || {},
 						result,
@@ -764,6 +978,8 @@ export class AgentLoop {
 						toolName: toolCall.name,
 						toolArguments: toolCall.arguments,
 						result,
+						sourceIndex,
+						...(toolCall.id && { id: toolCall.id }),
 					};
 				} catch (error) {
 					plugin.logger.error(`[AgentLoop] Parallel tool execution error for ${toolCall.name}:`, error);
@@ -776,6 +992,8 @@ export class AgentLoop {
 							success: false,
 							error: error instanceof Error ? error.message : 'Unknown error',
 						},
+						sourceIndex,
+						...(toolCall.id && { id: toolCall.id }),
 					};
 				}
 			});
@@ -785,7 +1003,7 @@ export class AgentLoop {
 		}
 
 		// Execute serial calls sequentially
-		for (const toolCall of serialCalls) {
+		for (const { call: toolCall, sourceIndex } of serialCalls) {
 			if (isCancelled()) {
 				plugin.logger.debug('[AgentLoop] Cancellation detected, stopping serial tool execution');
 				break;
@@ -817,6 +1035,7 @@ export class AgentLoop {
 				);
 
 				await this.safeEmit(plugin, 'toolExecutionComplete', {
+					session,
 					toolName: toolCall.name,
 					args: toolCall.arguments || {},
 					result,
@@ -830,7 +1049,26 @@ export class AgentLoop {
 					toolName: toolCall.name,
 					toolArguments: toolCall.arguments,
 					result,
+					// Carry the model-assigned correlation id so the replayed
+					// functionResponse pairs with its functionCall (#1398), and
+					// the emitted position so it pairs by order too (#1499).
+					sourceIndex,
+					...(toolCall.id && { id: toolCall.id }),
 				});
+
+				// stopOnToolError (default true): a failed tool call ends the
+				// execution chain — remaining calls in this batch do not run.
+				// The post-batch check below then ends the turn. Restores the
+				// pre-#1388 semantics whose only reader was removed in the same
+				// change (#1388, #1563; restored by #1469).
+				//
+				// Loop-detector fires are excluded — they escalate via the
+				// AGENT_LOOP_ABORT_THRESHOLD check above, and this setting
+				// absorbing them would replace the count-based abort with a
+				// first-failure abort.
+				if (result.success === false && !result.loopDetected && plugin.settings.stopOnToolError !== false) {
+					break;
+				}
 			} catch (error) {
 				plugin.logger.error(`[AgentLoop] Tool execution error for ${toolCall.name}:`, error);
 				await this.safeHook('onToolCounted', plugin, () => hooks?.onToolCounted?.());
@@ -842,7 +1080,16 @@ export class AgentLoop {
 						success: false,
 						error: getRawErrorMessageOr(error, 'Unknown error'),
 					},
+					// Same correlation on the error path — the functionResponse
+					// still needs to pair with its functionCall (#1398, #1499).
+					sourceIndex,
+					...(toolCall.id && { id: toolCall.id }),
 				});
+
+				// Same stopOnToolError end-of-chain rule for thrown errors.
+				if (plugin.settings.stopOnToolError !== false) {
+					break;
+				}
 			}
 		}
 

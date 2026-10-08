@@ -1,0 +1,238 @@
+/**
+ * "Used by", "Includes", and the various `displayValue` strings surfaced on
+ * the Providers and Features pages (settings-redesign design doc §5.6). All
+ * strings go through `t()`; lists are joined with `t('settings.common.listSeparator')`.
+ *
+ * `featureStatus`/`providerConnection` (the `ok`/`off`/`unsupported`/
+ * `unconfigured` truth table and the connection probe) come from WP0's
+ * `src/api/provider-status.ts` — this module only formats their result into
+ * the short copy the mockups show (`"Gemini · qwen3:8b"`, not the longer
+ * dropdown-option label `"Google Gemini (cloud)"`).
+ */
+
+import type { SettingsContext } from './context';
+import { t, type TranslationKey } from '../../i18n';
+import { featureRoute, activeProviders, featuresUsing } from '../../api/feature-routing';
+import { providerConnection, featureStatus, type ProviderConnection } from '../../api/provider-status';
+import { getCapabilities, type ModelProvider } from '../../api/providers/registry';
+import { GEMINI_MODELS, getDefaultModelForRole, isModelEligibleForRole } from '../../models';
+import { FEATURE_GROUPS, FEATURE_MODEL_ROLE, type FeatureId } from '../../types/features';
+
+function sep(): string {
+	return t('settings.common.listSeparator');
+}
+
+/**
+ * Short provider names for row/chip copy ("Gemini", not "Google Gemini
+ * (cloud)"), for every `ModelProvider`.
+ */
+export const PROVIDER_SHORT_LABEL_KEY: Record<ModelProvider, TranslationKey> = {
+	gemini: 'settings.providers.shortLabel.gemini',
+	ollama: 'settings.providers.shortLabel.ollama',
+	openai: 'settings.providers.shortLabel.openai',
+	anthropic: 'settings.providers.shortLabel.anthropic',
+};
+
+/**
+ * Heading/label key per feature group. Lives here with the other label-key
+ * maps because both callers need the same one: the Features page's group
+ * headings and `topLevelFeaturesDisplay`'s "Text on Ollama" summary.
+ */
+export const FEATURE_GROUP_LABEL_KEY: Record<(typeof FEATURE_GROUPS)[number]['key'], TranslationKey> = {
+	text: 'settings.features.groupText',
+	web: 'settings.features.groupWeb',
+	media: 'settings.features.groupMedia',
+};
+
+export const FEATURE_LABEL_KEY: Record<FeatureId, TranslationKey> = {
+	chat: 'settings.features.label.chat',
+	summary: 'settings.features.label.summary',
+	completions: 'settings.features.label.completions',
+	rewrite: 'settings.features.label.rewrite',
+	webSearch: 'settings.features.label.webSearch',
+	deepResearch: 'settings.features.label.deepResearch',
+	rag: 'settings.features.label.rag',
+	imageGen: 'settings.features.label.imageGen',
+};
+
+/** Every feature currently served by a provider, as translated row labels. */
+export function usedByLine(ctx: SettingsContext, p: ModelProvider): string {
+	const list = featuresUsing(ctx.plugin.settings, p);
+	if (list.length === 0) return t('settings.providers.usedByNone');
+	return list.map((f) => t(FEATURE_LABEL_KEY[f])).join(sep());
+}
+
+/**
+ * Capability-driven, never hardcoded per provider: a provider's card
+ * advertises whichever provider-bound extras its capability row declares
+ * (`maps` → Google Maps grounding, `webSearch` → page fetch by URL).
+ */
+export function includesLine(_ctx: SettingsContext, p: ModelProvider): string {
+	const caps = getCapabilities(p);
+	const parts: string[] = [];
+	if (caps.maps) parts.push(t('settings.providers.includesMaps'));
+	if (caps.webSearch) parts.push(t('settings.providers.includesUrlFetch'));
+	if (parts.length === 0) return t('settings.providers.includesNone');
+	return parts.join(sep());
+}
+
+const CONNECTION_LABEL_KEY: Record<ProviderConnection, TranslationKey> = {
+	connected: 'settings.providers.statusConnected',
+	'needs-key': 'settings.providers.statusNeedsKey',
+	unreachable: 'settings.providers.statusUnreachable',
+	unknown: 'settings.providers.statusUnknown',
+};
+
+/**
+ * Translates a raw `ProviderConnection` into its display label.
+ */
+function connectionLabel(connection: ProviderConnection): string {
+	return t(CONNECTION_LABEL_KEY[connection]);
+}
+
+/** A provider card's displayed value: its connection state. */
+export function providerCardDisplay(ctx: SettingsContext, p: ModelProvider): string {
+	return connectionLabel(providerConnection(ctx.plugin, p));
+}
+
+/** The live list's label for a provider's model, or `undefined` when the list doesn't have it. */
+function listedModelLabel(provider: ModelProvider, model: string): string | undefined {
+	// eslint-disable-next-line no-restricted-syntax -- GEMINI_MODELS catalog data carries provider tags; matching against them, not dispatching
+	return GEMINI_MODELS.find((m) => m.value === model && (m.provider ?? 'gemini') === provider)?.label;
+}
+
+/**
+ * Label for a feature's empty model value: "Same as chat" on a provider that
+ * keeps one model resident, otherwise "Default (<model>)" naming the model
+ * the request would actually use — the same `getDefaultModelForRole` lookup
+ * `resolveFeatureModel` performs. Falls back to the unnamed "Default for this
+ * provider" while the provider's list hasn't loaded (no default to name yet).
+ */
+function defaultModelLabel(provider: ModelProvider, f: FeatureId): string {
+	if (!getCapabilities(provider).perUseCaseModels && f !== 'chat') return t('settings.features.sameAsChat');
+	const role = FEATURE_MODEL_ROLE[f];
+	let model = '';
+	if (role) {
+		try {
+			model = getDefaultModelForRole(role, provider);
+		} catch {
+			// An empty bundled Gemini list — nothing to name.
+		}
+	}
+	if (!model) return t('settings.features.modelDefault');
+	return t('settings.features.modelDefaultNamed', { model: listedModelLabel(provider, model) ?? model });
+}
+
+/** The model label shown for a feature row/page: the live list's label, or the appropriate "no model" copy. */
+function featureModelLabel(ctx: SettingsContext, f: FeatureId): string {
+	if (f === 'deepResearch') return t('settings.features.deepResearchAgent');
+	if (f === 'rag') return t('settings.features.fileSearch');
+	const route = featureRoute(ctx.plugin.settings, f);
+	const provider = route.provider === 'none' ? null : route.provider;
+	if (!provider) return t('settings.features.modelDefault');
+	if (!route.model) return defaultModelLabel(provider, f);
+	const label = listedModelLabel(provider, route.model);
+	if (label) return label;
+	return `${route.model} (${t('settings.features.modelMissing')})`;
+}
+
+/**
+ * A Features-page row's displayed value: `t('settings.features.off')` when
+ * the route is `'none'`; `t('settings.features.chooseProvider')` when
+ * `unsupported`; `"<provider> · not connected"` when `unconfigured`;
+ * otherwise `"<provider> · <model>"`. `rag` additionally shows Off when
+ * `ragIndexing.enabled` is false even though it is routed (mirrors the
+ * mockup's "Gemini · off").
+ */
+export function featureRowDisplay(ctx: SettingsContext, f: FeatureId): string {
+	const { plugin } = ctx;
+	const status = featureStatus(plugin, f);
+	if (status === 'off') return t('settings.features.off');
+	if (status === 'unsupported') return t('settings.features.chooseProvider');
+	const route = featureRoute(plugin.settings, f);
+	const providerLabel = t(PROVIDER_SHORT_LABEL_KEY[route.provider as ModelProvider]);
+	if (status === 'unconfigured') {
+		return `${providerLabel}${sep()}${t('settings.features.notConnected')}`;
+	}
+	if (f === 'rag' && !plugin.settings.ragIndexing.enabled) {
+		return `${providerLabel}${sep()}${t('settings.features.off')}`;
+	}
+	return `${providerLabel}${sep()}${featureModelLabel(ctx, f)}`;
+}
+
+/**
+ * Dropdown options for a feature's model control: a leading "Default
+ * (<model>)" / "Same as chat" entry, then every model the current
+ * provider offers for this feature's role, plus the stored model itself
+ * (labelled "No longer available") if it has fallen out of the live list.
+ * `{}` when the feature is off (the model row is hidden in that state).
+ */
+export function modelOptions(ctx: SettingsContext, f: FeatureId): Record<string, string> {
+	const route = featureRoute(ctx.plugin.settings, f);
+	if (route.provider === 'none') return {};
+	const provider = route.provider;
+	const wantsImage = f === 'imageGen';
+	const role = wantsImage ? 'image' : FEATURE_MODEL_ROLE[f];
+	const pool = GEMINI_MODELS.filter(
+		// eslint-disable-next-line no-restricted-syntax -- GEMINI_MODELS catalog data carries provider tags; matching against them, not dispatching
+		(m) => (m.provider ?? 'gemini') === provider && role !== null && isModelEligibleForRole(m, role)
+	);
+	const options: Record<string, string> = { '': defaultModelLabel(provider, f) };
+	for (const m of pool) {
+		options[m.value] =
+			wantsImage && m.capabilitiesUnknown ? `${m.label} (${t('settings.features.modelCapabilitiesUnknown')})` : m.label;
+	}
+	if (route.model && !(route.model in options)) {
+		options[route.model] = `${route.model} (${t('settings.features.modelMissing')})`;
+	}
+	return options;
+}
+
+/** Whether a feature's stored model has fallen out of its provider's current list (drives an inline validation error). */
+export function isModelMissing(ctx: SettingsContext, f: FeatureId): boolean {
+	const route = featureRoute(ctx.plugin.settings, f);
+	if (route.provider === 'none' || !route.model) return false;
+	const provider = route.provider;
+	const wantsImage = f === 'imageGen';
+	return !GEMINI_MODELS.some(
+		(m) =>
+			m.value === route.model &&
+			// eslint-disable-next-line no-restricted-syntax -- GEMINI_MODELS catalog data carries provider tags; matching against them, not dispatching
+			(m.provider ?? 'gemini') === provider &&
+			isModelEligibleForRole(m, wantsImage ? 'image' : (FEATURE_MODEL_ROLE[f] ?? 'chat'))
+	);
+}
+
+/** Top-level tab's "Providers" row: every provider currently used, or serving as the default, in display order. */
+export function topLevelProvidersDisplay(ctx: SettingsContext): string {
+	const providers = activeProviders(ctx.plugin.settings);
+	if (providers.length === 0) return t('settings.providers.usedByNone');
+	return providers.map((p) => t(PROVIDER_SHORT_LABEL_KEY[p])).join(sep());
+}
+
+/**
+ * Top-level tab's "Features" row: a grouped summary ("Text on Ollama ·
+ * Images and web on Gemini") when the feature groups cleanly split by
+ * provider, else the same provider list `topLevelProvidersDisplay` shows.
+ */
+export function topLevelFeaturesDisplay(ctx: SettingsContext): string {
+	const { plugin } = ctx;
+	const parts: string[] = [];
+	for (const group of FEATURE_GROUPS) {
+		const providers = new Set(
+			group.features
+				.map((f) => featureRoute(plugin.settings, f).provider)
+				.filter((p): p is ModelProvider => p !== 'none')
+		);
+		if (providers.size !== 1) continue;
+		const [provider] = providers;
+		parts.push(
+			t('settings.providers.groupOnProvider', {
+				group: t(FEATURE_GROUP_LABEL_KEY[group.key]),
+				provider: t(PROVIDER_SHORT_LABEL_KEY[provider]),
+			})
+		);
+	}
+	if (parts.length === 0) return topLevelProvidersDisplay(ctx);
+	return parts.join(sep());
+}

@@ -13,6 +13,7 @@ vi.mock('obsidian', () => ({
 
 vi.mock('../../src/utils/file-utils', () => ({
 	ensureFolderExists: vi.fn().mockResolvedValue(undefined),
+	ensureParentFolderExists: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../src/utils/format-utils', () => ({
@@ -56,7 +57,6 @@ function successfulLoopResult(markdown = 'Tool result text.'): AgentLoopResult {
 		markdown,
 		history: [],
 		cancelled: false,
-		retried: false,
 		fellBack: false,
 		exhausted: false,
 		loopAborted: false,
@@ -68,14 +68,22 @@ function createMockPlugin(vaultFiles: Record<string, string> = {}): any {
 	return {
 		logger: { log: vi.fn(), debug: vi.fn(), error: vi.fn(), warn: vi.fn() },
 		settings: {
-			chatModelName: 'gemini-2.0-flash',
-			temperature: 1,
-			topP: 0.95,
+			features: {
+				chat: { provider: 'gemini', model: 'gemini-2.0-flash' },
+				summary: { provider: 'gemini', model: '' },
+				completions: { provider: 'gemini', model: '' },
+				rewrite: { provider: 'gemini', model: '' },
+				webSearch: { provider: 'gemini', model: '' },
+				deepResearch: { provider: 'gemini', model: '' },
+				rag: { provider: 'gemini', model: '' },
+				imageGen: { provider: 'gemini', model: '' },
+			},
 		},
 		sessionManager: {
+			releaseSession: vi.fn(),
 			createAgentSession: vi.fn().mockResolvedValue({
 				id: 'session-1',
-				title: 'Scheduled: test-task',
+				title: 'Scheduled task - test-task',
 				created: new Date(),
 				context: { enabledTools: [], requireConfirmation: [] },
 				modelConfig: {},
@@ -257,6 +265,38 @@ describe('ScheduledTaskRunner', () => {
 		expect(plugin.app.vault.create).not.toHaveBeenCalled();
 	});
 
+	// #1268: a loop-generated notice (loop-detector abort, or the empty-twice
+	// fallback) must never read as the run's real result — the note is still
+	// written for debugging, but marked incomplete.
+	it.each([
+		['loopAborted', { fellBack: false, loopAborted: true }, 'tool-loop detector aborted the turn'],
+		['fellBack', { fellBack: true, loopAborted: false }, 'the model returned an empty response twice'],
+	])(
+		'marks the output note incomplete on %s instead of persisting the notice as the result',
+		async (_label, flags, causeText) => {
+			const toolCalls = [{ name: 'list_files', arguments: { path: '/' } }];
+			(ModelClientFactory.createChatModel as Mock).mockReturnValue(createMockModelApi('', toolCalls));
+			mockAgentLoopRun.mockResolvedValue({
+				...successfulLoopResult('Loop-detector aborted after 3 fires.'),
+				...flags,
+			});
+
+			const vaultFiles: Record<string, string> = {};
+			const plugin = createMockPlugin(vaultFiles);
+			const runner = new ScheduledTaskRunner(plugin, makeTask());
+
+			const outputPath = await runner.run(() => false);
+
+			expect(outputPath).toBe('gemini-scribe/Scheduled-Tasks/Runs/test-task/2026-04-18.md');
+			const written = (plugin.app.vault.create as Mock).mock.calls[0][1] as string;
+			expect(written).toMatch(/incomplete: true/);
+			expect(written).toContain(causeText);
+			expect(written).toContain('Loop-detector aborted after 3 fires.');
+			// The notice text lands after the callout — never mistaken for the answer.
+			expect(written.indexOf('incomplete: true')).toBeLessThan(written.indexOf('Loop-detector aborted after 3 fires.'));
+		}
+	);
+
 	it('throws after MAX_TOOL_ITERATIONS without a text response', async () => {
 		const toolCalls = [{ name: 'list_files', arguments: { path: '/' } }];
 		(ModelClientFactory.createChatModel as Mock).mockReturnValue(createMockModelApi('', toolCalls));
@@ -275,7 +315,7 @@ describe('ScheduledTaskRunner', () => {
 
 	it('uses task model override instead of plugin chat model', async () => {
 		const plugin = createMockPlugin();
-		plugin.settings.chatModelName = 'plugin-default-model';
+		plugin.settings.features.chat.model = 'plugin-default-model';
 		const task = makeTask({ model: 'task-override-model' });
 		const runner = new ScheduledTaskRunner(plugin, task);
 
@@ -284,7 +324,7 @@ describe('ScheduledTaskRunner', () => {
 		const request = ((ModelClientFactory.createChatModel as Mock).mock.results[0].value.generateModelResponse as Mock)
 			.mock.calls[0][0];
 		expect(request.model).toBe('task-override-model');
-		expect(request.model).not.toBe(plugin.settings.chatModelName);
+		expect(request.model).not.toBe(plugin.settings.features.chat.model);
 	});
 
 	it('generates a unique path when the resolved output file already exists', async () => {
@@ -319,6 +359,17 @@ describe('ScheduledTaskRunner', () => {
 			expect(plugin.sessionManager.createAgentSession).toHaveBeenCalledWith(
 				expect.any(String),
 				expect.objectContaining({ toolPolicy: undefined })
+			);
+		});
+
+		it('labels the session with a file-name-safe title', async () => {
+			// A ':' here would be rewritten to '-' in the session's file name.
+			const plugin = createMockPlugin();
+			await new ScheduledTaskRunner(plugin, makeTask()).run(() => false);
+
+			expect(plugin.sessionManager.createAgentSession).toHaveBeenCalledWith(
+				'Scheduled task - test-task',
+				expect.anything()
 			);
 		});
 

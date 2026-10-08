@@ -50,8 +50,6 @@ const buildPlugin = () =>
 const baseConfig: OllamaClientConfig = {
 	baseUrl: 'http://localhost:11434',
 	model: 'llama3.2',
-	temperature: 0.4,
-	topP: 0.9,
 };
 
 describe('OllamaClient', () => {
@@ -77,7 +75,6 @@ describe('OllamaClient', () => {
 			const response = await client.generateModelResponse({
 				kind: 'base',
 				prompt: 'say hi',
-				temperature: 0.2,
 			});
 
 			expect(ollamaCalls.generate).toHaveBeenCalledTimes(1);
@@ -85,8 +82,6 @@ describe('OllamaClient', () => {
 			expect(args.model).toBe('llama3.2');
 			expect(args.prompt).toBe('say hi');
 			expect(args.stream).toBe(false);
-			expect(args.options.temperature).toBe(0.2);
-			expect(args.options.top_p).toBe(0.9);
 
 			expect(response.markdown).toBe('hello world');
 			expect(response.usageMetadata).toEqual({
@@ -94,6 +89,17 @@ describe('OllamaClient', () => {
 				candidatesTokenCount: 4,
 				totalTokenCount: 14,
 			});
+		});
+
+		it('returns empty markdown when the generate response omits `response`', async () => {
+			ollamaCalls.generate.mockResolvedValue({ done: true });
+
+			const response = await client.generateModelResponse({
+				kind: 'base',
+				prompt: 'say hi',
+			});
+
+			expect(response.markdown).toBe('');
 		});
 	});
 
@@ -326,6 +332,36 @@ describe('OllamaClient', () => {
 			expect(result.markdown).toBe('partial');
 			expect(result.usageMetadata).toBeUndefined();
 		});
+
+		it('cancel() before the stream resolves aborts the stream once it arrives', async () => {
+			// The Ollama SDK's requests take no signal, so the stream reference
+			// doesn't exist until the await resolves — the window the post-hoc
+			// abort closes. cancel() firing inside that window must still reach
+			// the daemon via abort(), not just stop the flag-driven loop.
+			const abort = vi.fn();
+			let resolveStream: (s: unknown) => void = () => {};
+			const gate = new Promise((r) => (resolveStream = r));
+			ollamaCalls.chat.mockImplementation(() => gate);
+
+			const streaming = client.generateStreamingResponse(
+				{ prompt: '', userMessage: 'hi', kind: 'extended', conversationHistory: [] },
+				() => {}
+			);
+			// cancel() while `start` is still awaiting the gate — the reference
+			// does not exist yet.
+			streaming.cancel();
+			resolveStream({
+				[Symbol.asyncIterator]: async function* () {
+					yield { message: { content: 'late' }, done: false };
+				},
+				abort,
+			});
+
+			const result = await streaming.complete;
+
+			expect(abort).toHaveBeenCalled();
+			expect(result.markdown).toBe(''); // no chunk was consumed
+		});
 	});
 
 	describe('convertHistoryEntry() complex formats', () => {
@@ -538,6 +574,48 @@ describe('OllamaClient', () => {
 			const msgs = ollamaCalls.chat.mock.calls[0][0].messages;
 			const assistantMsg = msgs.find((m: any) => m.role === 'assistant' && m.content === 'response');
 			expect(assistantMsg).toBeDefined();
+		});
+
+		// The two assertions below pin the provider differences that the shared
+		// history walker must NOT erase (#1373). They are the adapter-level
+		// regression net for "observably identical per provider".
+
+		it('emits tool responses BEFORE the assistant message (the inverse of OpenAI)', async () => {
+			await client.generateModelResponse({
+				prompt: '',
+				userMessage: 'go',
+				kind: 'extended',
+				conversationHistory: [
+					{
+						role: 'model',
+						parts: [
+							{ functionCall: { name: 'read_file', args: {} } },
+							{ functionResponse: { name: 'read_file', response: { content: 'data' } } },
+						],
+					},
+				],
+			});
+
+			const msgs = ollamaCalls.chat.mock.calls[0][0].messages;
+			const toolIdx = msgs.findIndex((m: any) => m.role === 'tool');
+			const assistantIdx = msgs.findIndex((m: any) => m.role === 'assistant' && m.tool_calls?.length);
+			expect(toolIdx).toBeGreaterThanOrEqual(0);
+			expect(assistantIdx).toBeGreaterThanOrEqual(0);
+			expect(toolIdx).toBeLessThan(assistantIdx);
+		});
+
+		it("leaves an empty assistant turn's content as '' (OpenAI coalesces to null)", async () => {
+			await client.generateModelResponse({
+				prompt: '',
+				userMessage: 'go',
+				kind: 'extended',
+				conversationHistory: [{ role: 'model', parts: [{ text: '   ' }] }],
+			});
+
+			const msgs = ollamaCalls.chat.mock.calls[0][0].messages;
+			const assistantMsg = msgs.find((m: any) => m.role === 'assistant');
+			expect(assistantMsg).toBeDefined();
+			expect(assistantMsg.content).toBe('');
 		});
 	});
 

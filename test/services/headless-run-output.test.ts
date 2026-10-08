@@ -5,6 +5,7 @@ import {
 	resolveTimestampPath,
 	isAlreadyExistsError,
 	writeHeadlessOutput,
+	markIncompleteOutput,
 } from '../../src/services/headless-run-output';
 
 // normalizePath here mirrors the real helper closely enough for path assertions
@@ -17,11 +18,13 @@ vi.mock('obsidian', () => ({
 
 // vi.mock factories are hoisted above the file body, so the spy must be created
 // in a hoisted scope (and mock-prefixed) for the factory to reference it safely.
-const { mockEnsureFolderExists } = vi.hoisted(() => ({
+const { mockEnsureFolderExists, mockEnsureParentFolderExists } = vi.hoisted(() => ({
 	mockEnsureFolderExists: vi.fn().mockResolvedValue(undefined),
+	mockEnsureParentFolderExists: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../../src/utils/file-utils', () => ({
 	ensureFolderExists: mockEnsureFolderExists,
+	ensureParentFolderExists: mockEnsureParentFolderExists,
 }));
 
 /** Build a minimal Vault stub with controllable existence + create behavior. */
@@ -35,6 +38,7 @@ function makeVault(opts?: { exists?: (path: string) => boolean; create?: Mock })
 
 beforeEach(() => {
 	mockEnsureFolderExists.mockClear();
+	mockEnsureParentFolderExists.mockClear();
 });
 
 describe('resolveOutputPath', () => {
@@ -136,7 +140,15 @@ describe('writeHeadlessOutput — no retry (scheduled-task shape)', () => {
 		});
 
 		expect(written).toBe('Runs/task/2026-04-18.md');
-		expect(mockEnsureFolderExists).toHaveBeenCalledWith(vault, 'Runs/task', 'scheduled task output folder', undefined);
+		// The write path hands the full file path to the shared helper; the
+		// parent derivation it performs internally is unit-tested in
+		// test/utils/file-utils.test.ts.
+		expect(mockEnsureParentFolderExists).toHaveBeenCalledWith(
+			vault,
+			'Runs/task/2026-04-18.md',
+			'scheduled task output folder',
+			undefined
+		);
 		expect(create).toHaveBeenCalledWith('Runs/task/2026-04-18.md', '---\nscheduled_task: "task"\n---\n\nBody text');
 	});
 
@@ -156,10 +168,13 @@ describe('writeHeadlessOutput — no retry (scheduled-task shape)', () => {
 		expect(create).toHaveBeenCalledWith('Runs/task/2026-04-18-1.md', 'H\nB');
 	});
 
-	it('skips folder creation for a top-level (folderless) path', async () => {
+	it('hands the path to ensureParentFolderExists even at the vault root', async () => {
 		const vault = makeVault({ exists: () => false });
 		await writeHeadlessOutput({ vault, outputPath: 'out.md', header: 'H\n', content: 'B', folderLabel: 'x' });
-		expect(mockEnsureFolderExists).not.toHaveBeenCalled();
+		// The root-level no-op lives inside the shared helper now (unit-tested
+		// in test/utils/file-utils.test.ts); what this test pins is that the
+		// write path always routes through it with the full file path.
+		expect(mockEnsureParentFolderExists).toHaveBeenCalledWith(vault, 'out.md', 'x', undefined);
 	});
 
 	it('propagates a non-"already exists" create error unchanged', async () => {
@@ -239,5 +254,38 @@ describe('writeHeadlessOutput — retry (hook shape)', () => {
 				retry,
 			})
 		).rejects.toThrow(/\[HookRunner\] Failed to write hook output after 9 attempts/);
+	});
+});
+
+describe('markIncompleteOutput', () => {
+	const header = '---\nscheduled_task: "t"\nran_at: "2026-09-21"\n---\n\n';
+
+	it('inserts incomplete: true into the frontmatter and prepends the warning callout', () => {
+		const { header: marked, content } = markIncompleteOutput(header, 'Loop notice.', { loopAborted: true });
+
+		expect(marked).toBe('---\nscheduled_task: "t"\nran_at: "2026-09-21"\nincomplete: true\n---\n\n');
+		expect(content).toMatch(/^> \[!warning\] Incomplete run\n/);
+		expect(content).toContain('tool-loop detector aborted the turn');
+		expect(content).toContain('Loop notice.');
+	});
+
+	it('names the empty-twice cause for fellBack', () => {
+		const { content } = markIncompleteOutput(header, 'x', { fellBack: true });
+
+		expect(content).toContain('the model returned an empty response twice');
+	});
+
+	it('joins both causes when both flags are set', () => {
+		const { header: marked, content } = markIncompleteOutput(header, 'x', { fellBack: true, loopAborted: true });
+
+		expect(marked).toContain('incomplete: true');
+		expect(content).toContain('empty response twice and the tool-loop detector aborted');
+	});
+
+	it('leaves the body text after the callout untouched', () => {
+		const body = '## Notice\nExecuted tools: read_file';
+		const { content } = markIncompleteOutput(header, body, { fellBack: true });
+
+		expect(content.endsWith(body)).toBe(true);
 	});
 });

@@ -2,6 +2,9 @@ import { App, Modal, Notice, Setting, setIcon } from 'obsidian';
 import type { ObsidianGemini } from '../../types/plugin';
 import { ToolPolicyEditor } from './tool-policy-editor';
 import { t } from '../../i18n';
+import { resolveFeatureModel } from '../../models';
+import { parseMaxIterations } from '../../services/feature-definition';
+import { DEFAULT_HEADLESS_MAX_ITERATIONS } from '../../agent/agent-loop';
 
 /**
  * View state for management modals: list all entities, create a new one,
@@ -24,6 +27,30 @@ export type ManagementView = 'list' | 'create' | 'edit';
  * Subclasses implement the entity-specific bits: row rendering, form body,
  * CRUD operations, and form state shape.
  */
+/**
+ * Accessor callbacks for the shared advanced rows
+ * (`ManagementModalBase.addSharedAdvancedFields`). The base is generic over
+ * `TEntity`/`TEntityState` and knows nothing about the subclasses' form
+ * shapes, so each field is read/written through a callback and the form
+ * state stays entirely in the subclass.
+ */
+export interface SharedAdvancedFieldOpts {
+	/** i18n key prefix for the entity, e.g. `'hooks'` or `'scheduler'`. */
+	keyPrefix: 'hooks' | 'scheduler';
+	getModel(): string;
+	setModel(value: string): void;
+	getOutputPath(): string;
+	setOutputPath(value: string): void;
+	/**
+	 * Scheduler interpolates the default output path into its desc; hooks
+	 * uses a plain key. Pass the interpolation params when the entity's
+	 * outputPathDesc takes one.
+	 */
+	outputPathDescParams?: Record<string, string | number>;
+	getMaxIterations(): string;
+	setMaxIterations(value: string): void;
+}
+
 export abstract class ManagementModalBase<TEntity, TEntityState> extends Modal {
 	protected view: ManagementView;
 	protected editingSlug: string | null = null;
@@ -180,7 +207,7 @@ export abstract class ManagementModalBase<TEntity, TEntityState> extends Modal {
 					new Notice(t('component.managementModalBase.deleted', { label: this.capitalizedEntityLabel, slug }));
 					this.render();
 				} catch (err) {
-					this.plugin.logger.error(`[${this.constructor.name}] Delete failed for "${slug}":`, err);
+					this.plugin.logger.error(`[${this.logTag}] Delete failed for "${slug}":`, err);
 					new Notice(t('component.managementModalBase.deleteFailed', { slug }));
 					this.render();
 				}
@@ -268,6 +295,82 @@ export abstract class ManagementModalBase<TEntity, TEntityState> extends Modal {
 
 	// ── Shared helpers ───────────────────────────────────────────────────────
 
+	/**
+	 * Accessor callbacks for the shared advanced rows. The base is generic
+	 * over `TEntity`/`TEntityState` and knows nothing about the subclasses'
+	 * form shapes, so each field is read/written through a callback and the
+	 * form state stays entirely in the subclass.
+	 */
+	protected addSharedAdvancedFields(advDetails: HTMLElement, opts: SharedAdvancedFieldOpts): void {
+		new Setting(advDetails)
+			.setName(t(`${opts.keyPrefix}.modelOverrideSetting`))
+			.setDesc(t(`${opts.keyPrefix}.modelOverrideDesc`))
+			.addText((text) =>
+				text
+					// Placeholder is the model a blank field falls back to — the
+					// plugin's current chat model — so it never names a retired id.
+					.setPlaceholder(resolveFeatureModel(this.plugin.settings, 'chat'))
+					.setValue(opts.getModel())
+					.onChange((v) => {
+						opts.setModel(v.trim());
+					})
+			);
+
+		new Setting(advDetails)
+			.setName(t(`${opts.keyPrefix}.outputPathSetting`))
+			.setDesc(t(`${opts.keyPrefix}.outputPathDesc`, opts.outputPathDescParams ?? {}))
+			.addText((text) =>
+				text.setValue(opts.getOutputPath()).onChange((v) => {
+					opts.setOutputPath(v.trim());
+				})
+			);
+
+		new Setting(advDetails)
+			.setName(t(`${opts.keyPrefix}.maxIterationsSetting`))
+			.setDesc(t(`${opts.keyPrefix}.maxIterationsDesc`, { default: DEFAULT_HEADLESS_MAX_ITERATIONS }))
+			.addText((text) =>
+				text
+					.setPlaceholder(String(DEFAULT_HEADLESS_MAX_ITERATIONS))
+					.setValue(opts.getMaxIterations())
+					.onChange((v) => {
+						opts.setMaxIterations(v.trim());
+					})
+			);
+	}
+
+	/** The shared enabled toggle. Called separately so it stays last. */
+	protected addEnabledToggle(
+		advDetails: HTMLElement,
+		opts: { keyPrefix: 'hooks' | 'scheduler'; getEnabled(): boolean; setEnabled(value: boolean): void }
+	): void {
+		new Setting(advDetails)
+			.setName(t(`${opts.keyPrefix}.enabledSetting`))
+			.setDesc(t(`${opts.keyPrefix}.enabledDesc`))
+			.addToggle((toggle) =>
+				toggle.setValue(opts.getEnabled()).onChange((v) => {
+					opts.setEnabled(v);
+				})
+			);
+	}
+
+	/**
+	 * Shared parse for the max-iterations field: blank means "use the
+	 * default" (`undefined`); a non-blank value must be a positive integer.
+	 * Returns `'invalid'` for garbage so the caller raises its own
+	 * per-entity Notice — the i18n key stays in the subclass and individually
+	 * translatable. Delegates to `parseMaxIterations()`
+	 * (`services/feature-definition.ts`), making that function the single
+	 * definition of a valid max-iterations across the frontmatter path and
+	 * both UIs; the UI path differs only in rejecting where the frontmatter
+	 * parser swallows.
+	 */
+	protected parseMaxIterationsField(raw: string): number | undefined | 'invalid' {
+		const trimmed = raw.trim();
+		if (!trimmed) return undefined;
+		const parsed = parseMaxIterations(trimmed);
+		return parsed === undefined ? 'invalid' : parsed;
+	}
+
 	protected formatDate(date: Date): string {
 		return date.toLocaleString([], {
 			month: 'short',
@@ -320,6 +423,11 @@ export abstract class ManagementModalBase<TEntity, TEntityState> extends Modal {
 
 	// ── Abstract: configuration ──────────────────────────────────────────────
 
+	/**
+	 * Stable English tag for log lines, e.g. `'HookManagementModal'`. Not
+	 * `constructor.name`, which the production bundle minifies.
+	 */
+	protected abstract readonly logTag: string;
 	/** Singular lowercase label: `'hook'` or `'task'`. */
 	protected abstract readonly entityLabel: string;
 	/** Plural display title: `'Lifecycle Hooks'` or `'Scheduled Tasks'`. */

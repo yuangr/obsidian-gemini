@@ -6,7 +6,6 @@ import { TFile, Notice } from 'obsidian';
 import type { FileUploader } from '@allenhutchison/gemini-utils';
 import type { ObsidianGemini } from '../types/plugin';
 import { ObsidianVaultAdapter } from './obsidian-file-adapter';
-import { getErrorMessage } from '../utils/error-utils';
 import { t } from '../i18n';
 import { RagCache } from './rag-cache';
 import { RagRateLimiter } from './rag-rate-limiter';
@@ -17,7 +16,7 @@ import { createGoogleGenAI } from '../api/providers/gemini/google-genai-factory'
 import type {
 	IndexProgress,
 	IndexResult,
-	FailedFileEntry,
+	RagDetailedStatus,
 	RagIndexStatus,
 	RagProgressInfo,
 	ProgressListener,
@@ -159,20 +158,9 @@ export class RagIndexingService {
 			if (this.ragCache.indexedCount === 0) {
 				new Notice(t('notice.rag.startingInitial'));
 
-				// Open progress modal for initial indexing
-				// Fire-and-forget: lazy-load and open the progress modal; indexing itself is handled below.
-				void import('../ui/rag-progress-modal').then(({ RagProgressModal }) => {
-					const progressModal = new RagProgressModal(this.plugin.app, this, (result) => {
-						new Notice(t('notice.rag.indexingComplete', { indexed: result.indexed, skipped: result.skipped }));
-					});
-					progressModal.open();
-				});
-
-				// Run indexing in background (don't await - modal handles display)
-				this.indexVault().catch((error) => {
-					this.plugin.logger.error('RAG Indexing: Initial indexing failed', error);
-					new Notice(t('notice.rag.indexingFailed', { error: getErrorMessage(error) }));
-				});
+				// Same open-modal-then-index-in-background sequence the scanner uses when
+				// resuming; this.indexVault() delegates to the scanner's either way.
+				this.vaultScanner.startResumeIndexing(this, 'RAG Indexing: Initial indexing failed');
 			}
 		} catch (error) {
 			this.plugin.logger.error('RAG Indexing: Failed to initialize', error);
@@ -239,22 +227,6 @@ export class RagIndexingService {
 		return this.ragCache.indexedCount;
 	}
 
-	getStatusInfo(): {
-		status: RagIndexStatus;
-		indexedCount: number;
-		storeName: string | null;
-		lastSync: number | null;
-		progress?: { current: number; total: number };
-	} {
-		return {
-			status: this.status,
-			indexedCount: this.ragCache.indexedCount,
-			storeName: this.plugin.settings.ragIndexing.fileSearchStoreName,
-			lastSync: this.ragCache.cache?.lastSync || null,
-			progress: this.status === 'indexing' ? this.vaultScanner?.getIndexingProgress() : undefined,
-		};
-	}
-
 	getProgressInfo(): RagProgressInfo {
 		return {
 			status: this.status,
@@ -269,20 +241,7 @@ export class RagIndexingService {
 		};
 	}
 
-	getPendingCount(): number {
-		return this.syncQueue?.getPendingCount() ?? 0;
-	}
-
-	getDetailedStatus(): {
-		status: RagIndexStatus;
-		indexedCount: number;
-		failedCount: number;
-		pendingCount: number;
-		storeName: string | null;
-		lastSync: number | null;
-		indexedFiles: Array<{ path: string; lastIndexed: number }>;
-		failedFiles: FailedFileEntry[];
-	} {
+	getDetailedStatus(): RagDetailedStatus {
 		// Build indexed files list from cache, sorted by lastIndexed (newest first)
 		const indexedFiles = this.ragCache.cache
 			? Object.entries(this.ragCache.cache.files)

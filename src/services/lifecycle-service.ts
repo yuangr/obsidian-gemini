@@ -6,6 +6,7 @@ import { ContextTrackingSubscriber } from '../subscribers/context-tracking-subsc
 import { AccessedFilesSubscriber } from '../subscribers/accessed-files-subscriber';
 import { ToolExecutionLogger } from '../subscribers/tool-execution-logger';
 import { ProjectActivationSubscriber } from '../subscribers/project-activation-subscriber';
+import { LoopDetectionSubscriber } from '../subscribers/loop-detection-subscriber';
 import { ToolRegistrar } from './tool-registrar';
 import { GeminiPrompts, PromptManager } from '../prompts';
 import { ScribeFile } from '../files';
@@ -34,7 +35,7 @@ import { BackgroundTaskManager } from './background-task-manager';
 import { BackgroundStatusBar } from './background-status-bar';
 import { ScheduledTaskManager } from './scheduled-task-manager';
 import { HookManager } from './hook-manager';
-import { resolveProvider } from '../api/provider-routing';
+import { featureStatus } from '../api/provider-status';
 
 import agentsMemoryTemplateContent from '../../prompts/agentsMemoryTemplate.hbs';
 
@@ -49,6 +50,7 @@ export class LifecycleService {
 	private contextTrackingSubscriber: ContextTrackingSubscriber | null = null;
 	private accessedFilesSubscriber: AccessedFilesSubscriber | null = null;
 	private projectActivationSubscriber: ProjectActivationSubscriber | null = null;
+	private loopDetectionSubscriber: LoopDetectionSubscriber | null = null;
 	private ragListenersRegistered = false;
 
 	constructor(plugin: ObsidianGemini) {
@@ -75,6 +77,18 @@ export class LifecycleService {
 
 		// Phase C: Reinitializable services
 		await this.initializeReinitializableServices();
+
+		// On a re-init the refresh block below hands the renamed historyFolder to
+		// ScheduledTaskManager and HookManager *before* main.ts would re-run
+		// initializePluginFolders(), so the eager folders — including the
+		// scheduled-tasks folder the manager reads during initialize() — must
+		// exist first. initializePluginFolders() is itself guarded: it no-ops
+		// until Phase C has constructed folderInitializer, and on a first load
+		// (layout not ready) it does nothing here — onLayoutReady() owns that
+		// path. Idempotent, so re-running from main.ts after setup() is harmless.
+		if (plugin.app.workspace.layoutReady) {
+			await this.initializePluginFolders();
+		}
 
 		// If layout is already ready (i.e. this is a re-init triggered by a
 		// settings save), refresh the scheduled task manager so it picks up any
@@ -188,7 +202,8 @@ export class LifecycleService {
 
 		// Kick off MCP server connections in the background. Fire-and-forget so
 		// the layout-ready path never waits on a slow or unreachable server.
-		if (plugin.mcpManager && plugin.settings.mcpEnabled) {
+		// An empty `mcpServers` list means off — connectAllEnabled() is a no-op then.
+		if (plugin.mcpManager) {
 			void plugin.mcpManager.connectAllEnabled();
 		}
 
@@ -226,6 +241,7 @@ export class LifecycleService {
 		this.contextTrackingSubscriber?.destroy();
 		this.accessedFilesSubscriber?.destroy();
 		this.projectActivationSubscriber?.destroy();
+		this.loopDetectionSubscriber?.destroy();
 		plugin.agentEventBus?.removeAll();
 
 		// Disconnect MCP servers
@@ -275,8 +291,8 @@ export class LifecycleService {
 
 		// RAG needs a provider with a cloud file-search store. Only Gemini has one,
 		// so a local-only configuration leaves it off unless the user explicitly
-		// routes `rag` to Gemini (#704).
-		if (resolveProvider(plugin.settings, 'rag') === null) {
+		// routes the `rag` feature to a connected Gemini.
+		if (featureStatus(plugin, 'rag') !== 'ok') {
 			await this.disposeRagIndexing();
 			return;
 		}
@@ -399,6 +415,7 @@ export class LifecycleService {
 			this.contextTrackingSubscriber = new ContextTrackingSubscriber(plugin);
 			this.accessedFilesSubscriber = new AccessedFilesSubscriber(plugin);
 			this.projectActivationSubscriber = new ProjectActivationSubscriber(plugin);
+			this.loopDetectionSubscriber = new LoopDetectionSubscriber(plugin);
 		}
 
 		// Background task manager + status bar are created once and persist.
@@ -491,7 +508,7 @@ export class LifecycleService {
 		// Re-init (settings change after layout is ready): we fire-and-forget
 		// here since onLayoutReady() won't run again.
 		plugin.mcpManager = new MCPManager(plugin);
-		if (plugin.settings.mcpEnabled && plugin.app.workspace.layoutReady) {
+		if (plugin.app.workspace.layoutReady) {
 			void plugin.mcpManager.connectAllEnabled();
 		}
 
@@ -513,12 +530,12 @@ export class LifecycleService {
 		// Deep research
 		plugin.deepResearch = new DeepResearchService(plugin);
 
-		// Image generation needs a provider that offers it (Gemini today). The
+		// Image generation needs a provider that offers it. The
 		// command-palette entry is registered unconditionally in main.ts so it
 		// shows a clear "not available" notice when nothing is routed here,
 		// instead of silently disappearing or pointing at an orphaned closure
 		// after a runtime routing change.
-		if (resolveProvider(plugin.settings, 'imageGen') !== null) {
+		if (featureStatus(plugin, 'imageGen') === 'ok') {
 			plugin.imageGeneration = new ImageGeneration(plugin);
 		}
 

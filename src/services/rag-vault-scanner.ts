@@ -190,6 +190,29 @@ export class RagVaultScanner {
 	}
 
 	/**
+	 * The delete call both `deleteFileSearchStore` and `startFresh` run,
+	 * wrapped in retry with the caller's operationName (so the retry logs can
+	 * tell the two paths apart). Deliberately only this inner call is shared:
+	 * the surrounding error handling differs — `startFresh` swallows
+	 * not-found and continues, `deleteFileSearchStore` surfaces the failure.
+	 */
+	private async deleteStore(
+		ai: NonNullable<ReturnType<VaultScannerCallbacks['getAi']>>,
+		storeName: string,
+		operationName: string
+	): Promise<void> {
+		await executeWithRetry(
+			() =>
+				ai.fileSearchStores.delete({
+					name: storeName,
+					config: { force: true },
+				}),
+			undefined,
+			{ operationName, logger: this.plugin.logger }
+		);
+	}
+
+	/**
 	 * Delete the File Search Store
 	 */
 	async deleteFileSearchStore(): Promise<void> {
@@ -200,15 +223,7 @@ export class RagVaultScanner {
 		if (!storeName) return;
 
 		try {
-			await executeWithRetry(
-				() =>
-					ai.fileSearchStores.delete({
-						name: storeName,
-						config: { force: true },
-					}),
-				undefined,
-				{ operationName: 'RagVaultScanner.deleteFileSearchStore.delete', logger: this.plugin.logger }
-			);
+			await this.deleteStore(ai, storeName, 'RagVaultScanner.deleteFileSearchStore.delete');
 
 			// Clear settings and cache
 			this.plugin.settings.ragIndexing.fileSearchStoreName = null;
@@ -268,10 +283,18 @@ export class RagVaultScanner {
 	}
 
 	/**
-	 * Start resume indexing with progress modal.
+	 * Open the progress modal and start a vault index in the background.
+	 *
+	 * Used both when resuming an interrupted index and for the very first index
+	 * of a vault (see `RagIndexingService.initialize`) — the two differ only in
+	 * the message logged if the background index rejects.
 	 * @param progressProvider - The object to pass to the progress modal (typically the orchestrator)
+	 * @param failureLogMessage - Logger message used when the background index rejects
 	 */
-	startResumeIndexing(progressProvider: RagProgressProvider): void {
+	startResumeIndexing(
+		progressProvider: RagProgressProvider,
+		failureLogMessage = 'RAG Indexing: Resume indexing failed'
+	): void {
 		// Fire-and-forget: lazy-load and open the progress modal; indexing itself is handled below.
 		void import('../ui/rag-progress-modal').then(({ RagProgressModal }) => {
 			const progressModal = new RagProgressModal(this.plugin.app, progressProvider, (result) => {
@@ -282,7 +305,7 @@ export class RagVaultScanner {
 
 		// Run indexing in background (don't await - modal handles display)
 		this.indexVault().catch((error) => {
-			this.plugin.logger.error('RAG Indexing: Resume indexing failed', error);
+			this.plugin.logger.error(failureLogMessage, error);
 			new Notice(t('notice.rag.indexingFailed', { error: getErrorMessage(error) }));
 		});
 	}
@@ -307,15 +330,7 @@ export class RagVaultScanner {
 			const ai = this.callbacks.getAi();
 			if (storeName && ai) {
 				try {
-					await executeWithRetry(
-						() =>
-							ai.fileSearchStores.delete({
-								name: storeName,
-								config: { force: true },
-							}),
-						undefined,
-						{ operationName: 'RagVaultScanner.startFresh.delete', logger: this.plugin.logger }
-					);
+					await this.deleteStore(ai, storeName, 'RagVaultScanner.startFresh.delete');
 					this.plugin.logger.log(`RAG Indexing: Deleted store ${storeName}`);
 				} catch (deleteError) {
 					if (isNotFoundError(deleteError)) {
@@ -445,7 +460,6 @@ export class RagVaultScanner {
 						progressCallback?.({
 							current: 0,
 							total: event.totalFiles || 0,
-							phase: 'scanning',
 							message: `Found ${event.totalFiles} files to index`,
 						});
 					} else if (event.type === 'file_start') {
@@ -459,7 +473,6 @@ export class RagVaultScanner {
 						if (this.ragCache.cache && event.currentFile && vaultAdapter) {
 							const contentHash = await vaultAdapter.computeHash(event.currentFile);
 							this.ragCache.cache.files[event.currentFile] = {
-								resourceName: storeName, // Store name as reference (individual doc names not available)
 								contentHash,
 								lastIndexed: Date.now(),
 							};
@@ -477,7 +490,6 @@ export class RagVaultScanner {
 							current: (event.completedFiles || 0) + (event.skippedFiles || 0),
 							total: event.totalFiles || 0,
 							currentFile: event.currentFile,
-							phase: 'indexing',
 						});
 						this.callbacks.onUpdateStatusBar();
 					} else if (event.type === 'file_skipped') {
@@ -493,7 +505,6 @@ export class RagVaultScanner {
 						) {
 							const contentHash = await vaultAdapter.computeHash(event.currentFile);
 							this.ragCache.cache.files[event.currentFile] = {
-								resourceName: storeName,
 								contentHash,
 								lastIndexed: Date.now(),
 							};
@@ -532,7 +543,6 @@ export class RagVaultScanner {
 						progressCallback?.({
 							current: event.totalFiles || 0,
 							total: event.totalFiles || 0,
-							phase: 'complete',
 							message: `Indexed ${result.indexed}, skipped ${result.skipped}, failed ${result.failed}`,
 						});
 					}

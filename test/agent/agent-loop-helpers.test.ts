@@ -1,5 +1,6 @@
 import {
 	sortToolCallsByPriority,
+	classificationToPriority,
 	buildFunctionCallParts,
 	buildFunctionResponseParts,
 	buildToolHistoryTurns,
@@ -7,16 +8,32 @@ import {
 	formatBudgetReminder,
 	formatBudgetExtension,
 	DEFAULT_TOOL_RESPONSE_TRUNCATE_BYTES,
+	TOOL_CALL_NOT_EXECUTED_ERROR,
+	indexToolCalls,
 	ToolCallResultPair,
 } from '../../src/agent/agent-loop-helpers';
+import { ToolClassification } from '../../src/types/tool-policy';
 import type { ToolCall } from '../../src/api/interfaces/model-api';
+import type { Part } from '@google/genai';
+
+/** The registry-style resolver production callers pass: name → classification. */
+const resolve = (name: string): ToolClassification | undefined =>
+	({
+		read_file: ToolClassification.READ,
+		list_files: ToolClassification.READ,
+		delete_file: ToolClassification.DESTRUCTIVE,
+		write_file: ToolClassification.WRITE,
+		mystery_tool: undefined,
+		another_unknown: undefined,
+	})[name];
 
 describe('sortToolCallsByPriority', () => {
 	test('orders reads before writes and deletes', () => {
 		const calls = [{ name: 'delete_file' }, { name: 'write_file' }, { name: 'read_file' }, { name: 'list_files' }];
 
-		const sorted = sortToolCallsByPriority(calls);
+		const sorted = sortToolCallsByPriority(calls, resolve);
 
+		// Stable within the read band: model-emitted order (read_file before list_files) is kept.
 		expect(sorted.map((c) => c.name)).toEqual(['read_file', 'list_files', 'write_file', 'delete_file']);
 	});
 
@@ -29,7 +46,7 @@ describe('sortToolCallsByPriority', () => {
 			{ name: 'another_unknown' },
 		];
 
-		const sorted = sortToolCallsByPriority(calls);
+		const sorted = sortToolCallsByPriority(calls, resolve);
 
 		// Reads first, then unknowns (stable order between them), then writes, then destructive
 		expect(sorted.map((c) => c.name)).toEqual([
@@ -41,6 +58,24 @@ describe('sortToolCallsByPriority', () => {
 		]);
 	});
 
+	test('sort is stable: same-name calls keep model-emitted order within a band (#1398)', () => {
+		// Load-bearing for OpenAI's FIFO tool_call_id pairing: convertHistoryEntry
+		// pairs each id-less functionResponse with the oldest pending id for its
+		// NAME, which lines up with the calls only because same-name calls keep
+		// their relative order through the sort. An unstable comparator would
+		// mis-pair results silently — this test fails if that ever changes.
+		const resolveAllWrites = (name: string): ToolClassification | undefined =>
+			name === 'write_file' || name === 'append_content' ? ToolClassification.WRITE : undefined;
+		const calls = [
+			{ name: 'append_content', id: 'call_a1' },
+			{ name: 'write_file', id: 'call_w1' },
+			{ name: 'append_content', id: 'call_a2' },
+		];
+
+		const sorted = sortToolCallsByPriority(calls, resolveAllWrites);
+
+		expect(sorted.map((c) => c.id)).toEqual(['call_a1', 'call_w1', 'call_a2']);
+	});
 	test('all known READ-classified tools sort before any write/destructive (regression for missing custom reads)', () => {
 		const reads = [
 			'read_file',
@@ -55,10 +90,20 @@ describe('sortToolCallsByPriority', () => {
 		];
 		const writes = ['write_file', 'create_folder', 'update_frontmatter', 'append_content', 'update_memory'];
 		const destructive = ['move_file', 'delete_file'];
+		// Every name resolves to its declared classification — a registry-style
+		// resolver built from ToolClassification directly, no hand-written map.
+		const registryResolve = (name: string): ToolClassification | undefined =>
+			reads.includes(name)
+				? ToolClassification.READ
+				: writes.includes(name)
+					? ToolClassification.WRITE
+					: destructive.includes(name)
+						? ToolClassification.DESTRUCTIVE
+						: undefined;
 
 		// Interleave: every read alternated with a delete — sort must still pull all reads first
 		const interleaved = reads.flatMap((r) => [{ name: 'delete_file' }, { name: r }]);
-		const sorted = sortToolCallsByPriority(interleaved);
+		const sorted = sortToolCallsByPriority(interleaved, registryResolve);
 
 		// First N positions must all be the reads (any order); after that, no read may appear.
 		const firstN = sorted.slice(0, reads.length).map((c) => c.name);
@@ -73,6 +118,25 @@ describe('sortToolCallsByPriority', () => {
 		expect(restNames.some((n) => reads.includes(n))).toBe(false);
 	});
 
+	test('a DESTRUCTIVE tool absent from any hardcoded list still sorts after every write (#1424)', () => {
+		// The case the old hand-maintained map could not express: a new
+		// destructive tool needs no map entry — its declared classification
+		// puts it in the destructive band on its own.
+		const resolveNew = (name: string): ToolClassification | undefined =>
+			name === 'shred_vault'
+				? ToolClassification.DESTRUCTIVE
+				: name === 'write_file'
+					? ToolClassification.WRITE
+					: name === 'read_file'
+						? ToolClassification.READ
+						: undefined;
+		const calls = [{ name: 'shred_vault' }, { name: 'write_file' }, { name: 'read_file' }];
+
+		const sorted = sortToolCallsByPriority(calls, resolveNew);
+
+		expect(sorted.map((c) => c.name)).toEqual(['read_file', 'write_file', 'shred_vault']);
+	});
+
 	test('preserves relative order for equal-priority calls', () => {
 		const calls = [
 			{ name: 'read_file', tag: 'a' },
@@ -80,7 +144,7 @@ describe('sortToolCallsByPriority', () => {
 			{ name: 'read_file', tag: 'c' },
 		];
 
-		const sorted = sortToolCallsByPriority(calls);
+		const sorted = sortToolCallsByPriority(calls, resolve);
 
 		expect(sorted.map((c) => c.tag)).toEqual(['a', 'b', 'c']);
 	});
@@ -89,13 +153,27 @@ describe('sortToolCallsByPriority', () => {
 		const calls = [{ name: 'delete_file' }, { name: 'read_file' }];
 		const original = [...calls];
 
-		sortToolCallsByPriority(calls);
+		sortToolCallsByPriority(calls, resolve);
 
 		expect(calls).toEqual(original);
 	});
 
 	test('handles empty array', () => {
-		expect(sortToolCallsByPriority([])).toEqual([]);
+		expect(sortToolCallsByPriority([], resolve)).toEqual([]);
+	});
+});
+
+describe('classificationToPriority', () => {
+	test('bands read < external < write < destructive', () => {
+		expect(classificationToPriority(ToolClassification.READ)).toBeLessThan(
+			classificationToPriority(ToolClassification.EXTERNAL)
+		);
+		expect(classificationToPriority(ToolClassification.EXTERNAL)).toBeLessThan(
+			classificationToPriority(ToolClassification.WRITE)
+		);
+		expect(classificationToPriority(ToolClassification.WRITE)).toBeLessThan(
+			classificationToPriority(ToolClassification.DESTRUCTIVE)
+		);
 	});
 });
 
@@ -204,6 +282,7 @@ describe('buildFunctionResponseParts', () => {
 				toolName: 'read_file',
 				toolArguments: { path: 'note.md' },
 				result: { success: true, data: { path: 'note.md', content: 'hello' } },
+				sourceIndex: 0,
 			},
 		];
 
@@ -223,6 +302,7 @@ describe('buildFunctionResponseParts', () => {
 			{
 				toolName: 'read_file',
 				toolArguments: { path: 'photo.png' },
+				sourceIndex: 0,
 				result: {
 					success: true,
 					data: { path: 'photo.png', mimeType: 'image/png' },
@@ -244,6 +324,7 @@ describe('buildFunctionResponseParts', () => {
 			{
 				toolName: 'read_file',
 				toolArguments: { path: 'multi.pdf' },
+				sourceIndex: 0,
 				result: {
 					success: true,
 					data: { path: 'multi.pdf' },
@@ -267,6 +348,7 @@ describe('buildFunctionResponseParts', () => {
 			{
 				toolName: 'read_file',
 				toolArguments: { path: 'note.md' },
+				sourceIndex: 0,
 				result: { success: true, data: { path: 'note.md' }, inlineData: [] },
 			},
 		];
@@ -282,6 +364,7 @@ describe('buildFunctionResponseParts', () => {
 			{
 				toolName: 'read_file',
 				toolArguments: { path: 'missing.md' },
+				sourceIndex: 0,
 				result: { success: false, error: 'File not found' },
 			},
 		];
@@ -296,11 +379,13 @@ describe('buildFunctionResponseParts', () => {
 			{
 				toolName: 'read_file',
 				toolArguments: { path: 'a.md' },
+				sourceIndex: 0,
 				result: { success: true, data: { content: 'text' } },
 			},
 			{
 				toolName: 'read_file',
 				toolArguments: { path: 'b.png' },
+				sourceIndex: 1,
 				result: {
 					success: true,
 					data: { path: 'b.png' },
@@ -310,6 +395,7 @@ describe('buildFunctionResponseParts', () => {
 			{
 				toolName: 'list_files',
 				toolArguments: {},
+				sourceIndex: 2,
 				result: { success: true, data: { files: ['a', 'b'] } },
 			},
 		];
@@ -339,6 +425,7 @@ describe('buildToolHistoryTurns', () => {
 		toolName: 'read_file',
 		toolArguments: { path: 'a.md' },
 		result: { success: true, data: { content: 'x' } },
+		sourceIndex: 0,
 	};
 
 	test('appends model + user turns after existing history when userMessage is empty', () => {
@@ -466,6 +553,7 @@ describe('buildToolHistoryTurns', () => {
 				{
 					toolName: 'read_file',
 					toolArguments: { path: 'photo.png' },
+					sourceIndex: 0,
 					result: {
 						success: true,
 						data: { path: 'photo.png' },
@@ -510,6 +598,240 @@ describe('buildToolHistoryTurns', () => {
 		const userResponseTurn = updated[updated.length - 1];
 		expect(userResponseTurn.parts).toHaveLength(1);
 		expect(userResponseTurn.parts![0].functionResponse).toBeDefined();
+	});
+});
+
+describe('buildToolHistoryTurns — call/response pairing across a priority reorder (#1499)', () => {
+	/**
+	 * Reproduce exactly what AgentLoop does to a batch: tag each call with its
+	 * emitted position, sort into execution order, then hand the results back
+	 * in *execution* order — the shape that used to mispair.
+	 */
+	const executeInSortedOrder = (
+		toolCalls: ToolCall[],
+		run: (call: ToolCall) => ToolCallResultPair['result']
+	): ToolCallResultPair[] =>
+		sortToolCallsByPriority(indexToolCalls(toolCalls), resolve).map(({ call, sourceIndex }) => ({
+			toolName: call.name,
+			toolArguments: call.arguments,
+			result: run(call),
+			sourceIndex,
+		}));
+
+	const responsesOf = (history: ReturnType<typeof buildToolHistoryTurns>) =>
+		history[history.length - 1].parts!.filter((p) => p.functionResponse);
+
+	const callsOf = (history: ReturnType<typeof buildToolHistoryTurns>) =>
+		history[history.length - 2].parts!.filter((p) => p.functionCall);
+
+	test('each functionResponse pairs with its own functionCall when sorted order differs from emitted order', () => {
+		// The model emitted delete-then-read; the sort runs read first.
+		const toolCalls: ToolCall[] = [
+			{ name: 'delete_file', arguments: { path: 'a.md' } },
+			{ name: 'read_file', arguments: { path: 'b.md' } },
+		];
+		const toolResults = executeInSortedOrder(toolCalls, (call) => ({
+			success: true,
+			data: { ranFor: call.arguments.path },
+		}));
+		// Precondition: the results really did come back in execution order.
+		expect(toolResults.map((r) => r.toolName)).toEqual(['read_file', 'delete_file']);
+
+		const updated = buildToolHistoryTurns({
+			conversationHistory: [],
+			userMessage: 'do both',
+			toolCalls,
+			toolResults,
+		});
+
+		// The model turn is replayed verbatim, in the emitted order...
+		expect(callsOf(updated).map((p) => p.functionCall!.name)).toEqual(['delete_file', 'read_file']);
+		// ...and each response sits opposite the call it answers.
+		const responses = responsesOf(updated);
+		expect(responses.map((p) => p.functionResponse!.name)).toEqual(['delete_file', 'read_file']);
+		expect(responses[0].functionResponse!.response).toEqual({ success: true, data: { ranFor: 'a.md' } });
+		expect(responses[1].functionResponse!.response).toEqual({ success: true, data: { ranFor: 'b.md' } });
+	});
+
+	test('two parallel same-name calls keep their own results when execution order is swapped', () => {
+		// The name-fallback in interactions-mapper can't tell these apart, so
+		// position is the only disambiguator left.
+		const toolCalls: ToolCall[] = [
+			{ name: 'read_file', arguments: { path: 'first.md' } },
+			{ name: 'read_file', arguments: { path: 'second.md' } },
+		];
+		const toolResults: ToolCallResultPair[] = [
+			{
+				toolName: 'read_file',
+				toolArguments: { path: 'second.md' },
+				result: { success: true, data: { content: 'SECOND' } },
+				sourceIndex: 1,
+			},
+			{
+				toolName: 'read_file',
+				toolArguments: { path: 'first.md' },
+				result: { success: true, data: { content: 'FIRST' } },
+				sourceIndex: 0,
+			},
+		];
+
+		const responses = responsesOf(
+			buildToolHistoryTurns({ conversationHistory: [], userMessage: 'read both', toolCalls, toolResults })
+		);
+
+		expect(responses.map((p) => p.functionResponse!.response)).toEqual([
+			{ success: true, data: { content: 'FIRST' } },
+			{ success: true, data: { content: 'SECOND' } },
+		]);
+	});
+
+	test('any execution order realigns onto the emitted order', () => {
+		// The results array is assembled in execution order, whatever that is;
+		// the history never depends on it. Every permutation of the same batch
+		// must produce byte-identical history.
+		const toolCalls: ToolCall[] = [
+			{ name: 'delete_file', arguments: { path: 'a.md' } },
+			{ name: 'write_file', arguments: { path: 'b.md' } },
+			{ name: 'read_file', arguments: { path: 'c.md' } },
+		];
+		const pairs: ToolCallResultPair[] = toolCalls.map((call, sourceIndex) => ({
+			toolName: call.name,
+			toolArguments: call.arguments,
+			result: { success: true, data: { ranFor: call.arguments.path } },
+			sourceIndex,
+		}));
+		const build = (toolResults: ToolCallResultPair[]) =>
+			buildToolHistoryTurns({ conversationHistory: [], userMessage: 'q', toolCalls, toolResults });
+
+		const expected = build(pairs);
+		const permutations = [
+			[pairs[2], pairs[1], pairs[0]],
+			[pairs[1], pairs[2], pairs[0]],
+			[pairs[2], pairs[0], pairs[1]],
+		];
+		for (const permutation of permutations) {
+			expect(build(permutation)).toEqual(expected);
+		}
+		// And the aligned order really is the emitted one.
+		expect(responsesOf(expected).map((p) => p.functionResponse!.name)).toEqual(
+			callsOf(expected).map((p) => p.functionCall!.name)
+		);
+	});
+
+	test('a batch cut short by cancellation leaves no unpaired functionCall', () => {
+		const toolCalls: ToolCall[] = [
+			{ name: 'read_file', arguments: { path: 'a.md' } },
+			{ name: 'write_file', arguments: { path: 'b.md' } },
+			{ name: 'delete_file', arguments: { path: 'c.md' } },
+		];
+		// Only the read ran before cancellation stopped the batch.
+		const toolResults: ToolCallResultPair[] = [
+			{
+				toolName: 'read_file',
+				toolArguments: { path: 'a.md' },
+				result: { success: true, data: { content: 'x' } },
+				sourceIndex: 0,
+			},
+		];
+
+		const updated = buildToolHistoryTurns({
+			conversationHistory: [],
+			userMessage: 'q',
+			toolCalls,
+			toolResults,
+		});
+
+		const calls = callsOf(updated);
+		const responses = responsesOf(updated);
+		expect(responses).toHaveLength(calls.length);
+		expect(responses.map((p) => p.functionResponse!.name)).toEqual(['read_file', 'write_file', 'delete_file']);
+		expect(responses[0].functionResponse!.response).toEqual({ success: true, data: { content: 'x' } });
+		for (const unrun of responses.slice(1)) {
+			expect(unrun.functionResponse!.response).toEqual({
+				success: false,
+				error: TOOL_CALL_NOT_EXECUTED_ERROR,
+			});
+		}
+	});
+
+	test('synthesized responses keep the correlation id of the call they stand in for', () => {
+		const toolCalls: ToolCall[] = [
+			{ id: 'call_a', name: 'read_file', arguments: { path: 'a.md' } },
+			{ id: 'call_b', name: 'delete_file', arguments: { path: 'b.md' } },
+		];
+		const responses = responsesOf(
+			buildToolHistoryTurns({
+				conversationHistory: [],
+				userMessage: 'q',
+				toolCalls,
+				toolResults: [
+					{
+						toolName: 'read_file',
+						toolArguments: { path: 'a.md' },
+						result: { success: true, data: {} },
+						id: 'call_a',
+						sourceIndex: 0,
+					},
+				],
+			})
+		);
+
+		expect(responses.map((p) => p.functionResponse!.id)).toEqual(['call_a', 'call_b']);
+	});
+
+	test('inlineData siblings stay attached to the response that carried them after realignment', () => {
+		const toolCalls: ToolCall[] = [
+			{ name: 'delete_file', arguments: { path: 'a.md' } },
+			{ name: 'read_file', arguments: { path: 'b.png' } },
+		];
+		const toolResults: ToolCallResultPair[] = [
+			{
+				toolName: 'read_file',
+				toolArguments: { path: 'b.png' },
+				result: {
+					success: true,
+					data: { path: 'b.png' },
+					inlineData: [{ base64: 'imgbytes', mimeType: 'image/png' }],
+				},
+				sourceIndex: 1,
+			},
+			{
+				toolName: 'delete_file',
+				toolArguments: { path: 'a.md' },
+				result: { success: true, data: {} },
+				sourceIndex: 0,
+			},
+		];
+
+		const history = buildToolHistoryTurns({
+			conversationHistory: [],
+			userMessage: 'q',
+			toolCalls,
+			toolResults,
+		});
+		const parts = history[history.length - 1].parts!;
+
+		// delete's response, then read's response, then read's image — the
+		// inlineData part must follow its own functionResponse, not lead it.
+		expect(parts.map((p: Part) => p.functionResponse?.name ?? p.inlineData!.mimeType)).toEqual([
+			'delete_file',
+			'read_file',
+			'image/png',
+		]);
+	});
+
+	test('indexToolCalls stamps the emitted position and survives the sort', () => {
+		const entries = sortToolCallsByPriority(
+			indexToolCalls([
+				{ name: 'delete_file', arguments: {} },
+				{ name: 'write_file', arguments: {} },
+				{ name: 'read_file', arguments: {} },
+			]),
+			resolve
+		);
+
+		expect(entries.map((e) => e.name)).toEqual(['read_file', 'write_file', 'delete_file']);
+		expect(entries.map((e) => e.sourceIndex)).toEqual([2, 1, 0]);
 	});
 });
 
