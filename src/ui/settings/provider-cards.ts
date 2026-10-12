@@ -199,7 +199,7 @@ function authRows(ctx: SettingsContext, spec: ProviderCardSpec): SettingDefiniti
 						new SecretComponent(app, setting.controlEl)
 							.setValue((readSettingPath(plugin.settings, row.settingsKey) as string) ?? '')
 							.onChange(async (value) => {
-								plugin.settings[row.settingsKey] = value;
+								plugin.settings[row.settingsKey] = value ?? '';
 								await plugin.saveSettings();
 								// The cached model count (and any probe already in flight) was
 								// measured against the old key and no longer reflects reality.

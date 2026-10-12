@@ -584,3 +584,5 @@ or a project's `toolPolicy` ([Projects → Tool Policy](/guide/projects#tool-pol
 3. Ensure you have write permissions to vault
 
 For more help, see the [Getting Started Guide](/guide/getting-started) or [open an issue](https://github.com/allenhutchison/obsidian-gemini/issues).
+
+Clearing a provider's selected SecretStorage key stores an empty secret name and invalidates the cached model count. The provider remains unconfigured until another key is selected.
