@@ -21,6 +21,7 @@ export class MCPServerModal extends Modal {
 	private isEdit: boolean;
 	private discoveredTools: string[] = [];
 	private discoveredToolsContainer: HTMLElement | null = null;
+	private actionSetting: Setting | null = null;
 	private readonly originalServerName: string;
 
 	constructor(
@@ -253,7 +254,7 @@ export class MCPServerModal extends Modal {
 		}
 
 		// Action buttons
-		new Setting(contentEl)
+		this.actionSetting = new Setting(contentEl)
 			.addButton((btn) =>
 				btn.setButtonText(t('mcpServer.cancelButton')).onClick(() => {
 					this.close();
@@ -315,6 +316,7 @@ export class MCPServerModal extends Modal {
 		for (const toolName of this.discoveredTools) {
 			toolList.createEl('li', { text: toolName });
 		}
+		this.actionSetting?.settingEl.scrollIntoView({ behavior: 'smooth' });
 	}
 
 	onClose() {

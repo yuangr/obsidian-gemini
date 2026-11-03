@@ -4433,6 +4433,16 @@ body.theme-dark {
 	margin-bottom: 0.5em;
 }
 
+.mcp-discovered-tools-container ul {
+	max-height: 180px;
+	overflow-y: auto;
+	margin: var(--gs-space-2) 0;
+	padding: var(--gs-space-2) var(--gs-space-4);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--gs-radius-md);
+	background: var(--background-secondary);
+}
+
 /* Tool permissions page: filter pills above the searchable tool list
    (settings-redesign design doc §7). Rendered by page-tool-permissions.ts's
    filterPillsRow(); one .gemini-tool-filter-pill per classification, plus
