@@ -1,3 +1,4 @@
+import '../utils/timer-polyfill';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
@@ -322,7 +323,7 @@ export class MCPManager {
 	 * Temporarily connect to a server to discover its tools, then disconnect.
 	 * Used by the settings UI to populate tool trust checkboxes.
 	 */
-	async queryToolsForConfig(config: MCPServerConfig): Promise<string[]> {
+	async queryToolsForConfig(config: MCPServerConfig, overrideEnv?: Record<string, string>): Promise<string[]> {
 		const useHttp = isHttpTransport(config);
 
 		// Stdio transport requires process spawning — desktop only
@@ -340,7 +341,7 @@ export class MCPManager {
 
 		let transport: MCPTransport | null = null;
 		try {
-			const result = await this.createTransportAndConnect(config);
+			const result = await this.createTransportAndConnect(config, overrideEnv);
 			transport = result.transport;
 
 			this.logger.debug(`MCP: Test — connected, listing tools...`);
@@ -385,7 +386,8 @@ export class MCPManager {
 	 * the connected client + transport. The caller owns closing the transport.
 	 */
 	private async createTransportAndConnect(
-		config: MCPServerConfig
+		config: MCPServerConfig,
+		overrideEnv?: Record<string, string>
 	): Promise<{ client: Client; transport: MCPTransport }> {
 		const useHttp = isHttpTransport(config);
 
@@ -420,7 +422,7 @@ export class MCPManager {
 			transport = new StdioClientTransport({
 				command: config.command,
 				args: config.args,
-				env: buildEnv(resolveServerEnv(this.plugin.app, config)),
+				env: buildEnv(overrideEnv !== undefined ? overrideEnv : resolveServerEnv(this.plugin.app, config)),
 			});
 		}
 

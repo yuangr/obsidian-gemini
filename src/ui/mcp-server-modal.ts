@@ -232,7 +232,7 @@ export class MCPServerModal extends Modal {
 				testSetting.setDesc(t('mcpServer.connectingDesc'));
 
 				try {
-					const tools = await this.mcpManager.queryToolsForConfig(this.config);
+					const tools = await this.mcpManager.queryToolsForConfig(this.config, this.env);
 					this.discoveredTools = tools;
 					testSetting.setDesc(t('mcpServer.connectedDesc', { count: tools.length }));
 					this.renderDiscoveredTools();

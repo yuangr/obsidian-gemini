@@ -199,6 +199,7 @@ function authRows(ctx: SettingsContext, spec: ProviderCardSpec): SettingDefiniti
 						new SecretComponent(app, setting.controlEl)
 							.setValue((readSettingPath(plugin.settings, row.settingsKey) as string) ?? '')
 							.onChange(async (value) => {
+								// A cleared picker reports null; '' is the "no key selected" setting.
 								plugin.settings[row.settingsKey] = value ?? '';
 								await plugin.saveSettings();
 								// The cached model count (and any probe already in flight) was

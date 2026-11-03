@@ -3,7 +3,7 @@
  * has no credentials (no traffic to providers the user hasn't set up).
  */
 import type { App, SettingDefinitionItem, SettingDefinitionPage } from 'obsidian';
-import { Notice, SecretComponent, Setting } from 'obsidian';
+import { Notice } from 'obsidian';
 import type { Mock } from 'vitest';
 import { providerCardPage, PROVIDER_CARDS } from '../../../src/ui/settings/provider-cards';
 import { modelCountCache, invalidateModelCount } from '../../../src/ui/settings/model-count-cache';
@@ -15,7 +15,7 @@ import { buildPlugin, buildApp } from './fixtures';
 
 function buildCtx(settings: Partial<ObsidianGeminiSettings> = {}) {
 	const plugin = buildPlugin(settings);
-	const tab = { update: vi.fn(), refreshDomState: vi.fn() };
+	const tab = { update: vi.fn(), refreshDomState: vi.fn(), setControlValue: vi.fn(async () => {}) };
 	const ctx: SettingsContext = { plugin, app: buildApp() as unknown as App, tab };
 	const manager = plugin.modelManager as unknown as {
 		getProviderModelsService: (p: ModelProvider) => { getModels: Mock };
@@ -39,32 +39,6 @@ function modelsRow(page: SettingDefinitionPage): SettingDefinitionItem & { desc:
 }
 
 describe('provider card model-count probe', () => {
-	it('stores an empty name when SecretStorage clears the selected secret', async () => {
-		const { ctx, tab } = buildCtx();
-		let change: ((value: string | null) => unknown) | undefined;
-		const spy = vi.spyOn(SecretComponent.prototype, 'onChange').mockImplementation(function (
-			this: SecretComponent,
-			callback
-		) {
-			change = callback;
-			return this;
-		});
-		try {
-			const page = providerCardPage(ctx, cardSpec('openai'));
-			const row = page.items?.find(
-				(item) => 'name' in item && item.name === en['settings.providers.apiKeyName'].message
-			) as SettingDefinitionItem & { render?: (setting: Setting) => void };
-			row.render?.({ components: [], controlEl: document.createElement('div') } as unknown as Setting);
-			expect(change).toBeDefined();
-			await Promise.resolve(change?.(null));
-			expect(ctx.plugin.settings.openaiApiKeySecretName).toBe('');
-			expect(ctx.plugin.saveSettings).toHaveBeenCalled();
-			expect(tab.update).toHaveBeenCalled();
-		} finally {
-			spy.mockRestore();
-		}
-	});
-
 	beforeEach(() => {
 		for (const card of PROVIDER_CARDS) invalidateModelCount(card.id);
 		(Notice as unknown as Mock).mockClear();
@@ -126,6 +100,22 @@ describe('provider card model-count probe', () => {
 
 		expect(getModels('anthropic')).not.toHaveBeenCalled();
 		expect(Notice).toHaveBeenCalledWith(expect.stringContaining('Anthropic'));
+	});
+
+	it('stores a cleared API key picker as an empty secret name, not null', async () => {
+		const { ctx } = buildCtx({ anthropicApiKeySecretName: 'anthropic-key' });
+		const page = providerCardPage(ctx, cardSpec('anthropic'));
+		const secretRow = (page.items ?? [])[0] as unknown as {
+			render: (s: { controlEl: HTMLElement; components: unknown[] }) => void;
+		};
+		const setting = { controlEl: document.createElement('div'), components: [] as unknown[] };
+
+		secretRow.render(setting);
+		const picker = setting.components[0] as { _onChange: (value: string | null) => Promise<void> };
+		await picker._onChange(null);
+
+		expect(ctx.plugin.settings.anthropicApiKeySecretName).toBe('');
+		expect(ctx.plugin.saveSettings).toHaveBeenCalled();
 	});
 
 	it('keeps probing Ollama, which needs no key', () => {

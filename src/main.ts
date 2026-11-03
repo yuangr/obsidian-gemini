@@ -1,3 +1,4 @@
+import './utils/timer-polyfill';
 import { Plugin, WorkspaceLeaf, Platform } from 'obsidian';
 import ObsidianGeminiSettingTab from './ui/settings';
 import { AgentView, VIEW_TYPE_AGENT } from './ui/agent-view/agent-view';

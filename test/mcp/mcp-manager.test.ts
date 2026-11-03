@@ -170,6 +170,19 @@ describe('MCPManager', () => {
 			expect(MockStreamableHTTPClientTransport).not.toHaveBeenCalled();
 		});
 
+		it('should pass overrideEnv to StdioClientTransport when provided', async () => {
+			mockListTools.mockResolvedValueOnce({ tools: [{ name: 'tool1' }] });
+			const customEnv = { FOO: 'bar' };
+
+			await manager.queryToolsForConfig(createStdioConfig(), customEnv);
+
+			expect(MockStdioClientTransport).toHaveBeenCalledWith(
+				expect.objectContaining({
+					env: expect.objectContaining({ FOO: 'bar' }),
+				})
+			);
+		});
+
 		it('should throw when http config has no URL', async () => {
 			const config = createHttpConfig({ url: undefined });
 
