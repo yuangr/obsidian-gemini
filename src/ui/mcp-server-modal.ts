@@ -196,11 +196,13 @@ export class MCPServerModal extends Modal {
 							const entries = value
 								.split('\n')
 								.map((line) => line.trim())
-								.filter((line) => line.includes('='))
+								.filter((line) => line.includes('=') || line.includes(':'))
 								.map((line) => {
-									const eqIndex = line.indexOf('=');
-									return [line.substring(0, eqIndex).trim(), line.substring(eqIndex + 1).trim()] as [string, string];
-								});
+									// Support both KEY=VALUE and KEY: VALUE formats
+									const sepIndex = line.includes('=') ? line.indexOf('=') : line.indexOf(':');
+									return [line.substring(0, sepIndex).trim(), line.substring(sepIndex + 1).trim()] as [string, string];
+								})
+								.filter(([k]) => k.length > 0);
 							this.env = entries.length > 0 ? Object.fromEntries(entries) : undefined;
 						});
 				});
