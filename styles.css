@@ -4461,6 +4461,46 @@ body.theme-dark {
 	display: inline-block;
 }
 
+/* MCP server modal: structured flex layout with fixed footer */
+.modal.gemini-mcp-modal {
+	width: 580px;
+	max-width: 90vw;
+}
+
+.modal-content.mcp-server-modal {
+	display: flex;
+	flex-direction: column;
+	max-height: calc(85vh - 40px);
+	padding: 0;
+	overflow: hidden;
+}
+
+.mcp-server-modal-header {
+	padding: var(--gs-space-4) var(--gs-space-4) var(--gs-space-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.mcp-server-modal-header h2 {
+	margin: 0;
+}
+
+.mcp-server-modal-body {
+	flex: 1 1 auto;
+	overflow-y: auto;
+	padding: var(--gs-space-2) var(--gs-space-4);
+	min-height: 0;
+}
+
+.mcp-server-modal-footer {
+	flex: 0 0 auto;
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--gs-space-2);
+	padding: var(--gs-space-3) var(--gs-space-4);
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--modal-background, var(--background-primary));
+}
+
 /* MCP server modal: discovered-tools description spacing */
 .gemini-discovered-tools-desc {
 	margin-bottom: 0.5em;

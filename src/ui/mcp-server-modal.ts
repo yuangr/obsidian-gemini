@@ -1,4 +1,4 @@
-import { App, Modal, Setting, Notice } from 'obsidian';
+import { App, ButtonComponent, Modal, Setting, Notice } from 'obsidian';
 import { MCPServerConfig, MCP_TRANSPORT_STDIO, MCP_TRANSPORT_HTTP, MCPTransportType } from '../mcp/types';
 import { MCPManager } from '../mcp/mcp-manager';
 import { ObsidianOAuthClientProvider } from '../mcp/mcp-oauth-provider';
@@ -21,7 +21,6 @@ export class MCPServerModal extends Modal {
 	private isEdit: boolean;
 	private discoveredTools: string[] = [];
 	private discoveredToolsContainer: HTMLElement | null = null;
-	private actionSetting: Setting | null = null;
 	private readonly originalServerName: string;
 
 	constructor(
@@ -70,11 +69,17 @@ export class MCPServerModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('mcp-server-modal');
+		this.modalEl.addClass('gemini-mcp-modal');
 
-		contentEl.createEl('h2', { text: this.isEdit ? t('mcpServer.titleEdit') : t('mcpServer.titleAdd') });
+		// Header
+		const headerEl = contentEl.createDiv({ cls: 'mcp-server-modal-header' });
+		headerEl.createEl('h2', { text: this.isEdit ? t('mcpServer.titleEdit') : t('mcpServer.titleAdd') });
+
+		// Scrollable form body
+		const bodyEl = contentEl.createDiv({ cls: 'mcp-server-modal-body' });
 
 		// Server name
-		new Setting(contentEl)
+		new Setting(bodyEl)
 			.setName(t('mcpServer.nameSetting'))
 			.setDesc(t('mcpServer.nameDesc'))
 			.addText((text) =>
@@ -87,7 +92,7 @@ export class MCPServerModal extends Modal {
 			);
 
 		// Transport type selector
-		new Setting(contentEl)
+		new Setting(bodyEl)
 			.setName(t('mcpServer.transportSetting'))
 			.setDesc(t('mcpServer.transportDesc'))
 			.addDropdown((dropdown) =>
@@ -107,7 +112,7 @@ export class MCPServerModal extends Modal {
 
 		if (isHttp) {
 			// HTTP transport: URL field
-			new Setting(contentEl)
+			new Setting(bodyEl)
 				.setName(t('mcpServer.urlSetting'))
 				.setDesc(t('mcpServer.urlDesc'))
 				.addText((text) => {
@@ -123,7 +128,7 @@ export class MCPServerModal extends Modal {
 			// Clear OAuth credentials (only shown if tokens exist for the original name)
 			const oauthProvider = new ObsidianOAuthClientProvider(this.app, this.originalServerName);
 			if (oauthProvider.hasTokens()) {
-				new Setting(contentEl)
+				new Setting(bodyEl)
 					.setName(t('mcpServer.oauthSetting'))
 					.setDesc(t('mcpServer.oauthDesc'))
 					.addButton((btn) =>
@@ -141,7 +146,7 @@ export class MCPServerModal extends Modal {
 			// Stdio transport: Command, Arguments, Environment
 
 			// Command
-			new Setting(contentEl)
+			new Setting(bodyEl)
 				.setName(t('mcpServer.commandSetting'))
 				.setDesc(t('mcpServer.commandDesc'))
 				.addText((text) => {
@@ -155,7 +160,7 @@ export class MCPServerModal extends Modal {
 				});
 
 			// Arguments
-			new Setting(contentEl)
+			new Setting(bodyEl)
 				.setName(t('mcpServer.argsSetting'))
 				.setDesc(t('mcpServer.argsDesc'))
 				.addTextArea((text) => {
@@ -173,7 +178,7 @@ export class MCPServerModal extends Modal {
 				});
 
 			// Environment variables
-			new Setting(contentEl)
+			new Setting(bodyEl)
 				.setName(t('mcpServer.envSetting'))
 				.setDesc(t('mcpServer.envDesc'))
 				.addTextArea((text) => {
@@ -202,7 +207,7 @@ export class MCPServerModal extends Modal {
 		}
 
 		// Enabled toggle
-		new Setting(contentEl)
+		new Setting(bodyEl)
 			.setName(t('mcpServer.enabledSetting'))
 			.setDesc(t('mcpServer.enabledDesc'))
 			.addToggle((toggle) =>
@@ -212,7 +217,7 @@ export class MCPServerModal extends Modal {
 			);
 
 		// Test connection button
-		const testSetting = new Setting(contentEl).setName(t('mcpServer.testSetting')).setDesc(t('mcpServer.testDesc'));
+		const testSetting = new Setting(bodyEl).setName(t('mcpServer.testSetting')).setDesc(t('mcpServer.testDesc'));
 
 		testSetting.addButton((button) =>
 			button.setButtonText(t('mcpServer.testButton')).onClick(async () => {
@@ -248,56 +253,53 @@ export class MCPServerModal extends Modal {
 		);
 
 		// Discovered tools section
-		this.discoveredToolsContainer = contentEl.createDiv({ cls: 'mcp-discovered-tools-container' });
+		this.discoveredToolsContainer = bodyEl.createDiv({ cls: 'mcp-discovered-tools-container' });
 		if (this.discoveredTools.length > 0) {
 			this.renderDiscoveredTools();
 		}
 
-		// Action buttons
-		this.actionSetting = new Setting(contentEl)
-			.addButton((btn) =>
-				btn.setButtonText(t('mcpServer.cancelButton')).onClick(() => {
-					this.close();
-				})
-			)
-			.addButton((btn) =>
-				btn
-					.setButtonText(t('mcpServer.saveButton'))
-					.setCta()
-					.onClick(async () => {
-						if (!this.config.name) {
-							new Notice(t('mcpServer.nameRequired'));
-							return;
-						}
-						if (isHttp) {
-							if (!this.config.url) {
-								new Notice(t('mcpServer.urlRequired'));
-								return;
-							}
-							// Validate URL
-							try {
-								new URL(this.config.url);
-							} catch {
-								new Notice(t('mcpServer.invalidUrl'));
-								return;
-							}
-						} else {
-							if (!this.config.command) {
-								new Notice(t('mcpServer.commandRequired'));
-								return;
-							}
-							// Persist env vars to SecretStorage; sets config.envSecretName.
-							try {
-								writeServerEnv(this.app, this.config, this.env);
-							} catch (error) {
-								new Notice(getRawErrorMessageOr(error, t('mcpServer.envStoreFailed')));
-								return;
-							}
-						}
-						await this.onSave(this.config);
-						this.close();
-					})
-			);
+		// Fixed Action buttons footer
+		const footerEl = contentEl.createDiv({ cls: 'modal-button-container mcp-server-modal-footer' });
+		new ButtonComponent(footerEl).setButtonText(t('mcpServer.cancelButton')).onClick(() => {
+			this.close();
+		});
+
+		new ButtonComponent(footerEl)
+			.setButtonText(t('mcpServer.saveButton'))
+			.setCta()
+			.onClick(async () => {
+				if (!this.config.name) {
+					new Notice(t('mcpServer.nameRequired'));
+					return;
+				}
+				if (isHttp) {
+					if (!this.config.url) {
+						new Notice(t('mcpServer.urlRequired'));
+						return;
+					}
+					// Validate URL
+					try {
+						new URL(this.config.url);
+					} catch {
+						new Notice(t('mcpServer.invalidUrl'));
+						return;
+					}
+				} else {
+					if (!this.config.command) {
+						new Notice(t('mcpServer.commandRequired'));
+						return;
+					}
+					// Persist env vars to SecretStorage; sets config.envSecretName.
+					try {
+						writeServerEnv(this.app, this.config, this.env);
+					} catch (error) {
+						new Notice(getRawErrorMessageOr(error, t('mcpServer.envStoreFailed')));
+						return;
+					}
+				}
+				await this.onSave(this.config);
+				this.close();
+			});
 	}
 
 	private renderDiscoveredTools() {
@@ -316,11 +318,13 @@ export class MCPServerModal extends Modal {
 		for (const toolName of this.discoveredTools) {
 			toolList.createEl('li', { text: toolName });
 		}
-		this.actionSetting?.settingEl.scrollIntoView({ behavior: 'smooth' });
+		this.discoveredToolsContainer.scrollIntoView({ behavior: 'smooth' });
 	}
 
 	onClose() {
+		this.modalEl.removeClass('gemini-mcp-modal');
 		const { contentEl } = this;
 		contentEl.empty();
+		contentEl.removeClass('mcp-server-modal');
 	}
 }
