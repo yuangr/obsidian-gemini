@@ -15,7 +15,7 @@ import { AgentViewMessages } from './agent-view-messages';
 import { AgentViewContext } from './agent-view-context';
 import { AgentViewSession, SessionUICallbacks, SessionState } from './agent-view-session';
 import { AgentViewTools, AgentViewContext as ToolsContext } from './agent-view-tools';
-import { AgentViewUI, UICallbacks } from './agent-view-ui';
+import { AgentViewUI, UICallbacks, SkillPickerSource } from './agent-view-ui';
 import { InlineAttachment } from './inline-attachment';
 import { AgentViewShelf } from './agent-view-shelf';
 import { AgentViewSend } from './agent-view-send';
@@ -24,7 +24,7 @@ import { ProjectPickerModal } from './project-picker-modal';
 
 // Import modals from agent-view directory
 import { SessionListModal } from './session-list-modal';
-import { SkillMentionModal, formatSkillTrigger } from './skill-mention-modal';
+import { SkillMentionModal, formatSkillTrigger, prependSkillTrigger } from './skill-mention-modal';
 import { SessionSettingsModal } from './session-settings-modal';
 import { insertTextAtCursor, moveCursorToEnd } from '../../utils/dom-context';
 import { t } from '../../i18n';
@@ -62,6 +62,7 @@ export class AgentView extends ItemView {
 	private shelf!: AgentViewShelf;
 	private tokenUsageContainer!: HTMLElement;
 	private skipNextFocusSelectionCapture = false;
+	private skillPickerLoading = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ObsidianGemini) {
 		super(leaf);
@@ -127,22 +128,28 @@ export class AgentView extends ItemView {
 	 *      resizes for the keyboard, so the chat collapses to ~24px.
 	 *   2. Focusing the input scrolls an ancestor to "reveal" it, which
 	 *      pushes our children off-screen.
-	 * We compute chat's height directly (targeting the smaller of container
-	 * bottom or mobile-navbar top) and lock overflow on the container and
-	 * its parent so nothing can scroll behind our back. The flex and overflow
+	 * We compute chat's height directly (targeting the smallest of container
+	 * bottom, mobile-navbar top, or the visual viewport's bottom) and lock
+	 * overflow on the container and its parent so nothing can scroll behind
+	 * our back. The visual-viewport cap covers tablets: an iPad side panel
+	 * (pinned or floating) and an Android floating panel don't shrink when
+	 * the on-screen keyboard opens — only the visual viewport does — so
+	 * without it the input sits behind the keyboard (#1661). The flex and overflow
 	 * overrides live in CSS classes scoped to this view (specificity rather
 	 * than `!important`, which the plugin audit's CSS lint rejects), so
 	 * teardown only has to remove the classes; the computed height is the one
 	 * value set inline.
 	 */
 	private applyMobileLayoutFix(container: HTMLElement) {
+		const vv = window.visualViewport;
 		const apply = () => {
 			const chat = container.querySelector<HTMLElement>('.gemini-agent-chat');
 			const iarea = container.querySelector<HTMLElement>('.gemini-agent-input-area');
 			if (!chat || !iarea) return;
 			const ctrBottom = container.getBoundingClientRect().bottom;
 			const navbarTop = this.findMobileNavbar()?.getBoundingClientRect().top ?? Infinity;
-			const targetBottom = Math.min(ctrBottom, navbarTop);
+			const visibleBottom = vv ? vv.offsetTop + vv.height : Infinity;
+			const targetBottom = Math.min(ctrBottom, navbarTop, visibleBottom);
 			chat.addClass('gemini-agent-chat--mobile-pinned');
 			for (let i = 0; i < 3; i++) {
 				const delta = targetBottom - iarea.getBoundingClientRect().bottom;
@@ -159,8 +166,10 @@ export class AgentView extends ItemView {
 		const iarea = container.querySelector<HTMLElement>('.gemini-agent-input-area');
 		if (iarea) ro.observe(iarea);
 
-		const vv = window.visualViewport;
+		// The visual viewport also scrolls (offsetTop changes) as iOS pans to
+		// reveal the focused input, which moves the visible bottom.
 		vv?.addEventListener('resize', apply);
+		vv?.addEventListener('scroll', apply);
 
 		// Lock overflow with a class so teardown can remove it cleanly. Obsidian
 		// reuses host elements across views; leaving `overflow: hidden` behind
@@ -179,6 +188,7 @@ export class AgentView extends ItemView {
 		this.register(() => {
 			ro.disconnect();
 			vv?.removeEventListener('resize', apply);
+			vv?.removeEventListener('scroll', apply);
 			container.removeEventListener('scroll', onScroll);
 			parent?.removeEventListener('scroll', onScroll);
 			container.removeClass('gemini-agent-scroll-locked');
@@ -421,10 +431,22 @@ export class AgentView extends ItemView {
 	};
 
 	/**
-	 * Show skill picker modal for / slash commands
+	 * Show the skill picker modal. `trigger` means the user typed `/` into an
+	 * empty input, so that `/` is replaced by the token; `button` means the
+	 * send-bar skill button, which puts the token at the start of whatever is
+	 * already typed (#1661).
 	 */
-	private async showSkillPicker() {
-		const summaries = await this.plugin.skillManager.getSkillSummaries();
+	private async showSkillPicker(source: SkillPickerSource) {
+		// A second tap on the skill button while the list is still loading would
+		// otherwise stack a second picker. Once the modal is open it covers the button.
+		if (this.skillPickerLoading) return;
+		this.skillPickerLoading = true;
+		let summaries;
+		try {
+			summaries = await this.plugin.skillManager.getSkillSummaries();
+		} finally {
+			this.skillPickerLoading = false;
+		}
 		if (summaries.length === 0) {
 			new Notice(t('agent.view.noSkills'));
 			return;
@@ -432,14 +454,18 @@ export class AgentView extends ItemView {
 		const modal = new SkillMentionModal(
 			this.app,
 			(skill) => {
-				this.attachments.removeTrailingTriggerChar('/');
-				if (this.userInput) {
-					// Insert the literal `/skill-name ` token and leave it in the box so the
-					// user can append instructions or send as-is. The model recognizes this
-					// convention (see prompts/toolCatalogPrompt.hbs) and activates the skill.
+				if (!this.userInput) return;
+				// Insert the literal `/skill-name ` token and leave it in the box so the
+				// user can append instructions or send as-is. The model recognizes this
+				// convention (see prompts/toolCatalogPrompt.hbs) and activates the skill.
+				if (source === 'trigger') {
+					this.attachments.removeTrailingTriggerChar('/');
 					insertTextAtCursor(this.userInput, formatSkillTrigger(skill.name));
-					moveCursorToEnd(this.userInput);
+				} else {
+					prependSkillTrigger(this.userInput, skill.name);
+					this.userInput.focus();
 				}
+				moveCursorToEnd(this.userInput);
 			},
 			summaries
 		);
@@ -645,7 +671,7 @@ export class AgentView extends ItemView {
 	private getUICallbacks(): UICallbacks {
 		return {
 			showFileMention: () => this.attachments.showFileMention(),
-			showSkillPicker: () => this.showSkillPicker(),
+			showSkillPicker: (source) => this.showSkillPicker(source),
 			showSessionList: () => this.showSessionList(),
 			showSessionSettings: () => this.showSessionSettings(),
 			createNewSession: () => this.createNewSession(),

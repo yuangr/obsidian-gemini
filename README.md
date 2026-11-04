@@ -11,9 +11,20 @@ Gemini Scribe is an Obsidian plugin that integrates Google's Gemini AI models, p
 >
 > Then route each feature to a provider on the **Features** page. See the [provider capability matrix](docs/reference/provider-capabilities.md) for what's supported on each.
 
-## What's New in v4.12.1
+## What's New in v4.13.0
 
-**🛠️ Gemini Scribe 4.12.1 - Plugin audit compliance & fixes**
+**🔎 Gemini Scribe 4.13.0 - Searchable model picker, skill button & fixes**
+
+- **🔎 Searchable model picker** - The model dropdowns are now a fuzzy-search picker, so you can find a model by typing part of its name or id. This helps with long lists like OpenRouter's 458 models. (#1653)
+- **🪄 Skill button and reliable pickers on Android** - Typing `@` and `/` in the agent input now opens the file and skill pickers on Android keyboards, and a new wand button in the send bar opens the skill picker with one tap on any platform. (#1671, #1661)
+- **🗂️ Session vs. selection prompts** - Agent session settings no longer list prompts tagged as selection prompts, and prompts in subfolders now appear there. "Apply prompt..." now explains the `gemini-scribe/selection-prompt` tag when you have untagged prompts, and new prompts include instructions for adding it. (#1665, #1663)
+- **📋 Multi-line paste** - Text pasted into the agent input keeps its line breaks. (#1670, #1669)
+- **✂️ Selectable responses** - You can now select and copy part of a response in the "Ask question..." / "Apply prompt..." response window. (#1667, #1664)
+- **🧠 Anthropic context compaction** - Compacting the context partway through a tool chain no longer fails with a 400, removing the known limitation listed in 4.12. (#1616, #1608)
+- **🛡️ Safer scheduled-task and hook output** - Output paths are validated so they can't write into `.obsidian` or the plugin's state folders, and the "Open result" link now points to the note that was actually written. (#1656, #1651)
+- **🤖 Models and maintenance** - Nano Banana 2.1 joins the model list (#1654), translations are refreshed (#1655, #1657, #1666), and dependencies are updated, including the Gemini, Anthropic, and OpenAI SDKs.
+
+**Previous Updates (v4.12.1):**
 
 _4.12.1 is a patch for the 4.12 line — a few fixes on top of the full 4.12 feature set:_
 
@@ -90,7 +101,7 @@ _The full 4.12 feature set is unchanged — the multi-provider release, with two
 - **Smart Summarization:** Quickly generate concise, one-sentence summaries of your notes and automatically store them in the document's frontmatter, using a model you choose for summarization.
 - **Selection-Based AI Features:** Work with selected text in powerful ways:
   - **Rewrite**: Transform selected text with custom instructions - right-click and choose "Gemini Scribe: Rewrite text..."
-  - **Explain Selection**: Get AI explanations using customizable prompts - right-click and choose "Gemini Scribe: Apply prompt..."
+  - **Explain Selection**: Get AI explanations using customizable prompts - right-click and choose "Gemini Scribe: Apply prompt..." (your own prompts appear there once tagged `gemini-scribe/selection-prompt`; see [Selection Prompts](docs/guide/selection-prompts.md))
   - **Ask about selection**: Ask any question about selected text - right-click and choose "Gemini Scribe: Ask question..."
 - **IDE-Style Completions:** Get real-time, context-aware text completions as you type, similar to IDEs. Accept completions with `Tab` or dismiss with any other key. This feature uses its own model, separate from chat, so you can pick a fast one.
 - **Persistent Agent sessions:** Store your agent conversation history directly in your vault as markdown files. Each session is stored in the `gemini-scribe/Agent-Sessions/` folder, making it easy to backup, version control, and continue conversations across sessions.
@@ -220,7 +231,7 @@ Create reusable AI instruction templates to customize behavior for different typ
 
 **Quick Start:**
 
-1. Create a prompt file in `[Plugin state folder]/Prompts/`
+1. Create a prompt file in `[Plugin state folder]/Prompts/` (subfolders work too)
 2. Open the agent panel and click the gear icon in the session header
 3. Select your prompt from the "Prompt template" dropdown
 
@@ -361,6 +372,7 @@ The plugin UI follows **Obsidian's interface language** (Settings → About → 
 - **Custom Prompts Not Working:**
   - Verify the prompt file exists in the `[Plugin state folder]/Prompts/` folder
   - Check that the prompt is selected in session settings (gear icon)
+  - Prompts tagged `gemini-scribe/selection-prompt` appear only in the right-click "Apply prompt..." menu, not in the session dropdown — and untagged prompts appear only in the session dropdown
   - See the [Custom Prompts Guide](docs/guide/custom-prompts.md) for detailed troubleshooting
 - **Model List Issues:**
   - Open the provider's card under **Settings → Providers** and click **Refresh** to re-query its model list

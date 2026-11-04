@@ -58,8 +58,12 @@ vi.mock('../../src/utils/error-utils', () => ({
 	getRawErrorMessage: vi.fn((err: any) => (err instanceof Error ? err.message : String(err))),
 	isQuotaExhausted: vi.fn().mockReturnValue(false),
 	isNotFoundError: vi.fn((err: any) => {
-		const msg = err instanceof Error ? err.message : String(err);
-		return msg.includes('404') || msg.includes('not found') || msg.includes('NOT_FOUND');
+		// Mirrors the real predicate: a *structured* status first (never one
+		// scraped from the message), then case-folded message substrings. See
+		// src/utils/error-utils.ts.
+		if (err !== null && typeof err === 'object' && typeof err.status === 'number') return err.status === 404;
+		const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+		return msg.includes('404') || msg.includes('not found') || msg.includes('not_found');
 	}),
 	extractStatusCode: vi.fn((err: any) => err?.status ?? null),
 }));
@@ -91,7 +95,7 @@ function createMockLogger(): any {
 }
 
 function createMockRagCache(overrides: Record<string, any> = {}): any {
-	return {
+	const mock: Record<string, any> = {
 		cache: {
 			version: CACHE_VERSION,
 			storeName: 'test-store',
@@ -106,6 +110,18 @@ function createMockRagCache(overrides: Record<string, any> = {}): any {
 		incrementAndMaybeSaveCache: vi.fn().mockResolvedValue(0),
 		...overrides,
 	};
+	// Mirrors the real RagCache.recordFile, so the cache-entry assertions keep
+	// checking the entry the scanner actually asked it to write. Defined after
+	// the spread so it closes over `mock` and writes into whatever `cache` the
+	// overrides settled on — but an explicit `recordFile` override still wins,
+	// like every other key here.
+	mock.recordFile =
+		overrides.recordFile ??
+		vi.fn((filePath: string, contentHash: string) => {
+			if (!mock.cache) return;
+			mock.cache.files[filePath] = { contentHash, lastIndexed: Date.now() };
+		});
+	return mock;
 }
 
 function createMockRateLimiter(): any {

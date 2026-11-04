@@ -67,6 +67,7 @@ export const uk: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'За замовчуванням ({model})',
 	'settings.features.sameAsChat': 'Як у чаті',
 	'settings.features.modelMissing': 'Більше недоступна',
+	'settings.features.modelSearchPlaceholder': 'Пошук моделей...',
 	'settings.features.modelCapabilitiesUnknown': 'підтримка зображень не вказана',
 	'settings.features.off': 'Вимкнено',
 	'settings.features.chooseProvider': 'Виберіть провайдера',
@@ -82,6 +83,8 @@ export const uk: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Пошуковий індекс сховища',
 	'settings.features.label.imageGen': 'Генерація зображень',
 	'explainPrompt.placeholder': 'Виберіть запит для пояснення виділеного тексту...',
+	'explainPrompt.untaggedHint':
+		'Відображаються лише промпти з тегом "gemini-scribe/selection-prompt". Додайте цей тег до власного промпту, щоб використовувати його тут.',
 	'ragCleanup.title': 'Видалити індекс сховища?',
 	'ragCleanup.body': 'Індекс вашого сховища зберігається в Google Cloud. Ви хочете видалити його?',
 	'ragCleanup.keepNote': 'Якщо ви збережете дані, повторне ввімкнення відбудеться швидше.',
@@ -347,6 +350,8 @@ export const uk: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Назва завдання не може бути порожньою.',
 	'scheduler.invalidMaxIterations':
 		'Максимальна кількість ітерацій інструментів має бути додатним цілим числом або порожнім полем для значення за замовчуванням.',
+	'scheduler.invalidOutputPath':
+		'Шлях виведення не дозволено. Він має містити назву файлу, знаходитися в межах сховища та бути за межами папки конфігурації Obsidian і папки стану плагіна (крім її папки Runs).',
 	'scheduler.managerUnavailable': 'Менеджер запланованих завдань недоступний.',
 	'scheduler.taskUpdated': 'Завдання "{slug}" оновлено',
 	'scheduler.taskCreated': 'Завдання "{slug}" створено',
@@ -435,6 +440,8 @@ export const uk: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptySlug': 'Назва хука не може бути порожньою.',
 	'hooks.invalidMaxIterations':
 		'Максимальна кількість ітерацій інструментів має бути додатним цілим числом або порожнім полем для значення за замовчуванням.',
+	'hooks.invalidOutputPath':
+		'Шлях виведення не дозволено. Він має містити назву файлу, знаходитися в межах сховища та бути за межами папки конфігурації Obsidian і папки стану плагіна (крім її папки Runs).',
 	'hooks.managerUnavailable': 'Менеджер хуків недоступний.',
 	'hooks.hookUpdated': 'Хук "{slug}" оновлено',
 	'hooks.hookCreated': 'Хук "{slug}" створено',
@@ -514,6 +521,7 @@ export const uk: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': "Прив'язати проєкт",
 	'agent.menu.sessionSettings': 'Налаштування сесії',
 	'agent.input.placeholder': 'Напишіть агенту... (@ файли, / навички)',
+	'agent.input.skillPickerAria': 'Використати навичку',
 	'agent.input.sendAria': 'Надіслати повідомлення агенту',
 	'agent.input.stopAria': 'Зупинити роботу агента',
 	'agent.input.pasteFailed': 'Неможливо вставити у спливаючому вікні. Спробуйте вставити в головному вікні.',

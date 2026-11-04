@@ -65,6 +65,7 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': '默认 ({model})',
 	'settings.features.sameAsChat': '与聊天相同',
 	'settings.features.modelMissing': '不再可用',
+	'settings.features.modelSearchPlaceholder': '搜索模型...',
 	'settings.features.modelCapabilitiesUnknown': '未报告图像支持',
 	'settings.features.off': '关闭',
 	'settings.features.chooseProvider': '选择提供商',
@@ -80,6 +81,8 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': '仓库搜索索引',
 	'settings.features.label.imageGen': '图像生成',
 	'explainPrompt.placeholder': '选择一个提示词来解释选中的内容...',
+	'explainPrompt.untaggedHint':
+		'仅列出带有 “gemini-scribe/selection-prompt” 标签的提示词。为自定义提示词添加该标签后即可在此处使用。',
 	'ragCleanup.title': '删除 vault 索引？',
 	'ragCleanup.body': '您的 vault 索引存储在 Google Cloud 中。您要删除它吗？',
 	'ragCleanup.keepNote': '如果您保留数据，重新启用时速度会更快。',
@@ -331,6 +334,8 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptyPrompt': '提示词不能为空。',
 	'scheduler.emptySlug': '任务名称不能为空。',
 	'scheduler.invalidMaxIterations': '最大工具迭代次数必须是正整数，或留空以使用默认值。',
+	'scheduler.invalidOutputPath':
+		'不允许使用该输出路径。路径必须包含文件名、位于仓库内，且不能为 Obsidian 配置文件夹或插件状态文件夹（其 Runs 文件夹除外）。',
 	'scheduler.managerUnavailable': '计划任务管理器不可用。',
 	'scheduler.taskUpdated': '任务 "{slug}" 已更新',
 	'scheduler.taskCreated': '任务 "{slug}" 已创建',
@@ -411,6 +416,8 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptyCommandId': '"command" 操作的命令 ID 不能为空。',
 	'hooks.emptySlug': 'Hook 名称不能为空。',
 	'hooks.invalidMaxIterations': '最大工具迭代次数必须是正整数，或留空以使用默认值。',
+	'hooks.invalidOutputPath':
+		'不允许使用该输出路径。路径必须包含文件名、位于仓库内，且不能为 Obsidian 配置文件夹或插件状态文件夹（其 Runs 文件夹除外）。',
 	'hooks.managerUnavailable': 'Hook 管理器不可用。',
 	'hooks.hookUpdated': 'Hook "{slug}" 已更新',
 	'hooks.hookCreated': 'Hook "{slug}" 已创建',
@@ -487,6 +494,7 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': '关联项目',
 	'agent.menu.sessionSettings': '会话设置',
 	'agent.input.placeholder': '向智能体发送消息... (@ 文件, / 技能)',
+	'agent.input.skillPickerAria': '使用技能',
 	'agent.input.sendAria': '向智能体发送消息',
 	'agent.input.stopAria': '停止智能体执行',
 	'agent.input.pasteFailed': '无法在独立窗口中粘贴。请尝试在主窗口中粘贴。',

@@ -67,6 +67,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Standaard ({model})',
 	'settings.features.sameAsChat': 'Hetzelfde als chat',
 	'settings.features.modelMissing': 'Niet meer beschikbaar',
+	'settings.features.modelSearchPlaceholder': 'Modellen zoeken...',
 	'settings.features.modelCapabilitiesUnknown': 'afbeeldingsondersteuning niet gemeld',
 	'settings.features.off': 'Uit',
 	'settings.features.chooseProvider': 'Kies een provider',
@@ -82,6 +83,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Vault-zoekindex',
 	'settings.features.label.imageGen': 'Afbeeldingsgeneratie',
 	'explainPrompt.placeholder': 'Selecteer een prompt om de selectie uit te leggen...',
+	'explainPrompt.untaggedHint':
+		'Alleen prompts met de tag "gemini-scribe/selection-prompt" worden weergegeven. Voeg de tag toe aan een aangepaste prompt om deze hier te gebruiken.',
 	'ragCleanup.title': 'Vault-index verwijderen?',
 	'ragCleanup.body': 'Je vault-index is opgeslagen in Google Cloud. Wil je deze verwijderen?',
 	'ragCleanup.keepNote': 'Als je de gegevens bewaart, is het opnieuw inschakelen sneller.',
@@ -346,6 +349,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Taaknaam mag niet leeg zijn.',
 	'scheduler.invalidMaxIterations':
 		'Maximale tool-iteraties moet een positief geheel getal zijn, of leeg voor de standaard.',
+	'scheduler.invalidOutputPath':
+		'Uitvoerpad is niet toegestaan. Het moet een bestandsnaam bevatten, binnen de vault blijven en de Obsidian-configuratiemap en de plugin-statusmap vermijden (behalve de Runs-map).',
 	'scheduler.managerUnavailable': 'Beheerder voor geplande taken is niet beschikbaar.',
 	'scheduler.taskUpdated': 'Taak "{slug}" bijgewerkt',
 	'scheduler.taskCreated': 'Taak "{slug}" aangemaakt',
@@ -434,6 +439,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptySlug': 'Hook-naam mag niet leeg zijn.',
 	'hooks.invalidMaxIterations':
 		'Max. aantal tool-iteraties moet een positief geheel getal zijn, of leeg voor de standaardwaarde.',
+	'hooks.invalidOutputPath':
+		'Uitvoerpad is niet toegestaan. Het moet een bestandsnaam bevatten, binnen de vault blijven en de Obsidian-configuratiemap en de plugin-statusmap vermijden (behalve de Runs-map).',
 	'hooks.managerUnavailable': 'Hook-manager niet beschikbaar.',
 	'hooks.hookUpdated': 'Hook "{slug}" bijgewerkt',
 	'hooks.hookCreated': 'Hook "{slug}" aangemaakt',
@@ -514,6 +521,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Project koppelen',
 	'agent.menu.sessionSettings': 'Sessie-instellingen',
 	'agent.input.placeholder': 'Bericht de agent... (@ bestanden, / vaardigheden)',
+	'agent.input.skillPickerAria': 'Een vaardigheid gebruiken',
 	'agent.input.sendAria': 'Bericht naar agent verzenden',
 	'agent.input.stopAria': 'Uitvoering van agent stoppen',
 	'agent.input.pasteFailed': 'Plakken in pop-outvenster mislukt. Probeer te plakken in het hoofdvenster.',

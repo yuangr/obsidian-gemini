@@ -712,6 +712,11 @@ body.theme-dark {
 	padding: var(--gs-space-2);
 	position: relative;
 	line-height: 1.6;
+	/* Pasted text arrives as a text node with literal `\n`s. Without pre-wrap they
+	   collapse to spaces on screen AND in `innerText`, which the send path reads —
+	   so a multi-line paste reached the model flattened to one line (#1669). */
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
 }
 
 .gemini-agent-input-rich:focus {
@@ -3397,6 +3402,8 @@ body.theme-dark {
 	overflow-y: auto;
 	white-space: pre-wrap;
 	word-wrap: break-word;
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 .gemini-scribe-loading {
@@ -3428,6 +3435,9 @@ body.theme-dark {
 	flex: 1;
 	min-height: 100px;
 	max-height: 400px;
+	/* Obsidian disables text selection in modals; let users select and copy part of the response (#1664). */
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 .gemini-scribe-response-container p:first-child {
@@ -4256,6 +4266,29 @@ body.theme-dark {
 	border-top: 1px solid var(--gs-border);
 }
 
+/* Skill picker button — same quiet borderless icon as the plan toggle at rest. */
+.gemini-agent-skill-btn {
+	align-self: center;
+	display: inline-flex;
+	align-items: center;
+	padding: var(--gs-space-1);
+	border: none;
+	border-radius: var(--gs-radius-sm);
+	background-color: transparent;
+	color: var(--gs-text-muted);
+	cursor: pointer;
+}
+
+.gemini-agent-skill-btn svg {
+	width: var(--gs-icon-lg);
+	height: var(--gs-icon-lg);
+}
+
+.gemini-agent-skill-btn:hover {
+	background-color: var(--gs-hover);
+	color: var(--gs-text);
+}
+
 /* Plan mode toggle — quiet borderless icon at rest, accent pill when armed.
  * Off state stays minimal so it doesn't compete with Send for bar width; the
  * "Plan" label only appears (and only then takes space) once the mode is on. */
@@ -4476,4 +4509,15 @@ body.theme-dark {
 	background: var(--interactive-accent);
 	border-color: var(--interactive-accent);
 	color: var(--text-on-accent);
+}
+
+/* Model picker trigger (Features page + session settings): keeps a long
+   aggregator model id from stretching the setting row. The 320px cap is a
+   one-off control width — there is no width scale in the --gs-* tokens. */
+.gemini-model-picker-button {
+	display: inline-block;
+	max-width: min(100%, 320px);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }

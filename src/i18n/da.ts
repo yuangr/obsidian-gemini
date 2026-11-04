@@ -67,6 +67,7 @@ export const da: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Standard ({model})',
 	'settings.features.sameAsChat': 'Samme som chat',
 	'settings.features.modelMissing': 'Ikke længere tilgængelig',
+	'settings.features.modelSearchPlaceholder': 'Søg efter modeller...',
 	'settings.features.modelCapabilitiesUnknown': 'billedunderstøttelse ikke rapporteret',
 	'settings.features.off': 'Fra',
 	'settings.features.chooseProvider': 'Vælg en udbyder',
@@ -82,6 +83,8 @@ export const da: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Vault-søgeindeks',
 	'settings.features.label.imageGen': 'Billedgenerering',
 	'explainPrompt.placeholder': 'Vælg et prompt til at forklare det markerede...',
+	'explainPrompt.untaggedHint':
+		'Kun prompter tagget med "gemini-scribe/selection-prompt" vises på listen. Tilføj tagget til en brugerdefineret prompt for at bruge den her.',
 	'ragCleanup.title': 'Slet vault-indeks?',
 	'ragCleanup.body': 'Dit vault-indeks er gemt i Google Cloud. Vil du slette det?',
 	'ragCleanup.keepNote': 'Hvis du beholder dataene, vil det gå hurtigere at genaktivere.',
@@ -347,6 +350,8 @@ export const da: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Opgavenavnet må ikke være tomt.',
 	'scheduler.invalidMaxIterations':
 		'Maks. værktøjsiterationer skal være et positivt heltal, eller tomt for standarden.',
+	'scheduler.invalidOutputPath':
+		'Outputstien er ikke tilladt. Den skal indeholde et filnavn, forblive inde i vaulten og undgå Obsidian-konfigurationsmappen og plugin-tilstandsmappen (bortset fra dens Runs-mappe).',
 	'scheduler.managerUnavailable': 'Styring af planlagte opgaver er ikke tilgængelig.',
 	'scheduler.taskUpdated': 'Opgaven "{slug}" blev opdateret',
 	'scheduler.taskCreated': 'Opgaven "{slug}" blev oprettet',
@@ -433,6 +438,8 @@ export const da: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptyCommandId': 'Kommando-id må ikke være tomt for handlingen "command".',
 	'hooks.emptySlug': 'Hook-navn må ikke være tomt.',
 	'hooks.invalidMaxIterations': 'Maks. værktøjsiterationer skal være et positivt heltal, eller tomt for standarden.',
+	'hooks.invalidOutputPath':
+		'Outputstien er ikke tilladt. Den skal indeholde et filnavn, forblive inde i vaulten og undgå Obsidian-konfigurationsmappen og plugin-tilstandsmappen (bortset fra dens Runs-mappe).',
 	'hooks.managerUnavailable': 'Hook-manager er ikke tilgængelig.',
 	'hooks.hookUpdated': 'Hook "{slug}" opdateret',
 	'hooks.hookCreated': 'Hook "{slug}" oprettet',
@@ -511,6 +518,7 @@ export const da: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Tilknyt projekt',
 	'agent.menu.sessionSettings': 'Sessionsindstillinger',
 	'agent.input.placeholder': 'Skriv til agenten... (@ filer, / færdigheder)',
+	'agent.input.skillPickerAria': 'Brug en færdighed',
 	'agent.input.sendAria': 'Send besked til agent',
 	'agent.input.stopAria': 'Stop agentudførelse',
 	'agent.input.pasteFailed': 'Kunne ikke indsætte i popout-vindue. Prøv at indsætte i hovedvinduet.',

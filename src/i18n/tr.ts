@@ -68,6 +68,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Varsayılan ({model})',
 	'settings.features.sameAsChat': 'Sohbet ile aynı',
 	'settings.features.modelMissing': 'Artık mevcut değil',
+	'settings.features.modelSearchPlaceholder': 'Modelleri ara...',
 	'settings.features.modelCapabilitiesUnknown': 'görsel desteği bildirilmedi',
 	'settings.features.off': 'Kapalı',
 	'settings.features.chooseProvider': 'Bir sağlayıcı seçin',
@@ -83,6 +84,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Kasa arama dizini',
 	'settings.features.label.imageGen': 'Görsel oluşturma',
 	'explainPrompt.placeholder': 'Seçimi açıklamak için bir istem seçin...',
+	'explainPrompt.untaggedHint':
+		'Yalnızca "gemini-scribe/selection-prompt" etiketli istemler listelenir. Burada kullanmak için özel bir isteme bu etiketi ekleyin.',
 	'ragCleanup.title': 'Vault dizini silinsin mi?',
 	'ragCleanup.body': "Vault dizininiz Google Cloud'da saklanıyor. Silmek istiyor musunuz?",
 	'ragCleanup.keepNote': 'Verileri tutarsanız, yeniden etkinleştirmek daha hızlı olacaktır.',
@@ -348,6 +351,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Görev adı boş olamaz.',
 	'scheduler.invalidMaxIterations':
 		'Maksimum araç yinelemesi pozitif bir tam sayı olmalı veya varsayılan için boş bırakılmalıdır.',
+	'scheduler.invalidOutputPath':
+		'Çıktı yoluna izin verilmiyor. Bir dosya adı içermeli, kasa içinde kalmalı ve Obsidian yapılandırma klasörü ile eklenti durum klasöründe (Runs klasörü hariç) yer almamalıdır.',
 	'scheduler.managerUnavailable': 'Zamanlanmış görev yöneticisi kullanılamıyor.',
 	'scheduler.taskUpdated': '"{slug}" görevi güncellendi',
 	'scheduler.taskCreated': '"{slug}" görevi oluşturuldu',
@@ -436,6 +441,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptySlug': 'Kanca adı boş olamaz.',
 	'hooks.invalidMaxIterations':
 		'Maksimum araç yinelemesi pozitif bir tam sayı olmalı veya varsayılan için boş bırakılmalıdır.',
+	'hooks.invalidOutputPath':
+		'Çıktı yoluna izin verilmiyor. Bir dosya adı içermeli, kasa içinde kalmalı ve Obsidian yapılandırma klasörü ile eklenti durum klasöründe (Runs klasörü hariç) yer almamalıdır.',
 	'hooks.managerUnavailable': 'Kanca yöneticisi mevcut değil.',
 	'hooks.hookUpdated': 'Hook "{slug}" güncellendi',
 	'hooks.hookCreated': 'Hook "{slug}" oluşturuldu',
@@ -515,6 +522,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Projeyi bağla',
 	'agent.menu.sessionSettings': 'Oturum ayarları',
 	'agent.input.placeholder': "Agent'a mesaj yazın... (@ dosyalar, / beceriler)",
+	'agent.input.skillPickerAria': 'Bir beceri kullan',
 	'agent.input.sendAria': "Agent'a mesaj gönder",
 	'agent.input.stopAria': 'Agent yürütmesini durdur',
 	'agent.input.pasteFailed': 'Açılır pencereye yapıştırılamadı. Ana pencereye yapıştırmayı deneyin.',

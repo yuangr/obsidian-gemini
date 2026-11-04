@@ -68,6 +68,7 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Mặc định ({model})',
 	'settings.features.sameAsChat': 'Giống như trò chuyện',
 	'settings.features.modelMissing': 'Không còn khả dụng',
+	'settings.features.modelSearchPlaceholder': 'Tìm kiếm mô hình...',
 	'settings.features.modelCapabilitiesUnknown': 'không có thông tin hỗ trợ hình ảnh',
 	'settings.features.off': 'Tắt',
 	'settings.features.chooseProvider': 'Chọn một nhà cung cấp',
@@ -83,6 +84,8 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Chỉ mục tìm kiếm vault',
 	'settings.features.label.imageGen': 'Tạo hình ảnh',
 	'explainPrompt.placeholder': 'Chọn một prompt để giải thích phần lựa chọn...',
+	'explainPrompt.untaggedHint':
+		'Chỉ các prompt được gắn thẻ "gemini-scribe/selection-prompt" mới được liệt kê. Thêm thẻ vào prompt tùy chỉnh để sử dụng ở đây.',
 	'ragCleanup.title': 'Xóa chỉ mục vault?',
 	'ragCleanup.body': 'Chỉ mục vault của bạn được lưu trữ trên Google Cloud. Bạn có muốn xóa nó không?',
 	'ragCleanup.keepNote': 'Nếu bạn giữ lại dữ liệu, việc kích hoạt lại sẽ nhanh hơn.',
@@ -346,6 +349,8 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Tên tác vụ không được để trống.',
 	'scheduler.invalidMaxIterations':
 		'Số lần lặp công cụ tối đa phải là một số nguyên dương, hoặc để trống để sử dụng mặc định.',
+	'scheduler.invalidOutputPath':
+		'Đường dẫn đầu ra không được phép. Đường dẫn phải bao gồm tên tệp, nằm trong vault, và tránh thư mục cấu hình Obsidian cùng thư mục trạng thái plugin (ngoại trừ thư mục Runs của nó).',
 	'scheduler.managerUnavailable': 'Trình quản lý tác vụ theo lịch trình không khả dụng.',
 	'scheduler.taskUpdated': 'Đã cập nhật tác vụ "{slug}"',
 	'scheduler.taskCreated': 'Đã tạo tác vụ "{slug}"',
@@ -432,6 +437,8 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptySlug': 'Tên hook không thể để trống.',
 	'hooks.invalidMaxIterations':
 		'Số lần lặp công cụ tối đa phải là một số nguyên dương, hoặc để trống để sử dụng mặc định.',
+	'hooks.invalidOutputPath':
+		'Đường dẫn đầu ra không được phép. Đường dẫn phải bao gồm tên tệp, nằm trong vault, và tránh thư mục cấu hình Obsidian cùng thư mục trạng thái plugin (ngoại trừ thư mục Runs của nó).',
 	'hooks.managerUnavailable': 'Trình quản lý hook không khả dụng.',
 	'hooks.hookUpdated': 'Đã cập nhật hook "{slug}"',
 	'hooks.hookCreated': 'Đã tạo hook "{slug}"',
@@ -510,6 +517,7 @@ export const vi: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Liên kết dự án',
 	'agent.menu.sessionSettings': 'Cài đặt phiên',
 	'agent.input.placeholder': 'Gửi tin nhắn cho agent... (@ tệp, / kỹ năng)',
+	'agent.input.skillPickerAria': 'Sử dụng kỹ năng',
 	'agent.input.sendAria': 'Gửi tin nhắn cho agent',
 	'agent.input.stopAria': 'Dừng thực thi agent',
 	'agent.input.pasteFailed': 'Không thể dán trong cửa sổ phụ. Hãy thử dán trong cửa sổ chính.',

@@ -67,6 +67,7 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Default ({model})',
 	'settings.features.sameAsChat': 'Sama seperti obrolan',
 	'settings.features.modelMissing': 'Tidak lagi tersedia',
+	'settings.features.modelSearchPlaceholder': 'Cari model...',
 	'settings.features.modelCapabilitiesUnknown': 'dukungan gambar tidak dilaporkan',
 	'settings.features.off': 'Nonaktif',
 	'settings.features.chooseProvider': 'Pilih penyedia',
@@ -82,6 +83,8 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Indeks pencarian vault',
 	'settings.features.label.imageGen': 'Pembuatan gambar',
 	'explainPrompt.placeholder': 'Pilih prompt untuk menjelaskan pilihan...',
+	'explainPrompt.untaggedHint':
+		'Hanya prompt yang diberi tag "gemini-scribe/selection-prompt" yang dicantumkan. Tambahkan tag ke prompt kustom untuk menggunakannya di sini.',
 	'ragCleanup.title': 'Hapus indeks vault?',
 	'ragCleanup.body': 'Indeks vault Anda disimpan di Google Cloud. Apakah Anda ingin menghapusnya?',
 	'ragCleanup.keepNote': 'Jika Anda menyimpan data tersebut, pengaktifan kembali akan lebih cepat.',
@@ -346,6 +349,8 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Nama tugas tidak boleh kosong.',
 	'scheduler.invalidMaxIterations':
 		'Iterasi alat maksimum harus berupa bilangan bulat positif, atau kosongkan untuk default.',
+	'scheduler.invalidOutputPath':
+		'Jalur output tidak diizinkan. Jalur harus menyertakan nama file, tetap berada di dalam vault, dan menghindari folder konfigurasi Obsidian serta folder status plugin (selain folder Runs miliknya).',
 	'scheduler.managerUnavailable': 'Pengelola tugas terjadwal tidak tersedia.',
 	'scheduler.taskUpdated': 'Tugas "{slug}" diperbarui',
 	'scheduler.taskCreated': 'Tugas "{slug}" dibuat',
@@ -430,6 +435,8 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptyCommandId': 'ID perintah tidak boleh kosong untuk tindakan "command".',
 	'hooks.emptySlug': 'Nama hook tidak boleh kosong.',
 	'hooks.invalidMaxIterations': 'Iterasi alat maks harus berupa bilangan bulat positif, atau kosongkan untuk default.',
+	'hooks.invalidOutputPath':
+		'Jalur output tidak diizinkan. Jalur harus menyertakan nama file, tetap berada di dalam vault, dan menghindari folder konfigurasi Obsidian serta folder status plugin (selain folder Runs miliknya).',
 	'hooks.managerUnavailable': 'Pengelola hook tidak tersedia.',
 	'hooks.hookUpdated': 'Hook "{slug}" diperbarui',
 	'hooks.hookCreated': 'Hook "{slug}" dibuat',
@@ -508,6 +515,7 @@ export const id: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Tautkan proyek',
 	'agent.menu.sessionSettings': 'Pengaturan sesi',
 	'agent.input.placeholder': 'Kirim pesan ke agen... (@ berkas, / keahlian)',
+	'agent.input.skillPickerAria': 'Gunakan keahlian',
 	'agent.input.sendAria': 'Kirim pesan ke agen',
 	'agent.input.stopAria': 'Hentikan eksekusi agen',
 	'agent.input.pasteFailed': 'Tidak dapat menempel di jendela popout. Coba tempel di jendela utama.',

@@ -167,6 +167,7 @@ export class FuzzySuggestModal extends Modal {
 			addEventListener: vi.fn(),
 		};
 	}
+	setPlaceholder() {}
 	getItems() {
 		return [];
 	}
@@ -258,6 +259,9 @@ export class SuggestModal extends Modal {
 
 	setPlaceholder() {
 		return this;
+	}
+	setInstructions(instructions) {
+		this.instructions = instructions;
 	}
 	getSuggestions() {
 		return [];

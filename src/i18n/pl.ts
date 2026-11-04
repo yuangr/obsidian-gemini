@@ -68,6 +68,7 @@ export const pl: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Domyślny ({model})',
 	'settings.features.sameAsChat': 'Taki sam jak dla czatu',
 	'settings.features.modelMissing': 'Już niedostępny',
+	'settings.features.modelSearchPlaceholder': 'Szukaj modeli...',
 	'settings.features.modelCapabilitiesUnknown': 'brak informacji o obsłudze obrazów',
 	'settings.features.off': 'Wył.',
 	'settings.features.chooseProvider': 'Wybierz dostawcę',
@@ -83,6 +84,8 @@ export const pl: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Indeks wyszukiwania vaulta',
 	'settings.features.label.imageGen': 'Generowanie obrazów',
 	'explainPrompt.placeholder': 'Wybierz prompt, aby wyjaśnić zaznaczenie...',
+	'explainPrompt.untaggedHint':
+		'Wyświetlane są tylko prompty oznaczone tagiem "gemini-scribe/selection-prompt". Dodaj ten tag do własnego promptu, aby go tutaj użyć.',
 	'ragCleanup.title': 'Usunąć indeks krypty?',
 	'ragCleanup.body': 'Twój indeks vault jest przechowywany w Google Cloud. Czy chcesz go usunąć?',
 	'ragCleanup.keepNote': 'Jeśli zachowasz dane, ponowne włączenie będzie szybsze.',
@@ -348,6 +351,8 @@ export const pl: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Nazwa zadania nie może być pusta.',
 	'scheduler.invalidMaxIterations':
 		'Maksymalna liczba iteracji narzędzia musi być dodatnią liczbą całkowitą lub pozostać pusta dla wartości domyślnej.',
+	'scheduler.invalidOutputPath':
+		'Ścieżka wyjściowa jest niedozwolona. Musi zawierać nazwę pliku, znajdować się wewnątrz skarbca oraz omijać folder konfiguracyjny Obsidian i folder stanu wtyczki (poza folderem Runs).',
 	'scheduler.managerUnavailable': 'Menedżer zaplanowanych zadań jest niedostępny.',
 	'scheduler.taskUpdated': 'Zaktualizowano zadanie „{slug}”',
 	'scheduler.taskCreated': 'Utworzono zadanie „{slug}”',
@@ -434,6 +439,8 @@ export const pl: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptySlug': 'Nazwa hooka nie może być pusta.',
 	'hooks.invalidMaxIterations':
 		'Maksymalna liczba iteracji narzędzia musi być dodatnią liczbą całkowitą lub pozostać pusta dla wartości domyślnej.',
+	'hooks.invalidOutputPath':
+		'Ścieżka wyjściowa jest niedozwolona. Musi zawierać nazwę pliku, znajdować się wewnątrz skarbca oraz omijać folder konfiguracyjny Obsidian i folder stanu wtyczki (poza folderem Runs).',
 	'hooks.managerUnavailable': 'Menedżer hooków jest niedostępny.',
 	'hooks.hookUpdated': 'Zaktualizowano hook "{slug}"',
 	'hooks.hookCreated': 'Utworzono hook "{slug}"',
@@ -512,6 +519,7 @@ export const pl: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Powiąż projekt',
 	'agent.menu.sessionSettings': 'Ustawienia sesji',
 	'agent.input.placeholder': 'Napisz do agenta... (@ pliki, / umiejętności)',
+	'agent.input.skillPickerAria': 'Użyj umiejętności',
 	'agent.input.sendAria': 'Wyślij wiadomość do agenta',
 	'agent.input.stopAria': 'Zatrzymaj działanie agenta',
 	'agent.input.pasteFailed': 'Nie można wkleić w osobnym oknie. Spróbuj wkleić w oknie głównym.',

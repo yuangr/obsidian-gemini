@@ -65,6 +65,7 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': '기본값 ({model})',
 	'settings.features.sameAsChat': '채팅과 동일',
 	'settings.features.modelMissing': '더 이상 사용할 수 없음',
+	'settings.features.modelSearchPlaceholder': '모델 검색...',
 	'settings.features.modelCapabilitiesUnknown': '이미지 지원 여부 미보고',
 	'settings.features.off': '사용 안 함',
 	'settings.features.chooseProvider': '제공자 선택',
@@ -80,6 +81,8 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': '보관함 검색 색인',
 	'settings.features.label.imageGen': '이미지 생성',
 	'explainPrompt.placeholder': '선택 영역을 설명할 프롬프트 선택...',
+	'explainPrompt.untaggedHint':
+		'"gemini-scribe/selection-prompt" 태그가 지정된 프롬프트만 표시됩니다. 여기서 사용하려면 사용자 지정 프롬프트에 해당 태그를 추가하세요.',
 	'ragCleanup.title': '보관소 인덱스를 삭제하시겠습니까?',
 	'ragCleanup.body': '보관함 인덱스가 Google Cloud에 저장되어 있습니다. 삭제하시겠습니까?',
 	'ragCleanup.keepNote': '데이터를 유지하면 나중에 다시 활성화할 때 더 빠릅니다.',
@@ -339,6 +342,8 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptyPrompt': '프롬프트는 비워 둘 수 없습니다.',
 	'scheduler.emptySlug': '작업 이름은 비워 둘 수 없습니다.',
 	'scheduler.invalidMaxIterations': '최대 도구 반복 횟수는 양의 정수이거나, 기본값을 사용하려면 비워 두어야 합니다.',
+	'scheduler.invalidOutputPath':
+		'허용되지 않는 출력 경로입니다. 파일 이름을 포함해야 하고, 보관함 내에 있어야 하며, Obsidian 설정 폴더 및 플러그인 상태 폴더(Runs 폴더 제외)는 지정할 수 없습니다.',
 	'scheduler.managerUnavailable': '예약된 작업 관리자를 사용할 수 없습니다.',
 	'scheduler.taskUpdated': '"{slug}" 작업이 업데이트되었습니다',
 	'scheduler.taskCreated': '"{slug}" 작업이 생성되었습니다',
@@ -424,6 +429,8 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptyCommandId': '"command" 동작에는 명령 ID가 비어 있을 수 없습니다.',
 	'hooks.emptySlug': '훅 이름은 비어 있을 수 없습니다.',
 	'hooks.invalidMaxIterations': '최대 도구 반복 횟수는 양의 정수이거나, 기본값을 사용하려면 비워 두어야 합니다.',
+	'hooks.invalidOutputPath':
+		'허용되지 않는 출력 경로입니다. 파일 이름을 포함해야 하고, 보관함 내에 있어야 하며, Obsidian 설정 폴더 및 플러그인 상태 폴더(Runs 폴더 제외)는 지정할 수 없습니다.',
 	'hooks.managerUnavailable': '훅 관리자를 사용할 수 없습니다.',
 	'hooks.hookUpdated': '"{slug}" 훅이 업데이트되었습니다',
 	'hooks.hookCreated': '"{slug}" 훅이 생성되었습니다',
@@ -501,6 +508,7 @@ export const ko: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': '프로젝트 연결',
 	'agent.menu.sessionSettings': '세션 설정',
 	'agent.input.placeholder': '에이전트에게 메시지 보내기... (@ 파일, / 스킬)',
+	'agent.input.skillPickerAria': '스킬 사용',
 	'agent.input.sendAria': '에이전트에게 메시지 전송',
 	'agent.input.stopAria': '에이전트 실행 중지',
 	'agent.input.pasteFailed': '팝아웃 창에서는 붙여넣을 수 없습니다. 메인 창에서 붙여넣기를 시도해 보세요.',

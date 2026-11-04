@@ -67,6 +67,7 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'По умолчанию ({model})',
 	'settings.features.sameAsChat': 'Как в чате',
 	'settings.features.modelMissing': 'Больше недоступно',
+	'settings.features.modelSearchPlaceholder': 'Поиск моделей...',
 	'settings.features.modelCapabilitiesUnknown': 'поддержка изображений не указана',
 	'settings.features.off': 'Отключено',
 	'settings.features.chooseProvider': 'Выберите провайдера',
@@ -82,6 +83,8 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Индекс поиска по хранилищу',
 	'settings.features.label.imageGen': 'Генерация изображений',
 	'explainPrompt.placeholder': 'Выберите запрос для объяснения выделенного фрагмента...',
+	'explainPrompt.untaggedHint':
+		'Отображаются только промпты с тегом "gemini-scribe/selection-prompt". Добавьте этот тег к пользовательскому промпту, чтобы использовать его здесь.',
 	'ragCleanup.title': 'Удалить индекс хранилища?',
 	'ragCleanup.body': 'Индекс вашего хранилища сохранен в Google Cloud. Хотите удалить его?',
 	'ragCleanup.keepNote': 'Если вы сохраните данные, повторное включение пройдет быстрее.',
@@ -348,6 +351,8 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Имя задачи не может быть пустым.',
 	'scheduler.invalidMaxIterations':
 		'Максимальное число итераций инструментов должно быть положительным целым числом или оставаться пустым для значения по умолчанию.',
+	'scheduler.invalidOutputPath':
+		'Путь вывода недопустим. Он должен содержать имя файла, находиться внутри хранилища и не затрагивать папку конфигурации Obsidian и папку состояния плагина (кроме папки Runs).',
 	'scheduler.managerUnavailable': 'Диспетчер запланированных задач недоступен.',
 	'scheduler.taskUpdated': 'Задача «{slug}» обновлена',
 	'scheduler.taskCreated': 'Задача «{slug}» создана',
@@ -436,6 +441,8 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptySlug': 'Имя хука не может быть пустым.',
 	'hooks.invalidMaxIterations':
 		'Максимальное количество итераций инструментов должно быть положительным целым числом или оставаться пустым для значения по умолчанию.',
+	'hooks.invalidOutputPath':
+		'Путь вывода недопустим. Он должен содержать имя файла, находиться внутри хранилища и не затрагивать папку конфигурации Obsidian и папку состояния плагина (кроме папки Runs).',
 	'hooks.managerUnavailable': 'Менеджер хуков недоступен.',
 	'hooks.hookUpdated': 'Хук "{slug}" обновлен',
 	'hooks.hookCreated': 'Хук "{slug}" создан',
@@ -515,6 +522,7 @@ export const ru: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Привязать проект',
 	'agent.menu.sessionSettings': 'Настройки сессии',
 	'agent.input.placeholder': 'Написать агенту... (@ файлы, / навыки)',
+	'agent.input.skillPickerAria': 'Использовать навык',
 	'agent.input.sendAria': 'Отправить сообщение агенту',
 	'agent.input.stopAria': 'Остановить работу агента',
 	'agent.input.pasteFailed': 'Не удалось вставить в отдельном окне. Попробуйте вставить в главном окне.',

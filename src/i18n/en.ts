@@ -271,6 +271,11 @@ export const en = {
 		context:
 			"Label appended to a model option that is stored in settings but no longer present in the provider's current model list.",
 	},
+	'settings.features.modelSearchPlaceholder': {
+		message: 'Search models...',
+		context:
+			'Placeholder of the fuzzy-search modal that opens when choosing a model, on a Features sub-page or in the session settings modal.',
+	},
 	'settings.features.modelCapabilitiesUnknown': {
 		message: 'image support not reported',
 		context:
@@ -335,6 +340,12 @@ export const en = {
 	'explainPrompt.placeholder': {
 		message: 'Select a prompt to explain the selection...',
 		context: 'Search placeholder in the suggest modal for picking an explain-selection prompt.',
+	},
+	'explainPrompt.untaggedHint': {
+		message:
+			'Only prompts tagged "gemini-scribe/selection-prompt" are listed. Add the tag to a custom prompt to use it here.',
+		context:
+			'Footer hint in the "Apply prompt..." picker, shown when the user has custom prompts that lack the tag and so are not listed. "gemini-scribe/selection-prompt" is a literal tag name — do not translate it.',
 	},
 	'ragCleanup.title': {
 		message: 'Delete vault index?',
@@ -1173,6 +1184,12 @@ export const en = {
 		message: 'Max tool iterations must be a positive whole number, or blank for the default.',
 		context: 'Validation notice for an invalid max-iterations value.',
 	},
+	'scheduler.invalidOutputPath': {
+		message:
+			'Output path is not allowed. It must include a filename, stay inside the vault, and avoid the Obsidian configuration folder and the plugin state folder (other than its Runs folder).',
+		context:
+			'Validation notice when the scheduled task form\'s output path points somewhere the plugin refuses to write. "Runs" is a literal folder name — keep it verbatim.',
+	},
 	'scheduler.managerUnavailable': {
 		message: 'Scheduled task manager not available.',
 		context: 'Notice when the scheduler service is not running while saving a task.',
@@ -1433,6 +1450,12 @@ export const en = {
 	'hooks.invalidMaxIterations': {
 		message: 'Max tool iterations must be a positive whole number, or blank for the default.',
 		context: 'Validation notice for an invalid max-iterations value in the hook form.',
+	},
+	'hooks.invalidOutputPath': {
+		message:
+			'Output path is not allowed. It must include a filename, stay inside the vault, and avoid the Obsidian configuration folder and the plugin state folder (other than its Runs folder).',
+		context:
+			'Validation notice when the hook form\'s output path points somewhere the plugin refuses to write. "Runs" is a literal folder name — keep it verbatim.',
 	},
 	'hooks.managerUnavailable': {
 		message: 'Hook manager not available.',
@@ -1743,6 +1766,11 @@ export const en = {
 		message: 'Message the agent... (@ files, / skills)',
 		context:
 			'Placeholder text in the agent chat input box. @ and / are literal trigger characters for mentioning files and skills — keep them.',
+	},
+	'agent.input.skillPickerAria': {
+		message: 'Use a skill',
+		context:
+			'Accessibility label/tooltip for the wand icon button in the agent send bar that opens the skill picker. Picking a skill inserts its /skill-name command at the start of the message.',
 	},
 	'agent.input.sendAria': {
 		message: 'Send message to agent',

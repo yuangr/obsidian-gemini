@@ -67,6 +67,7 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Výchozí ({model})',
 	'settings.features.sameAsChat': 'Stejný jako u chatu',
 	'settings.features.modelMissing': 'Již není k dispozici',
+	'settings.features.modelSearchPlaceholder': 'Hledat modely...',
 	'settings.features.modelCapabilitiesUnknown': 'podpora obrázků neuvedena',
 	'settings.features.off': 'Vypnuto',
 	'settings.features.chooseProvider': 'Vyberte poskytovatele',
@@ -82,6 +83,8 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Vyhledávací index trezoru',
 	'settings.features.label.imageGen': 'Generování obrázků',
 	'explainPrompt.placeholder': 'Vyberte prompt pro vysvětlení výběru...',
+	'explainPrompt.untaggedHint':
+		'Zobrazují se pouze prompty se štítkem "gemini-scribe/selection-prompt". Přidejte tento štítek k vlastnímu promptu, abyste jej zde mohli použít.',
 	'ragCleanup.title': 'Smazat index trezoru?',
 	'ragCleanup.body': 'Index vašeho vaultu je uložen v Google Cloud. Chcete jej smazat?',
 	'ragCleanup.keepNote': 'Pokud data ponecháte, opětovné povolení bude rychlejší.',
@@ -346,6 +349,8 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Název úlohy nemůže být prázdný.',
 	'scheduler.invalidMaxIterations':
 		'Maximální počet iterací nástroje musí být kladné celé číslo, nebo prázdné pro výchozí hodnotu.',
+	'scheduler.invalidOutputPath':
+		'Výstupní cesta není povolena. Musí obsahovat název souboru, nacházet se uvnitř trezoru a vyhnout se konfigurační složce Obsidianu a složce stavu doplňku (kromě její složky Runs).',
 	'scheduler.managerUnavailable': 'Správce plánovaných úloh není k dispozici.',
 	'scheduler.taskUpdated': 'Úloha "{slug}" byla aktualizována',
 	'scheduler.taskCreated': 'Úloha "{slug}" byla vytvořena',
@@ -433,6 +438,8 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptySlug': 'Název hooku nemůže být prázdný.',
 	'hooks.invalidMaxIterations':
 		'Maximální počet iterací nástroje musí být kladné celé číslo, nebo prázdné pro výchozí hodnotu.',
+	'hooks.invalidOutputPath':
+		'Výstupní cesta není povolena. Musí obsahovat název souboru, nacházet se uvnitř trezoru a vyhnout se konfigurační složce Obsidianu a složce stavu doplňku (kromě její složky Runs).',
 	'hooks.managerUnavailable': 'Správce hooků není k dispozici.',
 	'hooks.hookUpdated': 'Hook "{slug}" byl aktualizován',
 	'hooks.hookCreated': 'Hook "{slug}" byl vytvořen',
@@ -511,6 +518,7 @@ export const cs: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Propojit projekt',
 	'agent.menu.sessionSettings': 'Nastavení relace',
 	'agent.input.placeholder': 'Napište agentovi... (@ soubory, / dovednosti)',
+	'agent.input.skillPickerAria': 'Použít dovednost',
 	'agent.input.sendAria': 'Odeslat zprávu agentovi',
 	'agent.input.stopAria': 'Zastavit provádění agenta',
 	'agent.input.pasteFailed': 'V samostatném okně nelze vložit obsah. Zkuste jej vložit v hlavním okně.',

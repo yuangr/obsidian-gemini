@@ -67,6 +67,7 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'デフォルト ({model})',
 	'settings.features.sameAsChat': 'チャットと同じ',
 	'settings.features.modelMissing': '利用不可',
+	'settings.features.modelSearchPlaceholder': 'モデルを検索...',
 	'settings.features.modelCapabilitiesUnknown': '画像サポート未報告',
 	'settings.features.off': 'オフ',
 	'settings.features.chooseProvider': 'プロバイダーを選択',
@@ -82,6 +83,8 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Vault検索インデックス',
 	'settings.features.label.imageGen': '画像生成',
 	'explainPrompt.placeholder': '選択範囲を説明するためのプロンプトを選択...',
+	'explainPrompt.untaggedHint':
+		'「gemini-scribe/selection-prompt」タグが付いたプロンプトのみが表示されます。カスタムプロンプトをここで使用するには、このタグを追加してください。',
 	'ragCleanup.title': '保管庫のインデックスを削除しますか？',
 	'ragCleanup.body': '保管庫のインデックスはGoogle Cloudに保存されています。削除しますか？',
 	'ragCleanup.keepNote': 'データを保持しておくと、再有効化時の処理が速くなります。',
@@ -345,6 +348,8 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'タスク名は空にすることはできません。',
 	'scheduler.invalidMaxIterations':
 		'最大ツール反復回数は正の整数にするか、デフォルトを使用する場合は空白にしてください。',
+	'scheduler.invalidOutputPath':
+		'出力パスは許可されていません。ファイル名を含め、保管庫内に配置し、Obsidianの設定フォルダーおよびプラグインの状態フォルダー（Runsフォルダーを除く）を避ける必要があります。',
 	'scheduler.managerUnavailable': 'スケジュールタスクマネージャーが利用できません。',
 	'scheduler.taskUpdated': 'タスク「{slug}」が更新されました',
 	'scheduler.taskCreated': 'タスク「{slug}」が作成されました',
@@ -431,6 +436,8 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptyCommandId': '「command」アクションではコマンドIDを空にすることはできません。',
 	'hooks.emptySlug': 'フック名は空にできません。',
 	'hooks.invalidMaxIterations': '最大ツール反復回数は正の整数にするか、デフォルトを使用する場合は空欄にしてください。',
+	'hooks.invalidOutputPath':
+		'出力パスは許可されていません。ファイル名を含め、保管庫内に配置し、Obsidianの設定フォルダーおよびプラグインの状態フォルダー（Runsフォルダーを除く）を避ける必要があります。',
 	'hooks.managerUnavailable': 'フックマネージャーが利用できません。',
 	'hooks.hookUpdated': 'フック「{slug}」が更新されました',
 	'hooks.hookCreated': 'フック「{slug}」が作成されました',
@@ -509,6 +516,7 @@ export const ja: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'プロジェクトをリンク',
 	'agent.menu.sessionSettings': 'セッション設定',
 	'agent.input.placeholder': 'エージェントにメッセージを送信... (@ ファイル, / スキル)',
+	'agent.input.skillPickerAria': 'スキルを使用',
 	'agent.input.sendAria': 'エージェントにメッセージを送信',
 	'agent.input.stopAria': 'エージェントの実行を停止',
 	'agent.input.pasteFailed':

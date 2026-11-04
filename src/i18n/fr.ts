@@ -69,6 +69,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Par défaut ({model})',
 	'settings.features.sameAsChat': 'Identique au chat',
 	'settings.features.modelMissing': 'Plus disponible',
+	'settings.features.modelSearchPlaceholder': 'Rechercher des modèles...',
 	'settings.features.modelCapabilitiesUnknown': 'prise en charge des images non signalée',
 	'settings.features.off': 'Désactivé',
 	'settings.features.chooseProvider': 'Choisir un fournisseur',
@@ -84,6 +85,8 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Index de recherche du coffre',
 	'settings.features.label.imageGen': "Génération d'images",
 	'explainPrompt.placeholder': 'Sélectionnez un prompt pour expliquer la sélection...',
+	'explainPrompt.untaggedHint':
+		'Seuls les prompts étiquetés "gemini-scribe/selection-prompt" sont listés. Ajoutez l\'étiquette à un prompt personnalisé pour l\'utiliser ici.',
 	'ragCleanup.title': "Supprimer l'index du coffre ?",
 	'ragCleanup.body': "L'index de votre coffre est stocké dans Google Cloud. Voulez-vous le supprimer ?",
 	'ragCleanup.keepNote': 'Si vous conservez les données, la réactivation sera plus rapide.',
@@ -350,6 +353,8 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Le nom de la tâche ne peut pas être vide.',
 	'scheduler.invalidMaxIterations':
 		"Le nombre max. d'itérations d'outils doit être un nombre entier positif, ou vide pour la valeur par défaut.",
+	'scheduler.invalidOutputPath':
+		"Le chemin de sortie n'est pas autorisé. Il doit inclure un nom de fichier, rester à l'intérieur du coffre et éviter le dossier de configuration d'Obsidian ainsi que le dossier d'état du plugin (à l'exception de son dossier Runs).",
 	'scheduler.managerUnavailable': "Le gestionnaire de tâches planifiées n'est pas disponible.",
 	'scheduler.taskUpdated': 'Tâche "{slug}" mise à jour',
 	'scheduler.taskCreated': 'Tâche "{slug}" créée',
@@ -438,6 +443,8 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptySlug': 'Le nom du hook ne peut pas être vide.',
 	'hooks.invalidMaxIterations':
 		"Le nombre maximal d'itérations d'outils doit être un nombre entier positif, ou vide pour la valeur par défaut.",
+	'hooks.invalidOutputPath':
+		"Le chemin de sortie n'est pas autorisé. Il doit inclure un nom de fichier, rester à l'intérieur du coffre et éviter le dossier de configuration d'Obsidian ainsi que le dossier d'état du plugin (à l'exception de son dossier Runs).",
 	'hooks.managerUnavailable': "Le gestionnaire de hooks n'est pas disponible.",
 	'hooks.hookUpdated': 'Hook "{slug}" mis à jour',
 	'hooks.hookCreated': 'Hook "{slug}" créé',
@@ -517,6 +524,7 @@ export const fr: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Lier un projet',
 	'agent.menu.sessionSettings': 'Paramètres de la session',
 	'agent.input.placeholder': "Envoyer un message à l'agent... (@ fichiers, / compétences)",
+	'agent.input.skillPickerAria': 'Utiliser une compétence',
 	'agent.input.sendAria': "Envoyer le message à l'agent",
 	'agent.input.stopAria': "Arrêter l'exécution de l'agent",
 	'agent.input.pasteFailed':

@@ -68,6 +68,7 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Standard ({model})',
 	'settings.features.sameAsChat': 'Samme som chat',
 	'settings.features.modelMissing': 'Ikke lenger tilgjengelig',
+	'settings.features.modelSearchPlaceholder': 'Søk etter modeller...',
 	'settings.features.modelCapabilitiesUnknown': 'bildestøtte ikke rapportert',
 	'settings.features.off': 'Av',
 	'settings.features.chooseProvider': 'Velg en leverandør',
@@ -83,6 +84,8 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Søkeindeks for hvelv',
 	'settings.features.label.imageGen': 'Bildegenerering',
 	'explainPrompt.placeholder': 'Velg en prompt for å forklare utvalget...',
+	'explainPrompt.untaggedHint':
+		'Kun prompter tagget med "gemini-scribe/selection-prompt" vises. Legg til taggen i en egendefinert prompt for å bruke den her.',
 	'ragCleanup.title': 'Slette vault-indeks?',
 	'ragCleanup.body': 'Din vault-indeks er lagret i Google Cloud. Vil du slette den?',
 	'ragCleanup.keepNote': 'Hvis du beholder dataene, vil det gå raskere å aktivere på nytt.',
@@ -346,6 +349,8 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptyPrompt': 'Prompten kan ikke være tom.',
 	'scheduler.emptySlug': 'Oppgavenavn kan ikke være tomt.',
 	'scheduler.invalidMaxIterations': 'Maks verktøy-iterasjoner må være et positivt heltall, eller tomt for standarden.',
+	'scheduler.invalidOutputPath':
+		'Utdatastien er ikke tillatt. Den må inneholde et filnavn, ligge innenfor hvelvet og unngå Obsidians konfigurasjonsmappe og programtilleggets tilstandsmappe (bortsett fra Runs-mappen).',
 	'scheduler.managerUnavailable': 'Behandler for planlagte oppgaver er ikke tilgjengelig.',
 	'scheduler.taskUpdated': 'Oppgaven "{slug}" ble oppdatert',
 	'scheduler.taskCreated': 'Oppgaven "{slug}" ble opprettet',
@@ -431,6 +436,8 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptyCommandId': 'Kommando-ID kan ikke være tom for handlingen "command".',
 	'hooks.emptySlug': 'Hook-navn kan ikke være tomt.',
 	'hooks.invalidMaxIterations': 'Maks verktøy-iterasjoner må være et positivt heltall, eller tomt for standardverdi.',
+	'hooks.invalidOutputPath':
+		'Utdatastien er ikke tillatt. Den må inneholde et filnavn, ligge innenfor hvelvet og unngå Obsidians konfigurasjonsmappe og programtilleggets tilstandsmappe (bortsett fra Runs-mappen).',
 	'hooks.managerUnavailable': 'Hook-behandler er ikke tilgjengelig.',
 	'hooks.hookUpdated': 'Hook "{slug}" oppdatert',
 	'hooks.hookCreated': 'Hook "{slug}" opprettet',
@@ -509,6 +516,7 @@ export const no: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Koble til prosjekt',
 	'agent.menu.sessionSettings': 'Øktinnstillinger',
 	'agent.input.placeholder': 'Send melding til agenten... (@ filer, / ferdigheter)',
+	'agent.input.skillPickerAria': 'Bruk en ferdighet',
 	'agent.input.sendAria': 'Send melding til agenten',
 	'agent.input.stopAria': 'Stopp kjøring av agent',
 	'agent.input.pasteFailed': 'Kunne ikke lime inn i popout-vinduet. Prøv å lime inn i hovedvinduet.',

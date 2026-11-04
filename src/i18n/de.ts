@@ -69,6 +69,7 @@ export const de: Partial<Record<TranslationKey, string>> = {
 	'settings.features.modelDefaultNamed': 'Standard ({model})',
 	'settings.features.sameAsChat': 'Wie Chat',
 	'settings.features.modelMissing': 'Nicht mehr verfügbar',
+	'settings.features.modelSearchPlaceholder': 'Modelle suchen...',
 	'settings.features.modelCapabilitiesUnknown': 'Bildunterstützung nicht gemeldet',
 	'settings.features.off': 'Aus',
 	'settings.features.chooseProvider': 'Anbieter auswählen',
@@ -84,6 +85,8 @@ export const de: Partial<Record<TranslationKey, string>> = {
 	'settings.features.label.rag': 'Vault-Suchindex',
 	'settings.features.label.imageGen': 'Bildgenerierung',
 	'explainPrompt.placeholder': 'Wählen Sie einen Prompt aus, um die Auswahl zu erklären...',
+	'explainPrompt.untaggedHint':
+		'Nur Prompts mit dem Tag "gemini-scribe/selection-prompt" werden aufgelistet. Füge den Tag zu einem benutzerdefinierten Prompt hinzu, um ihn hier zu verwenden.',
 	'ragCleanup.title': 'Vault-Index löschen?',
 	'ragCleanup.body': 'Ihr Vault-Index ist in der Google Cloud gespeichert. Möchten Sie ihn löschen?',
 	'ragCleanup.keepNote': 'Wenn Sie die Daten behalten, geht die erneute Aktivierung schneller.',
@@ -351,6 +354,8 @@ export const de: Partial<Record<TranslationKey, string>> = {
 	'scheduler.emptySlug': 'Aufgabenname darf nicht leer sein.',
 	'scheduler.invalidMaxIterations':
 		'Maximale Tool-Iterationen müssen eine positive ganze Zahl sein, oder leer für den Standardwert.',
+	'scheduler.invalidOutputPath':
+		'Ausgabepfad ist nicht zulässig. Er muss einen Dateinamen enthalten, innerhalb des Vaults liegen und darf weder im Obsidian-Konfigurationsordner noch im Plugin-Statusordner liegen (außer in dessen Runs-Ordner).',
 	'scheduler.managerUnavailable': 'Manager für geplante Aufgaben ist nicht verfügbar.',
 	'scheduler.taskUpdated': 'Aufgabe „{slug}“ aktualisiert',
 	'scheduler.taskCreated': 'Aufgabe „{slug}“ erstellt',
@@ -439,6 +444,8 @@ export const de: Partial<Record<TranslationKey, string>> = {
 	'hooks.emptySlug': 'Der Hook-Name darf nicht leer sein.',
 	'hooks.invalidMaxIterations':
 		'Die maximalen Tool-Iterationen müssen eine positive ganze Zahl sein oder leer für den Standardwert.',
+	'hooks.invalidOutputPath':
+		'Ausgabepfad ist nicht zulässig. Er muss einen Dateinamen enthalten, innerhalb des Vaults liegen und darf weder im Obsidian-Konfigurationsordner noch im Plugin-Statusordner liegen (außer in dessen Runs-Ordner).',
 	'hooks.managerUnavailable': 'Hook-Manager nicht verfügbar.',
 	'hooks.hookUpdated': 'Hook "{slug}" aktualisiert',
 	'hooks.hookCreated': 'Hook "{slug}" erstellt',
@@ -519,6 +526,7 @@ export const de: Partial<Record<TranslationKey, string>> = {
 	'agent.menu.linkProject': 'Projekt verknüpfen',
 	'agent.menu.sessionSettings': 'Sitzungseinstellungen',
 	'agent.input.placeholder': 'Nachricht an den Agenten... (@ Dateien, / Skills)',
+	'agent.input.skillPickerAria': 'Skill verwenden',
 	'agent.input.sendAria': 'Nachricht an Agenten senden',
 	'agent.input.stopAria': 'Ausführung des Agenten stoppen',
 	'agent.input.pasteFailed': 'Einfügen im Popout-Fenster nicht möglich. Versuche, im Hauptfenster einzufügen.',
