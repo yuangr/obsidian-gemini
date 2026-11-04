@@ -1122,12 +1122,28 @@
 <a name='L1057'></a><a href='#L1057'>1057</a>
 <a name='L1058'></a><a href='#L1058'>1058</a>
 <a name='L1059'></a><a href='#L1059'>1059</a>
-<a name='L1060'></a><a href='#L1060'>1060</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L1060'></a><a href='#L1060'>1060</a>
+<a name='L1061'></a><a href='#L1061'>1061</a>
+<a name='L1062'></a><a href='#L1062'>1062</a>
+<a name='L1063'></a><a href='#L1063'>1063</a>
+<a name='L1064'></a><a href='#L1064'>1064</a>
+<a name='L1065'></a><a href='#L1065'>1065</a>
+<a name='L1066'></a><a href='#L1066'>1066</a>
+<a name='L1067'></a><a href='#L1067'>1067</a>
+<a name='L1068'></a><a href='#L1068'>1068</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">120x</span>
+<span class="cline-any cline-yes">123x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -2250,6 +2266,7 @@ export const cs: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.modelDefaultNamed': 'Výchozí ({model})',
 	'settings.features.sameAsChat': 'Stejný jako u chatu',
 	'settings.features.modelMissing': 'Již není k dispozici',
+	'settings.features.modelSearchPlaceholder': 'Hledat modely...',
 	'settings.features.modelCapabilitiesUnknown': 'podpora obrázků neuvedena',
 	'settings.features.off': 'Vypnuto',
 	'settings.features.chooseProvider': 'Vyberte poskytovatele',
@@ -2265,6 +2282,8 @@ export const cs: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.label.rag': 'Vyhledávací index trezoru',
 	'settings.features.label.imageGen': 'Generování obrázků',
 	'explainPrompt.placeholder': 'Vyberte prompt pro vysvětlení výběru...',
+	'explainPrompt.untaggedHint':
+		'Zobrazují se pouze prompty se štítkem "gemini-scribe/selection-prompt". Přidejte tento štítek k vlastnímu promptu, abyste jej zde mohli použít.',
 	'ragCleanup.title': 'Smazat index trezoru?',
 	'ragCleanup.body': 'Index vašeho vaultu je uložen v Google Cloud. Chcete jej smazat?',
 	'ragCleanup.keepNote': 'Pokud data ponecháte, opětovné povolení bude rychlejší.',
@@ -2529,6 +2548,8 @@ export const cs: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'scheduler.emptySlug': 'Název úlohy nemůže být prázdný.',
 	'scheduler.invalidMaxIterations':
 		'Maximální počet iterací nástroje musí být kladné celé číslo, nebo prázdné pro výchozí hodnotu.',
+	'scheduler.invalidOutputPath':
+		'Výstupní cesta není povolena. Musí obsahovat název souboru, nacházet se uvnitř trezoru a vyhnout se konfigurační složce Obsidianu a složce stavu doplňku (kromě její složky Runs).',
 	'scheduler.managerUnavailable': 'Správce plánovaných úloh není k dispozici.',
 	'scheduler.taskUpdated': 'Úloha "{slug}" byla aktualizována',
 	'scheduler.taskCreated': 'Úloha "{slug}" byla vytvořena',
@@ -2616,6 +2637,8 @@ export const cs: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'hooks.emptySlug': 'Název hooku nemůže být prázdný.',
 	'hooks.invalidMaxIterations':
 		'Maximální počet iterací nástroje musí být kladné celé číslo, nebo prázdné pro výchozí hodnotu.',
+	'hooks.invalidOutputPath':
+		'Výstupní cesta není povolena. Musí obsahovat název souboru, nacházet se uvnitř trezoru a vyhnout se konfigurační složce Obsidianu a složce stavu doplňku (kromě její složky Runs).',
 	'hooks.managerUnavailable': 'Správce hooků není k dispozici.',
 	'hooks.hookUpdated': 'Hook "{slug}" byl aktualizován',
 	'hooks.hookCreated': 'Hook "{slug}" byl vytvořen',
@@ -2694,6 +2717,7 @@ export const cs: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'agent.menu.linkProject': 'Propojit projekt',
 	'agent.menu.sessionSettings': 'Nastavení relace',
 	'agent.input.placeholder': 'Napište agentovi... (@ soubory, / dovednosti)',
+	'agent.input.skillPickerAria': 'Použít dovednost',
 	'agent.input.sendAria': 'Odeslat zprávu agentovi',
 	'agent.input.stopAria': 'Zastavit provádění agenta',
 	'agent.input.pasteFailed': 'V samostatném okně nelze vložit obsah. Zkuste jej vložit v hlavním okně.',
@@ -3247,7 +3271,7 @@ export const cs: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-11-03T10:39:25.179Z
+                at 2026-11-04T01:08:41.470Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

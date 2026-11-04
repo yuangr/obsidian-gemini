@@ -1143,12 +1143,28 @@
 <a name='L1078'></a><a href='#L1078'>1078</a>
 <a name='L1079'></a><a href='#L1079'>1079</a>
 <a name='L1080'></a><a href='#L1080'>1080</a>
-<a name='L1081'></a><a href='#L1081'>1081</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L1081'></a><a href='#L1081'>1081</a>
+<a name='L1082'></a><a href='#L1082'>1082</a>
+<a name='L1083'></a><a href='#L1083'>1083</a>
+<a name='L1084'></a><a href='#L1084'>1084</a>
+<a name='L1085'></a><a href='#L1085'>1085</a>
+<a name='L1086'></a><a href='#L1086'>1086</a>
+<a name='L1087'></a><a href='#L1087'>1087</a>
+<a name='L1088'></a><a href='#L1088'>1088</a>
+<a name='L1089'></a><a href='#L1089'>1089</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">120x</span>
+<span class="cline-any cline-yes">123x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -2294,6 +2310,7 @@ export const es: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.modelDefaultNamed': 'Predeterminado ({model})',
 	'settings.features.sameAsChat': 'Igual que el chat',
 	'settings.features.modelMissing': 'Ya no está disponible',
+	'settings.features.modelSearchPlaceholder': 'Buscar modelos...',
 	'settings.features.modelCapabilitiesUnknown': 'compatibilidad con imágenes no reportada',
 	'settings.features.off': 'Desactivado',
 	'settings.features.chooseProvider': 'Elegir un proveedor',
@@ -2309,6 +2326,8 @@ export const es: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.label.rag': 'Índice de búsqueda de vault',
 	'settings.features.label.imageGen': 'Generación de imágenes',
 	'explainPrompt.placeholder': 'Seleccione un prompt para explicar la selección...',
+	'explainPrompt.untaggedHint':
+		'Solo se muestran los prompts etiquetados con "gemini-scribe/selection-prompt". Añade la etiqueta a un prompt personalizado para usarlo aquí.',
 	'ragCleanup.title': '¿Eliminar el índice del vault?',
 	'ragCleanup.body': 'El índice de su vault está almacenado en Google Cloud. ¿Desea eliminarlo?',
 	'ragCleanup.keepNote': 'Si conserva los datos, volver a activarlo será más rápido.',
@@ -2574,6 +2593,8 @@ export const es: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'scheduler.emptySlug': 'El nombre de la tarea no puede estar vacío.',
 	'scheduler.invalidMaxIterations':
 		'Las iteraciones máximas de herramientas deben ser un número entero positivo, o dejarse en blanco para el valor predeterminado.',
+	'scheduler.invalidOutputPath':
+		'La ruta de salida no está permitida. Debe incluir un nombre de archivo, permanecer dentro de la bóveda y evitar la carpeta de configuración de Obsidian y la carpeta de estado del plugin (excepto su carpeta Runs).',
 	'scheduler.managerUnavailable': 'El administrador de tareas programadas no está disponible.',
 	'scheduler.taskUpdated': 'Tarea "{slug}" actualizada',
 	'scheduler.taskCreated': 'Tarea "{slug}" creada',
@@ -2662,6 +2683,8 @@ export const es: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'hooks.emptySlug': 'El nombre del hook no puede estar vacío.',
 	'hooks.invalidMaxIterations':
 		'Las iteraciones máximas de herramientas deben ser un número entero positivo, o dejarse en blanco para el valor predeterminado.',
+	'hooks.invalidOutputPath':
+		'La ruta de salida no está permitida. Debe incluir un nombre de archivo, permanecer dentro de la bóveda y evitar la carpeta de configuración de Obsidian y la carpeta de estado del plugin (excepto su carpeta Runs).',
 	'hooks.managerUnavailable': 'El gestor de hooks no está disponible.',
 	'hooks.hookUpdated': 'Hook "{slug}" actualizado',
 	'hooks.hookCreated': 'Hook "{slug}" creado',
@@ -2741,6 +2764,7 @@ export const es: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'agent.menu.linkProject': 'Vincular proyecto',
 	'agent.menu.sessionSettings': 'Ajustes de la sesión',
 	'agent.input.placeholder': 'Enviar mensaje al agente... (@ archivos, / habilidades)',
+	'agent.input.skillPickerAria': 'Usar una habilidad',
 	'agent.input.sendAria': 'Enviar mensaje al agente',
 	'agent.input.stopAria': 'Detener ejecución del agente',
 	'agent.input.pasteFailed': 'No se puede pegar en la ventana emergente. Intenta pegar en la ventana principal.',
@@ -3310,7 +3334,7 @@ export const es: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-11-03T10:39:25.179Z
+                at 2026-11-04T01:08:41.470Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

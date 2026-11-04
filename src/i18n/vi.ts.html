@@ -1119,12 +1119,28 @@
 <a name='L1054'></a><a href='#L1054'>1054</a>
 <a name='L1055'></a><a href='#L1055'>1055</a>
 <a name='L1056'></a><a href='#L1056'>1056</a>
-<a name='L1057'></a><a href='#L1057'>1057</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L1057'></a><a href='#L1057'>1057</a>
+<a name='L1058'></a><a href='#L1058'>1058</a>
+<a name='L1059'></a><a href='#L1059'>1059</a>
+<a name='L1060'></a><a href='#L1060'>1060</a>
+<a name='L1061'></a><a href='#L1061'>1061</a>
+<a name='L1062'></a><a href='#L1062'>1062</a>
+<a name='L1063'></a><a href='#L1063'>1063</a>
+<a name='L1064'></a><a href='#L1064'>1064</a>
+<a name='L1065'></a><a href='#L1065'>1065</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">120x</span>
+<span class="cline-any cline-yes">123x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -2245,6 +2261,7 @@ export const vi: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.modelDefaultNamed': 'Mặc định ({model})',
 	'settings.features.sameAsChat': 'Giống như trò chuyện',
 	'settings.features.modelMissing': 'Không còn khả dụng',
+	'settings.features.modelSearchPlaceholder': 'Tìm kiếm mô hình...',
 	'settings.features.modelCapabilitiesUnknown': 'không có thông tin hỗ trợ hình ảnh',
 	'settings.features.off': 'Tắt',
 	'settings.features.chooseProvider': 'Chọn một nhà cung cấp',
@@ -2260,6 +2277,8 @@ export const vi: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.label.rag': 'Chỉ mục tìm kiếm vault',
 	'settings.features.label.imageGen': 'Tạo hình ảnh',
 	'explainPrompt.placeholder': 'Chọn một prompt để giải thích phần lựa chọn...',
+	'explainPrompt.untaggedHint':
+		'Chỉ các prompt được gắn thẻ "gemini-scribe/selection-prompt" mới được liệt kê. Thêm thẻ vào prompt tùy chỉnh để sử dụng ở đây.',
 	'ragCleanup.title': 'Xóa chỉ mục vault?',
 	'ragCleanup.body': 'Chỉ mục vault của bạn được lưu trữ trên Google Cloud. Bạn có muốn xóa nó không?',
 	'ragCleanup.keepNote': 'Nếu bạn giữ lại dữ liệu, việc kích hoạt lại sẽ nhanh hơn.',
@@ -2523,6 +2542,8 @@ export const vi: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'scheduler.emptySlug': 'Tên tác vụ không được để trống.',
 	'scheduler.invalidMaxIterations':
 		'Số lần lặp công cụ tối đa phải là một số nguyên dương, hoặc để trống để sử dụng mặc định.',
+	'scheduler.invalidOutputPath':
+		'Đường dẫn đầu ra không được phép. Đường dẫn phải bao gồm tên tệp, nằm trong vault, và tránh thư mục cấu hình Obsidian cùng thư mục trạng thái plugin (ngoại trừ thư mục Runs của nó).',
 	'scheduler.managerUnavailable': 'Trình quản lý tác vụ theo lịch trình không khả dụng.',
 	'scheduler.taskUpdated': 'Đã cập nhật tác vụ "{slug}"',
 	'scheduler.taskCreated': 'Đã tạo tác vụ "{slug}"',
@@ -2609,6 +2630,8 @@ export const vi: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'hooks.emptySlug': 'Tên hook không thể để trống.',
 	'hooks.invalidMaxIterations':
 		'Số lần lặp công cụ tối đa phải là một số nguyên dương, hoặc để trống để sử dụng mặc định.',
+	'hooks.invalidOutputPath':
+		'Đường dẫn đầu ra không được phép. Đường dẫn phải bao gồm tên tệp, nằm trong vault, và tránh thư mục cấu hình Obsidian cùng thư mục trạng thái plugin (ngoại trừ thư mục Runs của nó).',
 	'hooks.managerUnavailable': 'Trình quản lý hook không khả dụng.',
 	'hooks.hookUpdated': 'Đã cập nhật hook "{slug}"',
 	'hooks.hookCreated': 'Đã tạo hook "{slug}"',
@@ -2687,6 +2710,7 @@ export const vi: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'agent.menu.linkProject': 'Liên kết dự án',
 	'agent.menu.sessionSettings': 'Cài đặt phiên',
 	'agent.input.placeholder': 'Gửi tin nhắn cho agent... (@ tệp, / kỹ năng)',
+	'agent.input.skillPickerAria': 'Sử dụng kỹ năng',
 	'agent.input.sendAria': 'Gửi tin nhắn cho agent',
 	'agent.input.stopAria': 'Dừng thực thi agent',
 	'agent.input.pasteFailed': 'Không thể dán trong cửa sổ phụ. Hãy thử dán trong cửa sổ chính.',
@@ -3238,7 +3262,7 @@ export const vi: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-11-03T10:39:25.179Z
+                at 2026-11-04T01:08:41.470Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

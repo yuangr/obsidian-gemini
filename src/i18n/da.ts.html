@@ -1122,12 +1122,28 @@
 <a name='L1057'></a><a href='#L1057'>1057</a>
 <a name='L1058'></a><a href='#L1058'>1058</a>
 <a name='L1059'></a><a href='#L1059'>1059</a>
-<a name='L1060'></a><a href='#L1060'>1060</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L1060'></a><a href='#L1060'>1060</a>
+<a name='L1061'></a><a href='#L1061'>1061</a>
+<a name='L1062'></a><a href='#L1062'>1062</a>
+<a name='L1063'></a><a href='#L1063'>1063</a>
+<a name='L1064'></a><a href='#L1064'>1064</a>
+<a name='L1065'></a><a href='#L1065'>1065</a>
+<a name='L1066'></a><a href='#L1066'>1066</a>
+<a name='L1067'></a><a href='#L1067'>1067</a>
+<a name='L1068'></a><a href='#L1068'>1068</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">120x</span>
+<span class="cline-any cline-yes">123x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -2250,6 +2266,7 @@ export const da: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.modelDefaultNamed': 'Standard ({model})',
 	'settings.features.sameAsChat': 'Samme som chat',
 	'settings.features.modelMissing': 'Ikke længere tilgængelig',
+	'settings.features.modelSearchPlaceholder': 'Søg efter modeller...',
 	'settings.features.modelCapabilitiesUnknown': 'billedunderstøttelse ikke rapporteret',
 	'settings.features.off': 'Fra',
 	'settings.features.chooseProvider': 'Vælg en udbyder',
@@ -2265,6 +2282,8 @@ export const da: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.label.rag': 'Vault-søgeindeks',
 	'settings.features.label.imageGen': 'Billedgenerering',
 	'explainPrompt.placeholder': 'Vælg et prompt til at forklare det markerede...',
+	'explainPrompt.untaggedHint':
+		'Kun prompter tagget med "gemini-scribe/selection-prompt" vises på listen. Tilføj tagget til en brugerdefineret prompt for at bruge den her.',
 	'ragCleanup.title': 'Slet vault-indeks?',
 	'ragCleanup.body': 'Dit vault-indeks er gemt i Google Cloud. Vil du slette det?',
 	'ragCleanup.keepNote': 'Hvis du beholder dataene, vil det gå hurtigere at genaktivere.',
@@ -2530,6 +2549,8 @@ export const da: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'scheduler.emptySlug': 'Opgavenavnet må ikke være tomt.',
 	'scheduler.invalidMaxIterations':
 		'Maks. værktøjsiterationer skal være et positivt heltal, eller tomt for standarden.',
+	'scheduler.invalidOutputPath':
+		'Outputstien er ikke tilladt. Den skal indeholde et filnavn, forblive inde i vaulten og undgå Obsidian-konfigurationsmappen og plugin-tilstandsmappen (bortset fra dens Runs-mappe).',
 	'scheduler.managerUnavailable': 'Styring af planlagte opgaver er ikke tilgængelig.',
 	'scheduler.taskUpdated': 'Opgaven "{slug}" blev opdateret',
 	'scheduler.taskCreated': 'Opgaven "{slug}" blev oprettet',
@@ -2616,6 +2637,8 @@ export const da: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'hooks.emptyCommandId': 'Kommando-id må ikke være tomt for handlingen "command".',
 	'hooks.emptySlug': 'Hook-navn må ikke være tomt.',
 	'hooks.invalidMaxIterations': 'Maks. værktøjsiterationer skal være et positivt heltal, eller tomt for standarden.',
+	'hooks.invalidOutputPath':
+		'Outputstien er ikke tilladt. Den skal indeholde et filnavn, forblive inde i vaulten og undgå Obsidian-konfigurationsmappen og plugin-tilstandsmappen (bortset fra dens Runs-mappe).',
 	'hooks.managerUnavailable': 'Hook-manager er ikke tilgængelig.',
 	'hooks.hookUpdated': 'Hook "{slug}" opdateret',
 	'hooks.hookCreated': 'Hook "{slug}" oprettet',
@@ -2694,6 +2717,7 @@ export const da: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'agent.menu.linkProject': 'Tilknyt projekt',
 	'agent.menu.sessionSettings': 'Sessionsindstillinger',
 	'agent.input.placeholder': 'Skriv til agenten... (@ filer, / færdigheder)',
+	'agent.input.skillPickerAria': 'Brug en færdighed',
 	'agent.input.sendAria': 'Send besked til agent',
 	'agent.input.stopAria': 'Stop agentudførelse',
 	'agent.input.pasteFailed': 'Kunne ikke indsætte i popout-vindue. Prøv at indsætte i hovedvinduet.',
@@ -3247,7 +3271,7 @@ export const da: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-11-03T10:39:25.179Z
+                at 2026-11-04T01:08:41.470Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

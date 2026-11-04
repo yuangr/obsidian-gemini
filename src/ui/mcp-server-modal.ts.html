@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/125</span>
+                <span class='fraction'>0/129</span>
             </div>
         
             
@@ -39,14 +39,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/32</span>
+                <span class='fraction'>0/30</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/123</span>
+                <span class='fraction'>0/127</span>
             </div>
         
             
@@ -389,7 +389,11 @@
 <a name='L324'></a><a href='#L324'>324</a>
 <a name='L325'></a><a href='#L325'>325</a>
 <a name='L326'></a><a href='#L326'>326</a>
-<a name='L327'></a><a href='#L327'>327</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L327'></a><a href='#L327'>327</a>
+<a name='L328'></a><a href='#L328'>328</a>
+<a name='L329'></a><a href='#L329'>329</a>
+<a name='L330'></a><a href='#L330'>330</a>
+<a name='L331'></a><a href='#L331'>331</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -412,7 +416,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -458,10 +461,16 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -646,10 +655,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -691,7 +698,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -711,11 +717,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { App, Modal, Setting, Notice } from 'obsidian';
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { App, ButtonComponent, Modal, Setting, Notice } from 'obsidian';
 import { MCPServerConfig, MCP_TRANSPORT_STDIO, MCP_TRANSPORT_HTTP, MCPTransportType } from '../mcp/types';
 import { MCPManager } from '../mcp/mcp-manager';
 import { ObsidianOAuthClientProvider } from '../mcp/mcp-oauth-provider';
@@ -738,7 +746,6 @@ export class MCPServerModal extends Modal {
 	private isEdit: boolean;
 	private discoveredTools: string[] = <span class="cstat-no" title="statement not covered" >[];</span>
 	private discoveredToolsContainer: HTMLElement | null = <span class="cstat-no" title="statement not covered" >null;</span>
-	private actionSetting: Setting | null = <span class="cstat-no" title="statement not covered" >null;</span>
 	private readonly originalServerName: string;
 &nbsp;
 <span class="fstat-no" title="function not covered" >	constructor(</span>
@@ -787,11 +794,17 @@ export class MCPServerModal extends Modal {
 		const { contentEl } = <span class="cstat-no" title="statement not covered" >this;</span>
 <span class="cstat-no" title="statement not covered" >		contentEl.empty();</span>
 <span class="cstat-no" title="statement not covered" >		contentEl.addClass('mcp-server-modal');</span>
+<span class="cstat-no" title="statement not covered" >		this.modalEl.addClass('gemini-mcp-modal');</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" >		contentEl.createEl('h2', { text: this.isEdit ? t('mcpServer.titleEdit') : t('mcpServer.titleAdd') });</span>
+		// Header
+		const headerEl = <span class="cstat-no" title="statement not covered" >contentEl.createDiv({ cls: 'mcp-server-modal-header' });</span>
+<span class="cstat-no" title="statement not covered" >		headerEl.createEl('h2', { text: this.isEdit ? t('mcpServer.titleEdit') : t('mcpServer.titleAdd') });</span>
+&nbsp;
+		// Scrollable form body
+		const bodyEl = <span class="cstat-no" title="statement not covered" >contentEl.createDiv({ cls: 'mcp-server-modal-body' });</span>
 &nbsp;
 		// Server name
-<span class="cstat-no" title="statement not covered" >		new Setting(contentEl)</span>
+<span class="cstat-no" title="statement not covered" >		new Setting(bodyEl)</span>
 			.setName(t('mcpServer.nameSetting'))
 			.setDesc(t('mcpServer.nameDesc'))
 			.<span class="fstat-no" title="function not covered" >addText((t</span>ext) =&gt;
@@ -804,7 +817,7 @@ export class MCPServerModal extends Modal {
 			);
 &nbsp;
 		// Transport type selector
-<span class="cstat-no" title="statement not covered" >		new Setting(contentEl)</span>
+<span class="cstat-no" title="statement not covered" >		new Setting(bodyEl)</span>
 			.setName(t('mcpServer.transportSetting'))
 			.setDesc(t('mcpServer.transportDesc'))
 			.<span class="fstat-no" title="function not covered" >addDropdown((d</span>ropdown) =&gt;
@@ -824,7 +837,7 @@ export class MCPServerModal extends Modal {
 &nbsp;
 <span class="cstat-no" title="statement not covered" >		if (isHttp) {</span>
 			// HTTP transport: URL field
-<span class="cstat-no" title="statement not covered" >			new Setting(contentEl)</span>
+<span class="cstat-no" title="statement not covered" >			new Setting(bodyEl)</span>
 				.setName(t('mcpServer.urlSetting'))
 				.setDesc(t('mcpServer.urlDesc'))
 				.<span class="fstat-no" title="function not covered" >addText((t</span>ext) =&gt; {
@@ -840,7 +853,7 @@ export class MCPServerModal extends Modal {
 			// Clear OAuth credentials (only shown if tokens exist for the original name)
 			const oauthProvider = <span class="cstat-no" title="statement not covered" >new ObsidianOAuthClientProvider(this.app, this.originalServerName);</span>
 <span class="cstat-no" title="statement not covered" >			if (oauthProvider.hasTokens()) {</span>
-<span class="cstat-no" title="statement not covered" >				new Setting(contentEl)</span>
+<span class="cstat-no" title="statement not covered" >				new Setting(bodyEl)</span>
 					.setName(t('mcpServer.oauthSetting'))
 					.setDesc(t('mcpServer.oauthDesc'))
 					.<span class="fstat-no" title="function not covered" >addButton((b</span>tn) =&gt;
@@ -858,7 +871,7 @@ export class MCPServerModal extends Modal {
 			// Stdio transport: Command, Arguments, Environment
 &nbsp;
 			// Command
-<span class="cstat-no" title="statement not covered" >			new Setting(contentEl)</span>
+<span class="cstat-no" title="statement not covered" >			new Setting(bodyEl)</span>
 				.setName(t('mcpServer.commandSetting'))
 				.setDesc(t('mcpServer.commandDesc'))
 				.<span class="fstat-no" title="function not covered" >addText((t</span>ext) =&gt; {
@@ -872,7 +885,7 @@ export class MCPServerModal extends Modal {
 				});
 &nbsp;
 			// Arguments
-<span class="cstat-no" title="statement not covered" >			new Setting(contentEl)</span>
+<span class="cstat-no" title="statement not covered" >			new Setting(bodyEl)</span>
 				.setName(t('mcpServer.argsSetting'))
 				.setDesc(t('mcpServer.argsDesc'))
 				.<span class="fstat-no" title="function not covered" >addTextArea((t</span>ext) =&gt; {
@@ -890,7 +903,7 @@ export class MCPServerModal extends Modal {
 				});
 &nbsp;
 			// Environment variables
-<span class="cstat-no" title="statement not covered" >			new Setting(contentEl)</span>
+<span class="cstat-no" title="statement not covered" >			new Setting(bodyEl)</span>
 				.setName(t('mcpServer.envSetting'))
 				.setDesc(t('mcpServer.envDesc'))
 				.<span class="fstat-no" title="function not covered" >addTextArea((t</span>ext) =&gt; {
@@ -919,7 +932,7 @@ export class MCPServerModal extends Modal {
 		}
 &nbsp;
 		// Enabled toggle
-<span class="cstat-no" title="statement not covered" >		new Setting(contentEl)</span>
+<span class="cstat-no" title="statement not covered" >		new Setting(bodyEl)</span>
 			.setName(t('mcpServer.enabledSetting'))
 			.setDesc(t('mcpServer.enabledDesc'))
 			.<span class="fstat-no" title="function not covered" >addToggle((t</span>oggle) =&gt;
@@ -929,7 +942,7 @@ export class MCPServerModal extends Modal {
 			);
 &nbsp;
 		// Test connection button
-		const testSetting = <span class="cstat-no" title="statement not covered" >new Setting(contentEl).setName(t('mcpServer.testSetting')).setDesc(t('mcpServer.testDesc'));</span>
+		const testSetting = <span class="cstat-no" title="statement not covered" >new Setting(bodyEl).setName(t('mcpServer.testSetting')).setDesc(t('mcpServer.testDesc'));</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >		testSetting.<span class="fstat-no" title="function not covered" >addButton((b</span>utton) =&gt;</span>
 <span class="cstat-no" title="statement not covered" >			button.setButtonText(t('mcpServer.testButton')).onClick(<span class="fstat-no" title="function not covered" >async () =&gt; {</span></span>
@@ -965,56 +978,53 @@ export class MCPServerModal extends Modal {
 		);
 &nbsp;
 		// Discovered tools section
-<span class="cstat-no" title="statement not covered" >		this.discoveredToolsContainer = contentEl.createDiv({ cls: 'mcp-discovered-tools-container' });</span>
+<span class="cstat-no" title="statement not covered" >		this.discoveredToolsContainer = bodyEl.createDiv({ cls: 'mcp-discovered-tools-container' });</span>
 <span class="cstat-no" title="statement not covered" >		if (this.discoveredTools.length &gt; 0) {</span>
 <span class="cstat-no" title="statement not covered" >			this.renderDiscoveredTools();</span>
 		}
 &nbsp;
-		// Action buttons
-<span class="cstat-no" title="statement not covered" >		this.actionSetting = new Setting(contentEl)</span>
-			.<span class="fstat-no" title="function not covered" >addButton((b</span>tn) =&gt;
-<span class="cstat-no" title="statement not covered" >				btn.setButtonText(t('mcpServer.cancelButton')).<span class="fstat-no" title="function not covered" >onClick(() =&gt; {</span></span>
-<span class="cstat-no" title="statement not covered" >					this.close();</span>
-				})
-			)
-			.<span class="fstat-no" title="function not covered" >addButton((b</span>tn) =&gt;
-<span class="cstat-no" title="statement not covered" >				btn</span>
-					.setButtonText(t('mcpServer.saveButton'))
-					.setCta()
-					.onClick(<span class="fstat-no" title="function not covered" >async () =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >						if (!this.config.name) {</span>
-<span class="cstat-no" title="statement not covered" >							new Notice(t('mcpServer.nameRequired'));</span>
-<span class="cstat-no" title="statement not covered" >							return;</span>
-						}
-<span class="cstat-no" title="statement not covered" >						if (isHttp) {</span>
-<span class="cstat-no" title="statement not covered" >							if (!this.config.url) {</span>
-<span class="cstat-no" title="statement not covered" >								new Notice(t('mcpServer.urlRequired'));</span>
-<span class="cstat-no" title="statement not covered" >								return;</span>
-							}
-							// Validate URL
-<span class="cstat-no" title="statement not covered" >							try {</span>
-<span class="cstat-no" title="statement not covered" >								new URL(this.config.url);</span>
-							} catch {
-<span class="cstat-no" title="statement not covered" >								new Notice(t('mcpServer.invalidUrl'));</span>
-<span class="cstat-no" title="statement not covered" >								return;</span>
-							}
-						} else {
-<span class="cstat-no" title="statement not covered" >							if (!this.config.command) {</span>
-<span class="cstat-no" title="statement not covered" >								new Notice(t('mcpServer.commandRequired'));</span>
-<span class="cstat-no" title="statement not covered" >								return;</span>
-							}
-							// Persist env vars to SecretStorage; sets config.envSecretName.
-<span class="cstat-no" title="statement not covered" >							try {</span>
-<span class="cstat-no" title="statement not covered" >								writeServerEnv(this.app, this.config, this.env);</span>
-							} catch (error) {
-<span class="cstat-no" title="statement not covered" >								new Notice(getRawErrorMessageOr(error, t('mcpServer.envStoreFailed')));</span>
-<span class="cstat-no" title="statement not covered" >								return;</span>
-							}
-						}
-<span class="cstat-no" title="statement not covered" >						await this.onSave(this.config);</span>
-<span class="cstat-no" title="statement not covered" >						this.close();</span>
-					})
-			);
+		// Fixed Action buttons footer
+		const footerEl = <span class="cstat-no" title="statement not covered" >contentEl.createDiv({ cls: 'modal-button-container mcp-server-modal-footer' });</span>
+<span class="cstat-no" title="statement not covered" >		new ButtonComponent(footerEl).setButtonText(t('mcpServer.cancelButton')).<span class="fstat-no" title="function not covered" >onClick(() =&gt; {</span></span>
+<span class="cstat-no" title="statement not covered" >			this.close();</span>
+		});
+&nbsp;
+<span class="cstat-no" title="statement not covered" >		new ButtonComponent(footerEl)</span>
+			.setButtonText(t('mcpServer.saveButton'))
+			.setCta()
+			.onClick(<span class="fstat-no" title="function not covered" >async () =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >				if (!this.config.name) {</span>
+<span class="cstat-no" title="statement not covered" >					new Notice(t('mcpServer.nameRequired'));</span>
+<span class="cstat-no" title="statement not covered" >					return;</span>
+				}
+<span class="cstat-no" title="statement not covered" >				if (isHttp) {</span>
+<span class="cstat-no" title="statement not covered" >					if (!this.config.url) {</span>
+<span class="cstat-no" title="statement not covered" >						new Notice(t('mcpServer.urlRequired'));</span>
+<span class="cstat-no" title="statement not covered" >						return;</span>
+					}
+					// Validate URL
+<span class="cstat-no" title="statement not covered" >					try {</span>
+<span class="cstat-no" title="statement not covered" >						new URL(this.config.url);</span>
+					} catch {
+<span class="cstat-no" title="statement not covered" >						new Notice(t('mcpServer.invalidUrl'));</span>
+<span class="cstat-no" title="statement not covered" >						return;</span>
+					}
+				} else {
+<span class="cstat-no" title="statement not covered" >					if (!this.config.command) {</span>
+<span class="cstat-no" title="statement not covered" >						new Notice(t('mcpServer.commandRequired'));</span>
+<span class="cstat-no" title="statement not covered" >						return;</span>
+					}
+					// Persist env vars to SecretStorage; sets config.envSecretName.
+<span class="cstat-no" title="statement not covered" >					try {</span>
+<span class="cstat-no" title="statement not covered" >						writeServerEnv(this.app, this.config, this.env);</span>
+					} catch (error) {
+<span class="cstat-no" title="statement not covered" >						new Notice(getRawErrorMessageOr(error, t('mcpServer.envStoreFailed')));</span>
+<span class="cstat-no" title="statement not covered" >						return;</span>
+					}
+				}
+<span class="cstat-no" title="statement not covered" >				await this.onSave(this.config);</span>
+<span class="cstat-no" title="statement not covered" >				this.close();</span>
+			});
 	}
 &nbsp;
 <span class="fstat-no" title="function not covered" >	private r</span>enderDiscoveredTools() {
@@ -1033,12 +1043,14 @@ export class MCPServerModal extends Modal {
 <span class="cstat-no" title="statement not covered" >		for (const toolName of this.discoveredTools) {</span>
 <span class="cstat-no" title="statement not covered" >			toolList.createEl('li', { text: toolName });</span>
 		}
-<span class="cstat-no" title="statement not covered" >		this.actionSetting?.settingEl.scrollIntoView({ behavior: 'smooth' });</span>
+<span class="cstat-no" title="statement not covered" >		this.discoveredToolsContainer.scrollIntoView({ behavior: 'smooth' });</span>
 	}
 &nbsp;
 <span class="fstat-no" title="function not covered" >	onClose() {</span>
+<span class="cstat-no" title="statement not covered" >		this.modalEl.removeClass('gemini-mcp-modal');</span>
 		const { contentEl } = <span class="cstat-no" title="statement not covered" >this;</span>
 <span class="cstat-no" title="statement not covered" >		contentEl.empty();</span>
+<span class="cstat-no" title="statement not covered" >		contentEl.removeClass('mcp-server-modal');</span>
 	}
 }
 &nbsp;</pre></td></tr></table></pre>
@@ -1048,7 +1060,7 @@ export class MCPServerModal extends Modal {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-11-03T10:39:25.179Z
+                at 2026-11-04T01:08:41.470Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

@@ -1133,12 +1133,28 @@
 <a name='L1068'></a><a href='#L1068'>1068</a>
 <a name='L1069'></a><a href='#L1069'>1069</a>
 <a name='L1070'></a><a href='#L1070'>1070</a>
-<a name='L1071'></a><a href='#L1071'>1071</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L1071'></a><a href='#L1071'>1071</a>
+<a name='L1072'></a><a href='#L1072'>1072</a>
+<a name='L1073'></a><a href='#L1073'>1073</a>
+<a name='L1074'></a><a href='#L1074'>1074</a>
+<a name='L1075'></a><a href='#L1075'>1075</a>
+<a name='L1076'></a><a href='#L1076'>1076</a>
+<a name='L1077'></a><a href='#L1077'>1077</a>
+<a name='L1078'></a><a href='#L1078'>1078</a>
+<a name='L1079'></a><a href='#L1079'>1079</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">120x</span>
+<span class="cline-any cline-yes">123x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -2273,6 +2289,7 @@ export const it: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.modelDefaultNamed': 'Predefinito ({model})',
 	'settings.features.sameAsChat': 'Uguale alla chat',
 	'settings.features.modelMissing': 'Non più disponibile',
+	'settings.features.modelSearchPlaceholder': 'Cerca modelli...',
 	'settings.features.modelCapabilitiesUnknown': 'supporto immagini non segnalato',
 	'settings.features.off': 'Disattivato',
 	'settings.features.chooseProvider': 'Scegli un provider',
@@ -2288,6 +2305,8 @@ export const it: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'settings.features.label.rag': 'Indice di ricerca del vault',
 	'settings.features.label.imageGen': 'Generazione immagini',
 	'explainPrompt.placeholder': 'Seleziona un prompt per spiegare la selezione...',
+	'explainPrompt.untaggedHint':
+		'Vengono elencati solo i prompt con il tag "gemini-scribe/selection-prompt". Aggiungi il tag a un prompt personalizzato per usarlo qui.',
 	'ragCleanup.title': "Eliminare l'indice del vault?",
 	'ragCleanup.body': "L'indice del tuo vault è memorizzato in Google Cloud. Vuoi eliminarlo?",
 	'ragCleanup.keepNote': 'Se conservi i dati, la riattivazione sarà più rapida.',
@@ -2554,6 +2573,8 @@ export const it: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'scheduler.emptySlug': "Il nome dell'attività non può essere vuoto.",
 	'scheduler.invalidMaxIterations':
 		'Le iterazioni massime dello strumento devono essere un numero intero positivo, o vuoto per il valore predefinito.',
+	'scheduler.invalidOutputPath':
+		"Il percorso di output non è consentito. Deve includere un nome file, rimanere all'interno del vault ed evitare la cartella di configurazione di Obsidian e la cartella di stato del plugin (tranne la cartella Runs).",
 	'scheduler.managerUnavailable': 'Gestore delle attività pianificate non disponibile.',
 	'scheduler.taskUpdated': 'Attività "{slug}" aggiornata',
 	'scheduler.taskCreated': 'Attività "{slug}" creata',
@@ -2641,6 +2662,8 @@ export const it: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'hooks.emptySlug': "Il nome dell'hook non può essere vuoto.",
 	'hooks.invalidMaxIterations':
 		'Le iterazioni massime dello strumento devono essere un numero intero positivo, o vuoto per il valore predefinito.',
+	'hooks.invalidOutputPath':
+		"Il percorso di output non è consentito. Deve includere un nome file, rimanere all'interno del vault ed evitare la cartella di configurazione di Obsidian e la cartella di stato del plugin (tranne la cartella Runs).",
 	'hooks.managerUnavailable': 'Gestore degli hook non disponibile.',
 	'hooks.hookUpdated': 'Hook "{slug}" aggiornato',
 	'hooks.hookCreated': 'Hook "{slug}" creato',
@@ -2721,6 +2744,7 @@ export const it: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
 	'agent.menu.linkProject': 'Collega progetto',
 	'agent.menu.sessionSettings': 'Impostazioni sessione',
 	'agent.input.placeholder': "Invia un messaggio all'agente... (@ file, / abilità)",
+	'agent.input.skillPickerAria': "Usa un'abilità",
 	'agent.input.sendAria': "Invia messaggio all'agente",
 	'agent.input.stopAria': "Interrompi esecuzione dell'agente",
 	'agent.input.pasteFailed':
@@ -3280,7 +3304,7 @@ export const it: Partial&lt;Record&lt;TranslationKey, string&gt;&gt; = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-11-03T10:39:25.179Z
+                at 2026-11-04T01:08:41.470Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
