@@ -979,6 +979,9 @@ export const zh: Partial<Record<TranslationKey, string>> = {
 	'settings.providers.baseUrlRequiredDesc': '此服务商连接的本地服务器地址。',
 	'settings.providers.baseUrlPlaceholder': 'http://localhost:11434',
 	'settings.providers.baseUrlInvalid': '请输入有效的 URL。',
+	'settings.providers.geminiStoreRequestsName': '在 Google AI Studio 中存储请求',
+	'settings.providers.geminiStoreRequestsDesc':
+		'开启后，请求将发送 store: true，交互日志会存储在 Google AI Studio 的 Logs 仪表盘中（需要结算层级）；关闭时为无状态调用。',
 	'settings.providers.modelsHeading': '模型',
 	'settings.providers.modelsRowName': '可用模型',
 	'settings.providers.refreshButton': '刷新',

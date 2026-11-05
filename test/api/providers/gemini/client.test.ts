@@ -624,6 +624,19 @@ describe('GeminiClient', () => {
 			expect(params.generation_config.thinking_level).toBe('high');
 		});
 
+		test('sends store: true when storeRequests is enabled in config', async () => {
+			const client = makeInteractionsClient({ storeRequests: true });
+			await client.generateModelResponse({
+				prompt: '',
+				userMessage: 'hi',
+				kind: 'extended',
+				conversationHistory: [],
+			});
+
+			const params = interactionsCreateMock.mock.calls[0][0];
+			expect(params.store).toBe(true);
+		});
+
 		test('maxOutputTokens threads through as snake_case max_output_tokens', async () => {
 			const client = makeInteractionsClient({ maxOutputTokens: 4096 });
 			await client.generateModelResponse({
@@ -1055,8 +1068,8 @@ describe('GeminiClient', () => {
 		// always route through Interactions now (the transport toggle is gone), so
 		// this exercises resolveModel's per-request override and generateImage's
 		// own (still generateContent-based) routing around the same flag.
-		const makeClient = (model: string) =>
-			new GeminiClient({ apiKey: 'test-api-key', model }, new GeminiPrompts(mockPlugin), mockPlugin);
+		const makeClient = (model: string, overrides: Partial<GeminiClientConfig> = {}) =>
+			new GeminiClient({ apiKey: 'test-api-key', model, ...overrides }, new GeminiPrompts(mockPlugin), mockPlugin);
 
 		beforeEach(() => {
 			interactionsCreateMock.mockReset();
@@ -1126,6 +1139,21 @@ describe('GeminiClient', () => {
 			expect(params.input).toBe('a nano banana dish');
 			expect(params.store).toBe(false);
 			expect(data).toBe('BASE64_IMAGE');
+		});
+
+		test('generateImage via interactions sends store: true when configured', async () => {
+			interactionsCreateMock.mockReset();
+			interactionsCreateMock.mockResolvedValue({
+				id: 'int_img',
+				status: 'completed',
+				output_image: { data: 'BASE64_STORED', mime_type: 'image/png' },
+				steps: [{ type: 'model_output', content: [{ type: 'image', data: 'BASE64_STORED' }] }],
+			});
+			const client = makeClient('gemini-omni-flash-preview', { storeRequests: true });
+			const data = await client.generateImage('a stored prompt', 'gemini-omni-flash-preview');
+			const params = interactionsCreateMock.mock.calls[0][0];
+			expect(params.store).toBe(true);
+			expect(data).toBe('BASE64_STORED');
 		});
 
 		test('generateImage via interactions throws when the response has no image data', async () => {

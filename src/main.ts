@@ -102,6 +102,7 @@ const DEFAULT_SETTINGS: ObsidianGeminiSettings = {
 	debugMode: false,
 	fileLogging: false,
 	stopOnToolError: true,
+	geminiStoreRequests: false,
 	// Tool policy settings
 	toolPolicy: { ...DEFAULT_TOOL_POLICY },
 	// Version tracking for update notifications

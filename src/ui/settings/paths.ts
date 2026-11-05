@@ -68,6 +68,7 @@ const WRITABLE_SCALAR_PATHS: readonly string[] = [
 	'debugMode',
 	'fileLogging',
 	'stopOnToolError',
+	'geminiStoreRequests',
 	'summaryFrontmatterKey',
 	'contextCompactionThreshold',
 	'showTokenUsage',

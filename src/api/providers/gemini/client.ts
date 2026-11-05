@@ -109,6 +109,14 @@ export class GeminiClient implements ModelApi {
 	}
 
 	/**
+	 * Whether to store request/response interactions on Google servers (store: true).
+	 * Enabled via GeminiClientConfig or plugin settings (geminiStoreRequests).
+	 */
+	private get storeRequests(): boolean {
+		return this.config.storeRequests ?? this.plugin?.settings.geminiStoreRequests ?? false;
+	}
+
+	/**
 	 * Generate a non-streaming response.
 	 *
 	 * The conversational transport unconditionally uses the GA Interactions API
@@ -268,7 +276,7 @@ export class GeminiClient implements ModelApi {
 
 		const params: Record<string, unknown> = {
 			model,
-			store: false,
+			store: this.storeRequests,
 			generation_config: generationConfig,
 		};
 
@@ -437,7 +445,7 @@ export class GeminiClient implements ModelApi {
 		try {
 			const interaction = await this.interactionsClient.create({
 				model,
-				store: false,
+				store: this.storeRequests,
 				input: prompt,
 			});
 

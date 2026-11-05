@@ -3795,6 +3795,16 @@ export const en = {
 		message: 'Enter a valid URL.',
 		context: 'Inline validation error shown under a base-URL field that does not parse as a URL.',
 	},
+	'settings.providers.geminiStoreRequestsName': {
+		message: 'Store requests in Google AI Studio',
+		context: 'Row name for the toggle on the Gemini provider card that sends store: true with requests.',
+	},
+	'settings.providers.geminiStoreRequestsDesc': {
+		message:
+			'When enabled, requests are stored by Google and visible in the AI Studio Logs dashboard. Requires a paid tier; when disabled, requests are stateless.',
+		context:
+			"Row description explaining that store: true saves interaction logs to the Google Cloud project's AI Studio Logs.",
+	},
 	'settings.providers.modelsHeading': {
 		message: 'Models',
 		context: 'Group heading on a provider card for the model list / refresh row.',

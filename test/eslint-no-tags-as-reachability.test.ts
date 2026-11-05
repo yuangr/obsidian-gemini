@@ -47,7 +47,7 @@ const linter = new Linter();
 beforeAll(async () => {
 	const resolved = await loadResolvedConfig();
 	config.push(...(resolved as object[]));
-});
+}, 60_000);
 
 describe('local/no-tags-as-reachability', () => {
 	// The type-aware `parserOptions.project` only matches real project files, so

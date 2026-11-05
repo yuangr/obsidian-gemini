@@ -14,4 +14,5 @@ export interface GeminiClientConfig {
 	 */
 	useCase?: ModelUseCase;
 	maxOutputTokens?: number;
+	storeRequests?: boolean;
 }

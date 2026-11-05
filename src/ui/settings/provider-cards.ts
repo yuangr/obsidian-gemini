@@ -238,6 +238,15 @@ export function providerCardPage(ctx: SettingsContext, spec: ProviderCardSpec): 
 
 	const items: SettingDefinitionItem[] = [...authRows(ctx, spec)];
 
+	// eslint-disable-next-line no-restricted-syntax -- provider card data and the Gemini sync-cache special case; card ids are display data keyed by provider
+	if (id === 'gemini') {
+		items.push({
+			name: t('settings.providers.geminiStoreRequestsName'),
+			desc: t('settings.providers.geminiStoreRequestsDesc'),
+			control: { type: 'toggle', key: 'geminiStoreRequests' },
+		});
+	}
+
 	items.push({
 		type: 'group',
 		heading: t('settings.providers.modelsHeading'),

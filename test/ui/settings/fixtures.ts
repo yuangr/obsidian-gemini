@@ -36,6 +36,7 @@ function buildSettings(overrides: Partial<ObsidianGeminiSettings> = {}): Obsidia
 		debugMode: false,
 		fileLogging: false,
 		stopOnToolError: true,
+		geminiStoreRequests: false,
 		toolPolicy: { ...DEFAULT_TOOL_POLICY },
 		lastSeenVersion: '0.0.0',
 		ragIndexing: {

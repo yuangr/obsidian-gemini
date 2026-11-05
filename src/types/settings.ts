@@ -56,6 +56,11 @@ export interface ObsidianGeminiSettings {
 	debugMode: boolean;
 	fileLogging: boolean;
 	stopOnToolError: boolean;
+	/**
+	 * Whether to store Interactions API requests on Google's servers (store: true),
+	 * making them visible in the Google AI Studio Logs dashboard. Requires a paid tier.
+	 */
+	geminiStoreRequests: boolean;
 	// Tool policy settings
 	toolPolicy: ToolPolicySettings;
 	// Version tracking for update notifications
